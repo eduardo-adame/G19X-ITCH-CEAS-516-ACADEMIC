@@ -3,6 +3,8 @@ import { createApiClient } from '../api/client.js'
 import { ApiError } from '../api/errors.js'
 import { validatePrincipal } from './permissions.js'
 
+export const SESSION_REVALIDATION_FAILED = 'SESSION_REVALIDATION_FAILED'
+
 export function createSessionManager(fetchImpl) {
   let token = null
   let generation = 0
@@ -11,11 +13,12 @@ export function createSessionManager(fetchImpl) {
   let forbidden = null
   let closing = null
   const listeners = new Set()
-  const emit = (status, principal = null, sessionError = null) => {
-    snapshot = { status, principal, generation, sessionError }
+  const emit = (status, principal = null, sessionError = null, sessionReason = null) => {
+    snapshot = { status, principal, generation, sessionError, sessionReason: sessionReason === SESSION_REVALIDATION_FAILED ? sessionReason : null }
     for (const listener of listeners) listener(snapshot)
   }
-  const invalidate = () => { generation++; token = null; client.abortAll(); emit('anonymous') }
+  const invalidate = (reason = null) => { generation++; token = null; client.abortAll(); emit('anonymous', null, null, reason) }
+  const revalidationReason = (error) => error instanceof ApiError && !error.cancelled && error.recoverable ? SESSION_REVALIDATION_FAILED : null
   function access(data) {
     if (!data || typeof data.access_token !== 'string' || !data.access_token || data.token_type?.toLowerCase() !== 'bearer') throw new ApiError(503)
     return data.access_token
@@ -40,15 +43,16 @@ export function createSessionManager(fetchImpl) {
       if (generation !== expected) return false
       token = access(data)
       return await identity(expected)
-    } catch {
-      if (generation === expected) invalidate()
+    } catch (error) {
+      // Conservar la causa técnica si la renovación pertenece a una revalidación.
+      if (generation === expected) invalidate(forbidden ? revalidationReason(error) : null)
       return false
     }
   }
   async function revalidate() {
     if (forbidden) return forbidden
     const expected = generation
-    forbidden = identity(expected, true, true).catch(() => { if (generation === expected) invalidate(); return false }).finally(() => { forbidden = null })
+    forbidden = identity(expected, true, true).catch((error) => { if (generation === expected) invalidate(revalidationReason(error)); return false }).finally(() => { forbidden = null })
     return forbidden
   }
   const client = createApiClient({ fetchImpl, getSession: () => ({ token, generation }), recover: renew, onUnauthorized: invalidate, onForbidden: revalidate })
@@ -56,6 +60,7 @@ export function createSessionManager(fetchImpl) {
     client, getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
     restore() { if (!restoring) restoring = renew(); return restoring }, revalidate, invalidate,
+    clearSessionReason() { if (snapshot.sessionReason) emit(snapshot.status, snapshot.principal, snapshot.sessionError) },
     async login(username, password) {
       if (closing) await closing.catch(() => {})
       invalidate(); emit('restoring')
