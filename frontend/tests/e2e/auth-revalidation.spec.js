@@ -25,7 +25,10 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: revalidación de sesión segur
     test(`fallo${failure} retira evidencia y distingue el motivo técnico`, async ({ page }) => {
       await initial(page); await fail(page, failure)
       if ([500, 503, 'network'].includes(failure)) await expect(page.getByRole('alert')).toHaveText(notice)
-      else await expect(page.getByText(notice)).toHaveCount(0)
+      else {
+        await expect(page.getByRole('alert')).toHaveText(failure === 401 ? 'Credenciales o sesión no válidas.' : 'Acceso no autorizado.')
+        await expect(page.getByText(notice)).toHaveCount(0)
+      }
       await expect(page.getByText(/Detalle interno/)).toHaveCount(0)
       expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length }))).toEqual({ local: 0, session: 0 })
       expect(new URL(page.url()).search).toBe('')

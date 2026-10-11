@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
-import { createSessionManager, SESSION_REVALIDATION_FAILED, SessionProvider } from '../src/auth/SessionProvider.jsx'
+import { createSessionManager, SESSION_REVALIDATION_FAILED, SESSION_INVALID, SESSION_FORBIDDEN, SessionProvider } from '../src/auth/SessionProvider.jsx'
 import { LoginPage } from '../src/auth/LoginPage.jsx'
 
 const principal = { id: '11111111-1111-4111-8111-111111111111', username: 'cuenta-sintetica', roles: ['JURIDICO'] }
@@ -28,13 +28,22 @@ describe('SRS_REQUIRED: revalidación fail closed y causa segura', () => {
     expect(await manager.revalidate()).toBe(false)
     expect(manager.getSnapshot()).toMatchObject({ status: 'anonymous', principal: null, generation: generation + 1 })
     expect(manager.getSnapshot()).not.toHaveProperty('token')
-    expect(manager.getSnapshot().sessionReason).toBe([500, 503, 'network'].includes(failure) ? SESSION_REVALIDATION_FAILED : null)
+    expect(manager.getSnapshot().sessionReason).toBe(failure === 401 ? SESSION_INVALID : failure === 403 ? SESSION_FORBIDDEN : SESSION_REVALIDATION_FAILED)
     await expect(manager.client.request('/rag/query', { method: 'POST' })).rejects.toMatchObject({ status: 401 })
   })
   it('muestra y consume el motivo técnico sin revelar el cuerpo ni persistirlo', async () => {
     const { manager, fail } = setup(500); await manager.restore(); fail(); await manager.revalidate()
     render(<SessionProvider manager={manager}><MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter></SessionProvider>)
     expect(await screen.findByRole('alert')).toHaveTextContent(notice)
+    expect(screen.queryByText(/Detalle interno/)).not.toBeInTheDocument()
+    expect(manager.getSnapshot().sessionReason).toBeNull()
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)
+  })
+  it.each([[401, 'Credenciales o sesión no válidas.'], [403, 'Acceso no autorizado.']])('muestra y consume copy existente para rechazo%s sin afirmar expiración técnica', async (failure, message) => {
+    const { manager, fail } = setup(failure); await manager.restore(); fail(); await manager.revalidate()
+    render(<SessionProvider manager={manager}><MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter></SessionProvider>)
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(screen.queryByText(notice)).not.toBeInTheDocument()
     expect(screen.queryByText(/Detalle interno/)).not.toBeInTheDocument()
     expect(manager.getSnapshot().sessionReason).toBeNull()
     expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0)

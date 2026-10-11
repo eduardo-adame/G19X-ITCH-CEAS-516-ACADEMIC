@@ -4,6 +4,9 @@ import { ApiError } from '../api/errors.js'
 import { validatePrincipal } from './permissions.js'
 
 export const SESSION_REVALIDATION_FAILED = 'SESSION_REVALIDATION_FAILED'
+export const SESSION_INVALID = 'SESSION_INVALID'
+export const SESSION_FORBIDDEN = 'SESSION_FORBIDDEN'
+const sessionReasons = new Set([SESSION_REVALIDATION_FAILED, SESSION_INVALID, SESSION_FORBIDDEN])
 
 export function createSessionManager(fetchImpl) {
   let token = null
@@ -14,11 +17,16 @@ export function createSessionManager(fetchImpl) {
   let closing = null
   const listeners = new Set()
   const emit = (status, principal = null, sessionError = null, sessionReason = null) => {
-    snapshot = { status, principal, generation, sessionError, sessionReason: sessionReason === SESSION_REVALIDATION_FAILED ? sessionReason : null }
+    snapshot = { status, principal, generation, sessionError, sessionReason: sessionReasons.has(sessionReason) ? sessionReason : null }
     for (const listener of listeners) listener(snapshot)
   }
   const invalidate = (reason = null) => { generation++; token = null; client.abortAll(); emit('anonymous', null, null, reason) }
-  const revalidationReason = (error) => error instanceof ApiError && !error.cancelled && error.recoverable ? SESSION_REVALIDATION_FAILED : null
+  const revalidationReason = (error) => {
+    if (!(error instanceof ApiError) || error.cancelled) return null
+    if (error.status === 401) return SESSION_INVALID
+    if (error.status === 403) return SESSION_FORBIDDEN
+    return error.recoverable ? SESSION_REVALIDATION_FAILED : null
+  }
   function access(data) {
     if (!data || typeof data.access_token !== 'string' || !data.access_token || data.token_type?.toLowerCase() !== 'bearer') throw new ApiError(503)
     return data.access_token
@@ -55,7 +63,7 @@ export function createSessionManager(fetchImpl) {
     forbidden = identity(expected, true, true).catch((error) => { if (generation === expected) invalidate(revalidationReason(error)); return false }).finally(() => { forbidden = null })
     return forbidden
   }
-  const client = createApiClient({ fetchImpl, getSession: () => ({ token, generation }), recover: renew, onUnauthorized: invalidate, onForbidden: revalidate })
+  const client = createApiClient({ fetchImpl, getSession: () => ({ token, generation }), recover: renew, onUnauthorized: () => invalidate(SESSION_INVALID), onForbidden: revalidate })
   return {
     client, getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
