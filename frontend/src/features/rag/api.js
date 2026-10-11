@@ -2,7 +2,8 @@ import { ApiError } from '../../api/errors.js'
 import { adaptRagResponse, isUuid } from './adapters.js'
 
 export function createRagSubmission(query, contextReferenceId = null, key = globalThis.crypto.randomUUID()) {
-  if (typeof query !== 'string' || query.length < 1 || query.length > 4096 || !isUuid(key) || contextReferenceId !== null && !isUuid(contextReferenceId)) throw new ApiError(422)
+  // El contrato limita puntos de código Unicode, no unidades UTF-16 del navegador.
+  if (typeof query !== 'string' || query.length < 1 || Array.from(query).length > 4096 || !isUuid(key) || contextReferenceId !== null && !isUuid(contextReferenceId)) throw new ApiError(422)
   return Object.freeze({ key, payload: Object.freeze({ query, ...(contextReferenceId ? { context_reference_id: contextReferenceId } : {}) }) })
 }
 export async function requestRag(client, submission, signal) {

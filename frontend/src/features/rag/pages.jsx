@@ -37,7 +37,7 @@ export function RagQueryPage() {
     {context && <section className="rounded-control border border-border bg-secondary p-3 text-xs text-secondary"><p>Referencia contextual de un hallazgo. No constituye evidencia ni selecciona documentos.</p><Button className="mt-2" variant="ghost" onClick={() => { rag.clear(); setParams({}, { replace: true }) }}>Quitar referencia</Button></section>}
     <form className="space-y-3" onSubmit={submit}>
       <label htmlFor="rag-query" className="block text-xs font-medium text-secondary">Consulta en lenguaje natural</label>
-      <textarea id="rag-query" required minLength={1} maxLength={4096} rows={4} value={query} onChange={(event) => { setQuery(event.target.value); setValidationError(null) }} className="w-full resize-y rounded-control border border-border bg-surface p-3 text-[13px]" disabled={rag.busy || rag.accessPending} />
+      <textarea id="rag-query" required minLength={1} rows={4} value={query} onChange={(event) => { setQuery(event.target.value); setValidationError(null) }} className="w-full resize-y rounded-control border border-border bg-surface p-3 text-[13px]" disabled={rag.busy || rag.accessPending} />
       <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <Button variant="secondary" onClick={rag.retry}>Reintentar la misma operación</Button>}{(rag.submission || result || rag.error || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
     </form>
     {validationError && <ErrorState error={validationError} />}
