@@ -12,6 +12,7 @@ export function RagLayout() {
   const owner = `${session.principal?.id || ''}:${session.generation}`
   const [snapshot, setSnapshot] = useState({ result: null, error: null, busy: false, submission: null, owner })
   const [verified, setVerified] = useState(null)
+  const [accessPending, setAccessPending] = useState(true)
   const epoch = useRef(0)
   const controller = useRef(null)
   const currentOwner = useRef(owner)
@@ -23,16 +24,30 @@ export function RagLayout() {
   useEffect(() => { clear() }, [owner, clear])
   useEffect(() => {
     let mounted = true
+    let verification = 0
     setVerified(null)
-    // Revalidar identidad no certifica ACL: solo una consulta explícita entrega evidencia autorizada.
-    Promise.resolve(session.revalidate()).then((valid) => { if (mounted) { if (!valid) clear(); setVerified(location.key) } }).catch(() => { if (mounted) { clear(); setVerified(location.key) } })
-    return () => { mounted = false }
-  }, [location.key, session.revalidate, clear])
-  useEffect(() => {
-    const hidden = () => { if (document.visibilityState !== 'visible') clear() }
-    window.addEventListener('blur', clear); document.addEventListener('visibilitychange', hidden)
-    return () => { clear(); window.removeEventListener('blur', clear); document.removeEventListener('visibilitychange', hidden) }
-  }, [clear])
+    const verify = () => {
+      const expected = ++verification
+      setAccessPending(true)
+      // Suspender la presentación conserva la consulta sin exponer evidencia durante la revalidación.
+      Promise.resolve().then(() => session.revalidate()).then((valid) => {
+        if (!mounted || expected !== verification) return
+        if (!valid) clear()
+        setVerified(location.key); setAccessPending(false)
+      }).catch(() => {
+        if (!mounted || expected !== verification) return
+        clear(); setVerified(location.key); setAccessPending(false)
+      })
+    }
+    const visible = () => { if (document.visibilityState === 'visible') verify() }
+    verify()
+    window.addEventListener('focus', visible); document.addEventListener('visibilitychange', visible)
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', visible); document.removeEventListener('visibilitychange', visible)
+    }
+  }, [owner, location.key, session.revalidate, clear])
+  useEffect(() => () => clear(), [clear])
   async function execute(submission) {
     clear()
     const expected = epoch.current
@@ -49,7 +64,7 @@ export function RagLayout() {
     }
   }
   const visible = snapshot.owner === owner && session.status === 'authenticated' ? snapshot : { result: null, error: null, busy: false, submission: null }
-  const value = { ...visible, clear, submit: (query, contextId) => execute(createRagSubmission(query, contextId)), retry: () => visible.submission && execute(visible.submission) }
+  const value = { ...visible, result: accessPending ? null : visible.result, error: accessPending ? null : visible.error, accessPending, clear, submit: (query, contextId) => !accessPending && execute(createRagSubmission(query, contextId)), retry: () => !accessPending && visible.submission && execute(visible.submission) }
   return <RagContext.Provider value={value}>{verified === location.key ? <Outlet /> : <Loading label="Comprobando acceso a la consulta…" />}</RagContext.Provider>
 }
 export function useRag() {
