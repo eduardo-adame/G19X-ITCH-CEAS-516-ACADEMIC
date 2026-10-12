@@ -12,6 +12,12 @@ import { DocumentViewer, EvidenceCard, RagStateBanner } from './components.jsx'
 import { useRag } from './state.jsx'
 import { suggestedQuestions } from './localInteraction.js'
 
+const resultExplanations = Object.freeze({
+  EVIDENCIA_INSUFICIENTE: 'Encontré información relacionada, pero la evidencia disponible no es suficiente para responder esta consulta con certeza. Puedes intentar especificar el documento, una fecha, una cláusula o el asunto que buscas.',
+  SIN_EVIDENCIA: 'No encontré evidencia en los documentos a los que tienes acceso que permita responder esta pregunta. Puedes intentar indicar el nombre del documento, una fecha, una cláusula o el asunto que buscas.',
+  SIN_AUTORIZACION: 'No puedo proporcionar información para esta consulta con tu nivel de acceso actual.',
+})
+
 export function RagQueryPage() {
   const rag = useRag()
   const session = useSession()
@@ -33,6 +39,8 @@ export function RagQueryPage() {
   // No habilitar la consulta mientras la URL todavía contiene parámetros ajenos al contrato RAG.
   if (canonicalQuery !== params.toString()) return <Loading label="Preparando la consulta segura…" />
   const result = rag.result
+  const submittedQuery = rag.accessPending ? null : rag.local?.query ?? rag.submission?.payload.query
+  const explanation = result?.technicalFailure ? result.message : resultExplanations[result?.state] ?? result?.message
   return <div className="mx-auto max-w-[var(--content-width-rag)] space-y-8">
     <PageHeader title="Consulta documental" description="Consulta las fuentes autorizadas y distingue la evidencia original de la respuesta generada." />
     {context && <section className="rounded-control border border-border bg-secondary p-3 text-xs text-secondary"><p>Referencia contextual de un hallazgo. No constituye evidencia ni selecciona documentos.</p><Button className="mt-2" variant="ghost" onClick={() => { rag.clear(); setParams({}, { replace: true }) }}>Quitar referencia</Button></section>}
@@ -42,15 +50,17 @@ export function RagQueryPage() {
       <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <Button variant="secondary" onClick={rag.retry}>Reintentar la misma operación</Button>}{(rag.hasInteraction || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
     </form>
     {validationError && <ErrorState error={validationError} />}
+    {submittedQuery && <section aria-label="Tu consulta enviada" className="space-y-3"><h2 className="text-base font-semibold">Tú</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{submittedQuery}</p></section>}
     {rag.accessPending ? <Loading label="Comprobando acceso a la consulta…" /> : rag.busy && <Loading label="Consultando las fuentes autorizadas…" />}
     {rag.error && <ErrorState error={rag.error} />}
     {rag.local && <section role="status" aria-live="polite" aria-label="Respuesta local" className="space-y-3"><h2 className="text-base font-semibold">Respuesta</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{rag.local.message}</p></section>}
     {result && <section className="space-y-5" aria-label="Resultado de la consulta">
+      <h2 className="text-base font-semibold">Respuesta</h2>
       <RagStateBanner state={result.state} />
       {result.technicalFailure && <ErrorState error={new ApiError(503)} />}
-      {result.message && <p className="text-[13px] text-secondary">{result.message}</p>}
-      {result.response && <section className="rounded-panel border border-border bg-surface p-5"><h2 className="mb-3 text-base font-semibold">Respuesta generada</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{result.response}</p><p className="mt-4 text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}
-      {!!result.fragments.length && <section className="space-y-4"><h2 className="text-base font-semibold">Fragmentos autorizados</h2>{result.fragments.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={result.citations.find((citation) => citation.fragmentId === fragment.fragmentId)?.handle} />)}</section>}
+      {explanation && <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{explanation}</p>}
+      {result.response && <section className="rounded-panel border border-border bg-surface p-5"><h3 className="mb-3 text-base font-semibold">Respuesta generada</h3><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{result.response}</p><p className="mt-4 text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}
+      {!!result.fragments.length && <section aria-label="Fuentes autorizadas" className="space-y-4"><h2 className="text-base font-semibold">Fuentes</h2><h3 className="text-sm font-semibold">Fragmentos autorizados</h3>{result.fragments.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={result.citations.find((citation) => citation.fragmentId === fragment.fragmentId)?.handle} />)}</section>}
     </section>}
     {!rag.hasInteraction && !rag.busy && !rag.accessPending && <><EmptyState title="Formula una consulta" message="Los resultados y los fragmentos permanecen únicamente en esta sesión de consulta." /><section aria-label="Preguntas sugeridas" className="space-y-3"><h2 className="text-sm font-semibold">Preguntas sugeridas</h2><div className="flex flex-wrap gap-2">{suggestedQuestions.map((suggestion) => <Button key={suggestion} variant="secondary" className="h-auto max-w-full whitespace-normal text-left" onClick={() => { setQuery(suggestion); setValidationError(null) }}>{suggestion}</Button>)}</div></section></>}
   </div>
