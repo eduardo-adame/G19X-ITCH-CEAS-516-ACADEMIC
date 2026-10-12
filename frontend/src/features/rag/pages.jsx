@@ -10,6 +10,7 @@ import { ApiError } from '../../api/errors.js'
 import { isUuid } from './adapters.js'
 import { DocumentViewer, EvidenceCard, RagStateBanner } from './components.jsx'
 import { useRag } from './state.jsx'
+import { suggestedQuestions } from './localInteraction.js'
 
 export function RagQueryPage() {
   const rag = useRag()
@@ -38,11 +39,12 @@ export function RagQueryPage() {
     <form className="space-y-3" onSubmit={submit}>
       <label htmlFor="rag-query" className="block text-xs font-medium text-secondary">Consulta en lenguaje natural</label>
       <textarea id="rag-query" required minLength={1} rows={4} value={query} onChange={(event) => { setQuery(event.target.value); setValidationError(null) }} className="w-full resize-y rounded-control border border-border bg-surface p-3 text-[13px]" disabled={rag.busy || rag.accessPending} />
-      <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <Button variant="secondary" onClick={rag.retry}>Reintentar la misma operación</Button>}{(rag.submission || result || rag.error || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
+      <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <Button variant="secondary" onClick={rag.retry}>Reintentar la misma operación</Button>}{(rag.hasInteraction || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
     </form>
     {validationError && <ErrorState error={validationError} />}
     {rag.accessPending ? <Loading label="Comprobando acceso a la consulta…" /> : rag.busy && <Loading label="Consultando las fuentes autorizadas…" />}
     {rag.error && <ErrorState error={rag.error} />}
+    {rag.local && <section role="status" aria-live="polite" aria-label="Respuesta local" className="space-y-3"><h2 className="text-base font-semibold">Respuesta</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{rag.local.message}</p></section>}
     {result && <section className="space-y-5" aria-label="Resultado de la consulta">
       <RagStateBanner state={result.state} />
       {result.technicalFailure && <ErrorState error={new ApiError(503)} />}
@@ -50,7 +52,7 @@ export function RagQueryPage() {
       {result.response && <section className="rounded-panel border border-border bg-surface p-5"><h2 className="mb-3 text-base font-semibold">Respuesta generada</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{result.response}</p><p className="mt-4 text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}
       {!!result.fragments.length && <section className="space-y-4"><h2 className="text-base font-semibold">Fragmentos autorizados</h2>{result.fragments.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={result.citations.find((citation) => citation.fragmentId === fragment.fragmentId)?.handle} />)}</section>}
     </section>}
-    {!result && !rag.error && !rag.busy && !rag.accessPending && <EmptyState title="Formula una consulta" message="Los resultados y los fragmentos permanecen únicamente en esta sesión de consulta." />}
+    {!rag.hasInteraction && !rag.busy && !rag.accessPending && <><EmptyState title="Formula una consulta" message="Los resultados y los fragmentos permanecen únicamente en esta sesión de consulta." /><section aria-label="Preguntas sugeridas" className="space-y-3"><h2 className="text-sm font-semibold">Preguntas sugeridas</h2><div className="flex flex-wrap gap-2">{suggestedQuestions.map((suggestion) => <Button key={suggestion} variant="secondary" className="h-auto max-w-full whitespace-normal text-left" onClick={() => { setQuery(suggestion); setValidationError(null) }}>{suggestion}</Button>)}</div></section></>}
   </div>
 }
 
