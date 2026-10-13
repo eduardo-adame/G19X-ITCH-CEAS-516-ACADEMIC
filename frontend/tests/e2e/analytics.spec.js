@@ -46,6 +46,24 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('Analítica — Resumen ejecutivo', () => {
+  for (const route of ['/', '/contratos', '/litigios']) {
+    test(`selección inicial actual y filtros históricos funcionales en ${route}`, async ({ page }) => {
+      mockAnalytics(page, [])
+      const requests = []
+      page.on('request', (request) => { if (request.url().includes('/api/dashboard/')) requests.push(new URL(request.url())) })
+      await page.goto(route)
+      await expect(page.getByLabel('Periodo', { exact: true })).toHaveValue('current_month')
+      await expect(page.getByLabel('Periodo', { exact: true })).toBeEnabled()
+      await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'current_month')).toBe(true)
+      await page.getByLabel('Periodo', { exact: true }).selectOption('last_6_months')
+      await page.getByRole('button', { name: 'Aplicar filtros', exact: true }).click()
+      await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
+      await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('current')
+      await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
+      await page.getByRole('button', { name: 'Aplicar filtros', exact: true }).click()
+      await expect.poll(() => requests.some((url) => url.pathname.endsWith('/analysis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
+    })
+  }
   test('carga la página con título correcto', async ({ page }) => {
     mockAnalytics(page, [])
     await page.goto('/')

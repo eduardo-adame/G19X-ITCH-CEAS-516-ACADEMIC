@@ -20,8 +20,9 @@ export const FILTER_VALIDATORS = Object.freeze({
   risk_type: (value) => RISKS.some((item) => item.value === value),
   entity: (value) => value.length > 0 && value.length <= 256 && !/[\u0000-\u001f]/.test(value),
   analytic_run_id: uuid,
+  analysis_mode: (value) => ['current', 'historical'].includes(value),
 })
-export function analyticsFilters(search, defaultRisk = 'all') {
+export function analyticsFilters(search, defaultRisk = 'all', defaultPeriod = 'last_6_months') {
   const raw = readQuery(search, FILTER_VALIDATORS)
   if (raw.period === 'custom' && (!raw.period_start || !raw.period_end || raw.period_start > raw.period_end)) {
     delete raw.period; delete raw.period_start; delete raw.period_end
@@ -29,8 +30,10 @@ export function analyticsFilters(search, defaultRisk = 'all') {
   if (raw.period !== 'custom') { delete raw.period_start; delete raw.period_end }
   const canonical = writeQuery(raw, FILTER_VALIDATORS)
   return { raw, canonical, corrected: new URLSearchParams(search).toString() !== canonical,
-    period: raw.period || 'last_6_months', risk_type: raw.risk_type || defaultRisk,
-    analysisMode: raw.period || raw.analytic_run_id ? 'historical' : 'current' }
+    period: raw.period || defaultPeriod, risk_type: raw.risk_type || defaultRisk,
+    // Los enlaces antiguos con periodo siguen significando histórico; los
+    // controles nuevos pueden cambiar el periodo KPI sin cambiar el análisis.
+    analysisMode: raw.analysis_mode || (raw.period || raw.analytic_run_id ? 'historical' : 'current') }
 }
 export function analyticsPaths(filters) {
   const shared = { risk_type: filters.risk_type, entity: filters.raw.entity }

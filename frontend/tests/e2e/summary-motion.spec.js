@@ -104,9 +104,9 @@ test.describe('ROBUSTNESS: motion ejecutivo aprobado', () => {
     await page.goto('/')
     await waitForFinal(page)
     await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
-    await page.getByLabel('Periodo', { exact: true }).selectOption('current_month')
+    await page.getByLabel('Periodo', { exact: true }).selectOption('last_3_months')
     expect(await page.evaluate(() => window.__kpiMotionBatches.length)).toBe(1)
-    const nextRead = page.waitForResponse((response) => response.url().includes('/api/dashboard/kpis') && response.url().includes('period=current_month'))
+    const nextRead = page.waitForResponse((response) => response.url().includes('/api/dashboard/kpis') && response.url().includes('period=last_3_months'))
     await page.getByRole('button', { name: 'Aplicar filtros' }).click()
     await nextRead
     await expect.poll(() => page.evaluate(() => window.__kpiMotionBatches.length)).toBe(2)

@@ -70,11 +70,11 @@ describe('ROBUSTNESS: entrada KPI aprobada, acotada y estable', () => {
   it('cambio material de periodo inicia una entrada para la nueva selección', async () => {
     const f = fixture(); await f.resolveReads()
     await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
-    await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'current_month')
+    await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'last_3_months')
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }))
     await f.resolveReads()
     expect(document.querySelectorAll('.kpi-entry')).toHaveLength(5)
-    expect(f.client.acquireRead.mock.calls.some(([path]) => path.includes('period=current_month'))).toBe(true)
+    expect(f.client.acquireRead.mock.calls.some(([path]) => path.includes('period=last_3_months'))).toBe(true)
   })
   it('identidad y roles iguales con username actualizado no cambian la entrada por sí solos', async () => {
     const f = fixture(); await f.resolveReads()

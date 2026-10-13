@@ -31,6 +31,7 @@ describe('ROBUSTNESS: gráficas temporales según calendario y escalas aprobados
     expect(screen.getAllByTestId('line')).toHaveLength(2)
     expect(screen.getAllByTestId('line').every((line) => line.dataset.connect === 'false' && line.dataset.animation === 'false')).toBe(true)
     expect(screen.getByRole('table')).toHaveTextContent('01/07/2026 – 31/07/2026Sin observación')
+    expect(screen.getByText(/Periodos sin observación:.*01\/07\/2026.*La línea se interrumpe/)).toBeVisible()
     expect(screen.getByTestId('axis')).toHaveAttribute('data-decimals', 'true')
   })
   it('LI05 utiliza barras discretas, ticks enteros y headroom0..2 para cinco unos', () => {

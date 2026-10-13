@@ -224,7 +224,8 @@ test.describe('Accesibilidad — Estados dinámicos', () => {
     )
     await page.goto('/')
     // Durante loading debe haber un elemento con role=status o aria-live
-    const status = page.getByRole('status')
+    // KPI y análisis pueden cargar al mismo tiempo, cada uno con su región viva.
+    const status = page.getByRole('status').first()
     await expect(status).toBeVisible({ timeout: 5000 })
   })
 

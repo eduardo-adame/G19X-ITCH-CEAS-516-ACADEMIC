@@ -91,10 +91,11 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     fixture({ analysis: analysisPage(true), roles: [] })
     await screen.findByText('1 alertas'); expect(screen.queryByRole('link', { name: 'Verificar evidencia documental' })).not.toBeInTheDocument()
   })
-  it('vigente no envía period al análisis y conserva default KPI', async () => {
+  it('vigente no envía period al análisis y usa periodo actual para KPI', async () => {
     const client = fixture(); await screen.findByText('0 alertas')
     expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/analysis?risk_type=all')).toBe(true)
-    expect(screen.getByLabelText('Periodo')).toBeDisabled()
+    expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=all')).toBe(true)
+    expect(screen.getByLabelText('Periodo')).toBeEnabled()
     expect(screen.getAllByRole('columnheader', { name: 'Fecha de cálculo' })).toHaveLength(1)
     expect(screen.getByText(/Cálculo:.*UTC/)).toBeVisible()
   })
@@ -109,6 +110,29 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     await waitFor(() => expect(screen.getByLabelText('Análisis')).toHaveValue('current'))
     await userEvent.click(screen.getByRole('button', { name: 'Adelante de prueba' }))
     await waitFor(() => expect(screen.getByLabelText('Periodo')).toHaveValue('last_3_months'))
+  })
+  it('permite seleccionar el mes en curso sin convertir análisis vigente en histórico', async () => {
+    const client = fixture(); await screen.findByText('0 alertas')
+    await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'current_month')
+    await userEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }))
+    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=all')).toBe(true))
+    expect(screen.getByLabelText('Análisis')).toHaveValue('current')
+    expect(client.acquireRead.mock.calls.filter(([path]) => path.startsWith('/dashboard/analysis')).every(([path]) => path === '/dashboard/analysis?risk_type=all')).toBe(true)
+    expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('analysis_mode=current')
+  })
+  it('ofrece mes actual explícito y conserva la selección al navegar atrás', async () => {
+    const client = fixture({ search: '?period=last_6_months&analysis_mode=current' }); await screen.findByText('0 alertas')
+    await userEvent.click(screen.getByRole('button', { name: 'Ver periodo en curso' }))
+    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path.includes('period=current_month'))).toBe(true))
+    expect(screen.getByLabelText('Periodo')).toHaveValue('current_month')
+    await userEvent.click(screen.getByRole('button', { name: 'Atrás de prueba' }))
+    await waitFor(() => expect(screen.getByLabelText('Periodo')).toHaveValue('last_6_months'))
+  })
+  it.each(['summary', 'contracts', 'litigation'])('%s inicia en mes actual y conserva opciones históricas', async (view) => {
+    const client = fixture({ view }); await screen.findByText('0 alertas')
+    expect(screen.getByLabelText('Periodo')).toHaveValue('current_month')
+    expect(client.acquireRead.mock.calls.some(([path]) => path.startsWith('/dashboard/kpis?period=current_month'))).toBe(true)
+    expect(within(screen.getByLabelText('Periodo')).getByRole('option', { name: 'Últimos 6 meses' })).toBeInTheDocument()
   })
   it('fechas custom inválidas no disparan lectura histórica', async () => {
     const client = fixture(); await screen.findByText('0 alertas'); const before = client.acquireRead.mock.calls.length

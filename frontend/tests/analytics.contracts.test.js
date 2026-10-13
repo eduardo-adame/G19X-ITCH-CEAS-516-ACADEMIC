@@ -1,5 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import { analyticsFilters, analyticsPaths, createAnalyticsApi, replaceAnalyticsFilter } from '../src/features/analytics/api.js'
+
+describe('SRS_REQUIRED: periodo KPI independiente del análisis vigente', () => {
+  it('respeta selección inicial de la vista sin sobreescribir un enlace histórico', () => {
+    expect(analyticsFilters('', 'all', 'current_month').period).toBe('current_month')
+    expect(analyticsFilters('period=last_12_months', 'all', 'current_month').period).toBe('last_12_months')
+    expect(analyticsFilters('').period).toBe('last_6_months')
+  })
+  it('respeta modo vigente explícito y no envía esa opción visual al backend', () => {
+    const filters = analyticsFilters('period=current_month&analysis_mode=current')
+    expect(filters.analysisMode).toBe('current')
+    expect(analyticsPaths(filters)).toEqual({ kpis: '/dashboard/kpis?period=current_month&risk_type=all', analysis: '/dashboard/analysis?risk_type=all' })
+  })
+  it('conserva enlaces históricos anteriores y modo histórico explícito', () => {
+    expect(analyticsFilters('period=current_month').analysisMode).toBe('historical')
+    expect(analyticsPaths(analyticsFilters('period=last_3_months&analysis_mode=historical')).analysis).toBe('/dashboard/analysis?period=last_3_months&risk_type=all')
+  })
+})
 import { createApiClient } from '../src/api/client.js'
 import { ApiError } from '../src/api/errors.js'
 

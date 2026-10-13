@@ -130,7 +130,9 @@ export function TemporalChart({ items = [], kpiCode, title, subtitle, unit, empt
   const count = kpiCode === 'KPI-LI-05'
   const Graph = count ? BarChart : LineChart
   const axis = chartAxisConfig(count ? AXIS_UNITS.COUNT : AXIS_UNITS.DAYS, rows.map((row) => row.value))
+  const gaps = rows.filter((row) => row.availability === 'NO_OBSERVATION')
   return <ChartContainer title={title} subtitle={subtitle} footer={<DataTable caption={`Datos de ${title}`} columns={[{ key: 'periodText', label: 'Periodo' }, { key: 'valueText', label: 'Valor', numeric: true }, { key: 'unit', label: 'Unidad' }, { key: 'availability', label: 'Disponibilidad', render: (row) => row.availability === 'NO_OBSERVATION' ? 'Sin observación' : row.availability === 'DISPONIBLE' ? 'Disponible' : 'No disponible' }]} rows={rows} />}>
+    {gaps.length > 0 && <p className="text-xs text-secondary">Periodos sin observación: {gaps.map((row) => row.periodText).join('; ')}. {count ? 'Estos periodos no generan una barra.' : 'La línea se interrumpe en estos periodos.'}</p>}
     <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><Graph data={count ? rows : data} margin={{ left: 4, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} /><YAxis {...axisProps} {...axis} width={48} /><Tooltip filterNull={false} content={<TemporalTooltip rows={rows} unit={unit} />} />{count ? <Bar dataKey="value" name="Nuevos litigios" fill="var(--chart-bar-1)" barSize={32} isAnimationActive={false} /> : keys.map((key) => <Line key={key} type="linear" dataKey={key} stroke="var(--text-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />)}</Graph></ResponsiveContainer></div>
   </ChartContainer>
 }
