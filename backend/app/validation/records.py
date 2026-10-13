@@ -6,12 +6,11 @@ delimitadores ni a parsear el archivo: aplica el contrato de datos del SRS.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid5
 
 from app.ingestion.models import SourceFamily
 from app.validation.contracts import contracts_for_family
+from app.validation.values import is_absent, parse_date, parse_decimal
 from app.validation.models import (
     DataContract,
     FieldSpec,
@@ -34,36 +33,10 @@ def derive_record_operation_id(dispatch_operation_id: UUID, source_record_id: UU
     return uuid5(_RECORD_NAMESPACE, f"{dispatch_operation_id}:{source_record_id}")
 
 
-def _is_absent(value: object) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and value.strip() == "":
-        return True
-    return False
-
-
-def _parse_date(value: object) -> date | None:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _parse_decimal(value: object) -> Decimal | None:
-    if isinstance(value, bool):
-        return None
-    text = str(value).strip().replace(",", "")
-    try:
-        return Decimal(text)
-    except (InvalidOperation, ValueError):
-        return None
+# La proyección reutiliza estas mismas reglas para materializar lo certificado.
+_is_absent = is_absent
+_parse_date = parse_date
+_parse_decimal = parse_decimal
 
 
 def validate_record(values_by_name: Mapping[str, object], contract: DataContract) -> RecordValidation:

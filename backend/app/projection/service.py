@@ -12,6 +12,7 @@ from uuid import UUID, uuid5
 from app.ingestion.models import SourceFamily
 from app.projection.models import ProjectionContext, ProjectionError, ProjectionInvariantError, ProjectionResult
 from app.validation.models import ValidatedTabularRecord
+from app.validation.values import is_absent, parse_date, parse_decimal
 
 
 _OPERATION_NAMESPACE = UUID("c44b8c97-6e55-4a2e-9ba6-bf540fb5d26c")
@@ -231,65 +232,57 @@ def _complete(values: Mapping[str, object], *names: str) -> bool:
 
 def _text(values: Mapping[str, object], name: str) -> str:
     value = values.get(name)
+    # La validación acepta texto no vacío; las hojas de cálculo pueden entregar
+    # identificadores numéricos enteros, que se conservan con su forma textual.
+    if isinstance(value, bool):
+        raise ProjectionError(f"campo de negocio no representable: {name}")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, (float, Decimal)) and value == value and value == int(value):
+        return str(int(value))
     if not isinstance(value, str) or not value.strip():
         raise ProjectionError(f"campo de negocio no representable: {name}")
     return value.strip()
 
 
 def _optional_text(values: Mapping[str, object], name: str) -> str | None:
-    value = values.get(name)
-    if value is None or value == "":
-        return None
-    return _text(values, name)
+    return None if is_absent(values.get(name)) else _text(values, name)
 
 
 def _date(values: Mapping[str, object], name: str) -> date:
-    value = values.get(name)
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError as exc:
-            raise ProjectionError(f"fecha no representable: {name}") from exc
-    raise ProjectionError(f"fecha no representable: {name}")
+    # Mismas reglas con las que la validación certificó el registro.
+    parsed = parse_date(values.get(name))
+    if parsed is None:
+        raise ProjectionError(f"fecha no representable: {name}")
+    return parsed
 
 
 def _optional_date(values: Mapping[str, object], name: str) -> date | None:
-    return None if values.get(name) in (None, "") else _date(values, name)
+    return None if is_absent(values.get(name)) else _date(values, name)
 
 
 def _optional_decimal(values: Mapping[str, object], name: str) -> Decimal | None:
     value = values.get(name)
-    if value in (None, ""):
+    if is_absent(value):
         return None
-    if isinstance(value, bool) or isinstance(value, float):
+    parsed = parse_decimal(value)
+    if parsed is None:
         raise ProjectionError(f"decimal no representable: {name}")
-    try:
-        decimal = value if isinstance(value, Decimal) else Decimal(str(value))
-    except (InvalidOperation, ValueError) as exc:
-        raise ProjectionError(f"decimal no representable: {name}") from exc
-    if not decimal.is_finite():
-        raise ProjectionError(f"decimal no representable: {name}")
-    return decimal
+    return parsed
 
 
 def _business(values: Mapping[str, object], *names: str) -> dict[str, object]:
     result: dict[str, object] = {}
     for name in names:
         value = values.get(name)
-        if name.startswith("Fecha") and value not in (None, ""):
+        if is_absent(value):
+            result[name] = None
+        elif name.startswith("Fecha"):
             result[name] = _date(values, name)
         elif name in {"Monto_Reclamado", "Estimacion_Interna"}:
             result[name] = _optional_decimal(values, name)
-        elif value is None:
-            result[name] = None
-        elif isinstance(value, str):
-            result[name] = _text(values, name)
         else:
-            result[name] = value
+            result[name] = _text(values, name)
     return result
 
 
