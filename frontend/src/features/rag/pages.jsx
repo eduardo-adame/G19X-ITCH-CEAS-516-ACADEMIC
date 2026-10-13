@@ -11,6 +11,7 @@ import { isUuid } from './adapters.js'
 import { DocumentViewer, EvidenceCard, RagStateBanner } from './components.jsx'
 import { useRag } from './state.jsx'
 import { suggestedQuestions } from './localInteraction.js'
+import { DocumentCatalog } from '../documents/DocumentCatalog.jsx'
 
 const resultExplanations = Object.freeze({
   EVIDENCIA_INSUFICIENTE: 'Encontré información relacionada, pero la evidencia disponible no es suficiente para responder esta consulta con certeza. Puedes intentar especificar el documento, una fecha, una cláusula o el asunto que buscas.',
@@ -68,14 +69,17 @@ export function RagQueryPage() {
 
 export function RagDocumentPage() {
   const rag = useRag()
+  const session = useSession()
   const [params, setParams] = useSearchParams()
   const id = readQuery(params.toString(), { fragment_id: isUuid }).fragment_id
-  const canonicalQuery = writeQuery(id ? { fragment_id: id } : {}, { fragment_id: isUuid })
+  const fragmentMode = params.has('fragment_id')
+  const canonicalQuery = fragmentMode ? id ? writeQuery({ fragment_id: id }, { fragment_id: isUuid }) : 'fragment_id=' : params.toString()
   const fragment = rag.result?.fragments.find((item) => item.fragmentId === id)
   useEffect(() => {
     if (params.toString() !== canonicalQuery) setParams(canonicalQuery, { replace: true })
   }, [canonicalQuery, params, setParams])
   if (params.toString() !== canonicalQuery) return <Loading label="Preparando el visor seguro…" />
+  if (!fragmentMode) return <DocumentCatalog key={`${session.principal?.id ?? ''}:${session.generation}`} accessPending={rag.accessPending} />
   if (rag.accessPending) return <Loading label="Comprobando acceso al visor…" />
-  return <div className="space-y-8"><PageHeader title="Visor documental" description="Coteja únicamente un fragmento recibido en la consulta actual." actions={<Link className="inline-flex items-center gap-1 text-xs underline" to={rag.result?.contextReferenceId ? `/consulta?context_reference_id=${rag.result.contextReferenceId}` : '/consulta'}><Icon name="back" />Volver a consulta</Link>} />{fragment ? <DocumentViewer fragment={fragment} /> : <EmptyState title="No hay un fragmento disponible" message="Abre el visor desde una consulta autorizada. La recarga no recupera ni vuelve a ejecutar consultas anteriores." />}</div>
+  return <div className="space-y-8"><PageHeader title="Visor documental" description="Coteja únicamente un fragmento recibido en la consulta actual." actions={<div className="flex flex-wrap gap-3"><Link className="inline-flex items-center gap-1 text-xs underline" to={rag.result?.contextReferenceId ? `/consulta?context_reference_id=${rag.result.contextReferenceId}` : '/consulta'}><Icon name="back" />Volver a consulta</Link><Link className="text-xs underline" to="/documentos">Ver documentos autorizados</Link></div>} />{fragment ? <DocumentViewer fragment={fragment} /> : <EmptyState title="No hay un fragmento disponible" message="Abre el visor desde una consulta autorizada. La recarga no recupera ni vuelve a ejecutar consultas anteriores." />}</div>
 }

@@ -1,0 +1,3 @@
+/** Documentos enteramente sintéticos para pruebas del visor independiente. */
+export const metadata = { document_id: 'DOC-SINTETICO', document_version_id: '33333333-3333-4333-8333-333333333333', version_number: 1, document_name: 'Documento sintético', document_type: 'DOCX', source_family: 'CONTRATOS_DOCUMENTOS', document_date: null, representation: 'CONSOLIDATED_TEXT', text_available: true }
+export const fullDocument = { ...metadata, text: 'Inicio del documento sintético.\nContenido completo sintético.\nFinal del documento sintético.', operation_id: '11111111-1111-4111-8111-111111111111', correlation_id: '22222222-2222-4222-8222-222222222222' }

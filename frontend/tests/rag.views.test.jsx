@@ -41,6 +41,6 @@ describe('SRS_REQUIRED: consulta y visor autorizados', () => {
 })
 describe('ROBUSTNESS: forma segura y accesibilidad', () => {
   it('el banner no usa color como único estado', () => { render(<RagStateBanner state="SIN_AUTORIZACION" />); expect(screen.getByRole('status')).toHaveTextContent('Sin autorización') })
-  it('denegación durante revalidación no abre visor ni dispara POST automático', async () => { const manager = mount({ path: '/documentos', revalidate: async () => false }); expect(await screen.findByText('No hay un fragmento disponible')).toBeVisible(); expect(manager.client.request).not.toHaveBeenCalled() })
+  it('denegación durante revalidación no abre visor ni dispara POST automático', async () => { const manager = mount({ path: '/documentos', revalidate: async () => false }); expect(await screen.findByRole('alert')).toHaveTextContent('Sin autorización'); expect(manager.client.request).not.toHaveBeenCalled() })
   it('rechaza ID de visor desconocido sin devolver otros fragmentos', async () => { const manager = mount({ path: '/documentos?fragment_id=invalido' }); expect(await screen.findByText('No hay un fragmento disponible')).toBeVisible(); expect(manager.client.request).not.toHaveBeenCalled() })
 })

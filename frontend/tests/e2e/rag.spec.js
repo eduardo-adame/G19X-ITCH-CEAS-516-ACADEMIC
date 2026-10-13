@@ -99,9 +99,10 @@ test.describe('RAG — Citas y metadata nullable', () => {
 })
 
 test.describe('RAG — Visor documental', () => {
-  test('el visor sin fragmento activo muestra estado vacío', async ({ page }) => {
+  test('el visor independiente sin documentos autorizados muestra catálogo vacío', async ({ page }) => {
+    await page.route('**/api/documents/viewer?*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], next_cursor: null }) }))
     await page.goto('/documentos')
-    await expect(page.getByText(/no hay un fragmento disponible/i)).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/sin documentos disponibles/i)).toBeVisible({ timeout: 8000 })
   })
 })
 

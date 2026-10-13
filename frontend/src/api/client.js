@@ -13,7 +13,8 @@ export function createApiClient({ fetchImpl = (...args) => fetch(...args), getSe
     if (!recovery) recovery = Promise.resolve().then(recover).finally(() => { recovery = null })
     return recovery
   }
-  async function request(path, { method = 'GET', body, signal, headers = {}, anonymous = false, recoverSession = true, revalidateOnForbidden = true, accessToken, timeout = 420000, acceptStatuses = [] } = {}) {
+  async function request(path, { method = 'GET', body, signal, headers = {}, anonymous = false, recoverSession = true, revalidateOnForbidden = true, accessToken, timeout = 420000, acceptStatuses = [], responseType = 'json' } = {}) {
+    if (!['json', 'blob'].includes(responseType)) throw new ApiError(422)
     if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || /[\r\n\\#]/.test(path) || !new URL(`/api${path}`, 'http://localhost').pathname.startsWith('/api/')) throw new ApiError(422)
     const initial = getSession()
     const controller = new AbortController()
@@ -50,7 +51,7 @@ export function createApiClient({ fetchImpl = (...args) => fetch(...args), getSe
         if (!response.ok && !acceptStatuses.includes(response.status)) throw new ApiError(response.status)
         if (response.status === 204) return null
         let data
-        try { data = await response.json() } catch { throw new ApiError(503) }
+        try { data = responseType === 'blob' ? await response.blob() : await response.json() } catch { throw new ApiError(503) }
         if (controller.signal.aborted || (!anonymous && initial.generation !== getSession().generation)) throw new ApiError(0, { cancelled: true })
         return data
       }

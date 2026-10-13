@@ -14,12 +14,14 @@ from app.documents.http_service import (
 )
 from app.documents.models import DocumentProcessingError
 from app.documents.repository import DocumentsRepository
+from app.documents.viewer_api import router as viewer_router
 from app.security.api import current_principal, security_settings, service_for
 from app.security.models import AuthenticatedPrincipal, AuditPersistenceError, SecurityError
 from app.security.service import SecurityService
 
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+router.include_router(viewer_router)
 
 
 def document_http_service_for(request: Request, security: SecurityService = Depends(service_for),

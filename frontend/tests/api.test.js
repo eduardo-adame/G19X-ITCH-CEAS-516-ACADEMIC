@@ -9,6 +9,36 @@ const token = { access_token: 'acceso-sintetico', token_type: 'bearer' }
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { resolve, promise } }
 afterEach(() => vi.useRealTimers())
 
+describe('SRS_REQUIRED: transporte Blob con los mismos controles de sesión', () => {
+  it('Blob conserva bearer, no-store y la respuesta JSON por defecto', async () => {
+    const blob = new Blob(['%PDF-sintetico'], { type: 'application/pdf' })
+    const fetchImpl = vi.fn(async () => ({ ...response(200, { items: [] }), blob: async () => blob }))
+    const client = createApiClient({ fetchImpl, getSession: () => ({ token: 'sintetico', generation: 1 }) })
+    expect(await client.request('/documents/viewer/DOC/original?version_id=sintetico', { responseType: 'blob' })).toBe(blob)
+    expect(await client.request('/dashboard/kpis')).toEqual({ items: [] })
+    expect(fetchImpl.mock.calls[0][1]).toMatchObject({ cache: 'no-store', redirect: 'error', credentials: 'same-origin' })
+    expect(fetchImpl.mock.calls[0][1].headers.get('Authorization')).toBe('Bearer sintetico')
+  })
+  it.each(['html', 'text', null])('rechaza responseType no permitido%s sin red', async (responseType) => {
+    const fetchImpl = vi.fn(); const client = createApiClient({ fetchImpl })
+    await expect(client.request('/documents/viewer', { responseType })).rejects.toMatchObject({ status: 422 }); expect(fetchImpl).not.toHaveBeenCalled()
+  })
+  it.each(['generacion', 'abort'])('descarta Blob decodificado tras %s', async (change) => {
+    const decoding = deferred(); let generation = 1; const controller = new AbortController()
+    const blobMethod = vi.fn(() => decoding.promise)
+    const client = createApiClient({ fetchImpl: async () => ({ ...response(200), blob: blobMethod }), getSession: () => ({ token: 'sintetico', generation }) })
+    const request = client.request('/documents/viewer/DOC/original', { responseType: 'blob', signal: controller.signal })
+    await vi.waitFor(() => expect(blobMethod).toHaveBeenCalled())
+    if (change === 'generacion') generation++; else controller.abort()
+    decoding.resolve(new Blob(['sintetico'], { type: 'application/pdf' })); await expect(request).rejects.toMatchObject({ cancelled: true })
+  })
+  it('rechazo403 no decodifica bytes y usa revalidación normal', async () => {
+    const blob = vi.fn(); const onForbidden = vi.fn(async () => {})
+    const client = createApiClient({ fetchImpl: async () => ({ ...response(403), blob }), onForbidden, getSession: () => ({ token: 'sintetico', generation: 1 }) })
+    await expect(client.request('/documents/viewer/DOC/original', { responseType: 'blob' })).rejects.toMatchObject({ status: 403 }); expect(blob).not.toHaveBeenCalled(); expect(onForbidden).toHaveBeenCalledOnce()
+  })
+})
+
 describe('SRS_REQUIRED: transporte y sesión', () => {
   it('conserva prefijo, bearer y cookie sin caché ni redirects', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(200, { items: [] }))
