@@ -131,7 +131,8 @@ services:
       POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en producto/.env}
       POSTGRES_PASSWORD: ${RUNTIME_POSTGRES_PASSWORD:?RUNTIME_POSTGRES_PASSWORD debe definirse en producto/.env}
       RUNTIME_POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en producto/.env}
-      POSTGRES_DB: ${POSTGRES_DB:-riesgo_legal}
+      # Separar la base del backend de la base inicial del servidor evita perder un entorno existente al recrear la aplicación.
+      POSTGRES_DB: ${RUNTIME_POSTGRES_DB:-${POSTGRES_DB:-riesgo_legal}}
       AUDIT_POSTGRES_USER: ${AUDIT_POSTGRES_USER:-}
       AUDIT_POSTGRES_PASSWORD: ${AUDIT_POSTGRES_PASSWORD:-}
       # --- Modelo de embeddings -------------------------------------------------
