@@ -151,6 +151,8 @@ postgres-data/
 *.dump
 data/local/
 tmp/
+# Almacenamiento de ingesta generado al ejecutar utilidades fuera del contenedor.
+backend/.data/
 
 # ------------------------------------------------------------------------------
 # 7. DOCKER / VOLÚMENES LOCALES
