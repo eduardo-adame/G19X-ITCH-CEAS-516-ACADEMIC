@@ -27,4 +27,3 @@ export function adaptDocument(dto) {
   if (!(dto.text === null || typeof dto.text === 'string') || dto.text_available !== available || !isUuid(dto.operation_id) || !isUuid(dto.correlation_id)) fail()
   return Object.freeze({ ...item, text: dto.text, operationId: dto.operation_id, correlationId: dto.correlation_id })
 }
-

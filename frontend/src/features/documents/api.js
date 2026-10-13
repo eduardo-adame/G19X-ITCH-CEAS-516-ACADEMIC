@@ -83,4 +83,3 @@ export function useViewerAccess() {
   const compatible = session.status === 'authenticated' && verification?.owner === owner && verification?.location === location.key
   return compatible ? verification : { pending: true, allowed: false }
 }
-
