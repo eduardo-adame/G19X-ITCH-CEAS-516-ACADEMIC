@@ -24,11 +24,9 @@ export function Citation({ citation }) {
 }
 export function EvidenceCard({ fragment, handle }) {
   return <article className="min-w-0 rounded-panel border border-border bg-surface p-5">
-    <h3 className="mb-3 break-words text-sm font-semibold">{handle ? `[${handle}] ` : ''}{fragment.documentName}</h3>
-    <p className="mb-3 text-xs text-muted">{fragment.usage === 'EVIDENCE' ? 'Fragmento utilizado como evidencia' : 'Fragmento disponible como referencia'}</p>
-    <blockquote className="mb-4 whitespace-pre-wrap break-words border-l-2 border-border bg-secondary p-3 text-[13px]">{fragment.text}</blockquote>
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3"><div><h3 className="break-words text-sm font-semibold">{handle ? `[${handle}] ` : ''}{fragment.documentName}</h3><p className="mt-1 text-xs text-muted">{fragment.usage === 'EVIDENCE' ? 'Fragmento utilizado como evidencia' : 'Fragmento disponible como referencia'}</p></div><Link className="text-xs font-medium underline" to={`/documentos?fragment_id=${encodeURIComponent(fragment.fragmentId)}`}>Ver fragmento en visor</Link></div>
+    <blockquote className="mb-4 whitespace-pre-wrap break-words border-l-2 border-[var(--text-muted)] bg-secondary p-3 text-[13px] italic">{fragment.text}</blockquote>
     <Citation citation={fragment} />
-    <Link className="mt-4 inline-flex text-xs font-medium underline" to={`/documentos?fragment_id=${encodeURIComponent(fragment.fragmentId)}`}>Ver fragmento en visor</Link>
   </article>
 }
 export function DocumentViewer({ fragment }) {

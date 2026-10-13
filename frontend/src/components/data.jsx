@@ -5,7 +5,7 @@ export function Badge({ variant = 'neutral', children }) {
   const semantic = ['critical', 'warning', 'success', 'information'].includes(variant)
   return <span className="badge" style={semantic ? { color: `var(--${variant})`, background: `var(--${variant}-subtle)`, borderColor: `var(--${variant}-border)` } : undefined}>{children}</span>
 }
-export function RiskBadge({ level }) { return <Badge variant={{ Alto: 'critical', Medio: 'warning', Bajo: 'success' }[level] || 'neutral'}>{level}</Badge> }
+export function RiskBadge({ level }) { return <Badge variant={{ Alto: 'critical', Medio: 'warning', Bajo: 'success' }[level] || 'neutral'}><span aria-hidden="true" className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current opacity-80" />{level}</Badge> }
 export function KpiMetric({ label, displayValue, shortContext, delta, previousContext, state, accessibleValue, valueKind, entryIndex }) {
   const compact = valueKind === 'state' || (valueKind === undefined && !/^[\d$−-]/.test(displayValue || ''))
   const expandedValue = accessibleValue && accessibleValue !== displayValue
