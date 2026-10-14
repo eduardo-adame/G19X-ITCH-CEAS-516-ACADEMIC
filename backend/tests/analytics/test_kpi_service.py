@@ -17,6 +17,7 @@ class _Repository:
         self.runs, self.observations = {}, {}
         self.contracts = []; self.litigations = []; self.compliance = []; self.incidents = []; self.matters = []; self.ocr = []
         self.known_incidents = []; self.known_matters = []
+        self.covered = {"CONTRATOS_DOCUMENTOS", "LITIGIOS", "CUMPLIMIENTO"}
 
     @contextmanager
     def transaction(self): yield self
@@ -39,6 +40,7 @@ class _Repository:
     def matter_rows(self, *_): return self.matters
     def matter_dimensions(self, *_): return self.known_matters or [{"tipo_asunto": item["tipo_asunto"], "estado": item["estado"]} for item in self.matters]
     def ocr_final_rows(self, *_): return self.ocr
+    def source_coverage(self, _, family, as_of): return family in self.covered
 
 
 def _request(*codes: str, as_of: date = date(2026, 1, 15)):
@@ -96,3 +98,24 @@ def test_projection_routing_only_accepts_effective_incorporation():
     assert requested_kpis_for_projection((projection("INCIDENTE", True),)) == ("KPI-CN-03",)
     assert requested_kpis_for_projection((projection("ASUNTO", True),)) == ("KPI-EO-01",)
     assert requested_kpis_for_projection((projection("CONTRATO", False),)) == ()
+
+
+@pytest.mark.parametrize("code,family", [("KPI-RC-03", "CONTRATOS_DOCUMENTOS"), ("KPI-CN-02", "CUMPLIMIENTO")])
+def test_snapshot_sin_cobertura_de_fuente_al_corte_es_no_disponible(code, family):
+    """SRS v0.22: sin carga aceptada de la familia antes del corte no se afirma cero."""
+    repo = _Repository(); repo.covered.discard(family)
+    result = _service(repo).recalculate(_request(code), _context())
+    assert [(item.value, item.availability) for item in result.observations] == [(None, "NO_DISPONIBLE")]
+
+
+def test_li01_sin_cobertura_emite_las_tres_severidades_no_disponibles():
+    repo = _Repository(); repo.covered.discard("LITIGIOS")
+    result = _service(repo).recalculate(_request("KPI-LI-01"), _context())
+    assert sorted((item.dimensions["nivel_severidad"], item.value, item.availability) for item in result.observations) == [("alto", None, "NO_DISPONIBLE"), ("bajo", None, "NO_DISPONIBLE"), ("medio", None, "NO_DISPONIBLE")]
+
+
+@pytest.mark.parametrize("code", ["KPI-RC-03", "KPI-CN-02"])
+def test_snapshot_con_cobertura_y_cero_elegibles_es_cero(code):
+    """Fuente con cobertura válida al corte y ningún elemento elegible → 0 (RF-031, RF-034)."""
+    result = _service(_Repository()).recalculate(_request(code), _context())
+    assert [(item.value, item.availability) for item in result.observations] == [(Decimal(0), "DISPONIBLE")]

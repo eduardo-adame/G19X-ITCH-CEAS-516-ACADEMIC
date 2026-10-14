@@ -150,7 +150,8 @@ def test_kpi_cd03_query_uses_kpi_read_without_extra_role_restriction(database) -
     assert _rows(engine, "SELECT id FROM audit.event WHERE correlation_id=:correlation", correlation=context.correlation_id) == []
 
 
-def _source(engine, *, family: str = "LITIGIOS"):
+def _source(engine, *, family: str = "LITIGIOS", received_at: datetime = datetime(2026, 1, 1, 12, tzinfo=UTC)):
+    """Registro fuente con carga tabular aceptada recibida en `received_at` (cobertura de la familia, SRS v0.22)."""
     object_id, file_id, source_id = uuid4(), uuid4(), uuid4()
     with engine.begin() as connection:
         connection.execute(sa.text("""INSERT INTO app.stored_object (id, storage_kind, locator, sha256, mime_type, byte_size, original_name)
@@ -159,11 +160,11 @@ def _source(engine, *, family: str = "LITIGIOS"):
         connection.execute(sa.text("""INSERT INTO app.ingest_file
             (id, stored_object_id, source_family, exchange_format, state, operation_id, correlation_id,
              declared_extension, detected_format, format_classification, technical_result,
-             declared_name, source_locator, source_revision, actor_identifier, content_sha256)
+             declared_name, source_locator, source_revision, actor_identifier, content_sha256, received_at)
             VALUES (:id, :object_id, :family, 'CSV', 'COMPLETADO', :operation, :correlation,
-                    '.csv', 'CSV', 'SUPPORTED', 'ACCEPTED', 'analytics.csv', :locator, 1, 'test', :digest)"""),
+                    '.csv', 'CSV', 'SUPPORTED', 'ACCEPTED', 'analytics.csv', :locator, 1, 'test', :digest, :received)"""),
             {"id": file_id, "object_id": object_id, "family": family, "operation": uuid4(),
-             "correlation": uuid4(), "locator": f"test/{file_id}", "digest": bytes(32)})
+             "correlation": uuid4(), "locator": f"test/{file_id}", "digest": bytes(32), "received": received_at})
         connection.execute(sa.text("""INSERT INTO app.source_record
             (id, ingest_file_id, row_number, source_sheet, raw_payload, record_sha256, extraction_state)
             VALUES (:id, :file_id, 1, 'CSV', '{}'::jsonb, :digest, 'EXTRAIDO')"""),
@@ -632,3 +633,20 @@ def test_intento_de_recalculo_historico_no_altera_el_analisis_vigente(database) 
     assert second.input_fingerprint_sha256 == first.input_fingerprint_sha256
     completed = _rows(engine, "SELECT id FROM app.analytic_run WHERE run_type='PROACTIVE_ANALYSIS' AND state='COMPLETED'")
     assert [row["id"] for row in completed] == [first.analytic_run_id]
+
+
+@pytest.mark.requires_db
+def test_snapshot_sin_carga_aceptada_antes_del_corte_es_no_disponible(database) -> None:
+    """SRS v0.22: la familia sin cobertura al corte da No disponible; con cobertura y cero elegibles da 0."""
+    engine, conninfo = database
+    with engine.begin() as connection:
+        connection.execute(sa.text("TRUNCATE app.ingest_file, app.source_record, app.contract_record, app.litigation, app.compliance_obligation CASCADE"))
+    _service(conninfo).recalculate(_month(1, codes=("KPI-RC-03", "KPI-LI-01", "KPI-CN-02")), _context())
+    rows = _rows(engine, "SELECT kpi_code, value, availability FROM app.kpi_observation ORDER BY kpi_code, dimensions::text")
+    assert len(rows) == 5 and all((row["value"], row["availability"]) == (None, "NO_DISPONIBLE") for row in rows)
+    # Carga aceptada de cada familia antes del corte, sin elementos elegibles: el snapshot es 0.
+    for family in ("CONTRATOS_DOCUMENTOS", "LITIGIOS", "CUMPLIMIENTO"):
+        _source(engine, family=family, received_at=datetime(2026, 2, 3, tzinfo=UTC))
+    _service(conninfo).recalculate(_month(2, codes=("KPI-RC-03", "KPI-LI-01", "KPI-CN-02")), _context())
+    february = _rows(engine, "SELECT value, availability FROM app.kpi_observation WHERE period_start='2026-02-01'")
+    assert len(february) == 5 and all((row["value"], row["availability"]) == (0, "DISPONIBLE") for row in february)

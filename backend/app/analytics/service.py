@@ -482,11 +482,21 @@ def _rc01(repo, connection, request):
             values.append(Decimal((row["fecha_firma"] - row["fecha_solicitud"]).days))
     return [_unavailable("KPI-RC-01", request)] if not values else [_available("KPI-RC-01", request, sum(values) / Decimal(len(values)))]
 
+def _uncovered(code, request, dimension=None, values=()):
+    """Snapshot sin cobertura de su fuente al corte: No disponible, nunca cero."""
+    if dimension is None:
+        return [_unavailable(code, request)]
+    return [KpiObservationResult(code, request.period_start, request.period_end, {dimension: value}, None, "NO_DISPONIBLE", request.as_of_date) for value in values]
+
 def _rc03(repo, connection, request):
+    if not repo.source_coverage(connection, "CONTRATOS_DOCUMENTOS", request.as_of_date):
+        return _uncovered("KPI-RC-03", request)
     count = sum(1 for row in repo.contracts_snapshot(connection, request.as_of_date) if row["estado_revision"] == "No iniciado" and request.as_of_date <= row["fecha_vencimiento"] <= request.as_of_date + timedelta(days=60))
     return [_available("KPI-RC-03", request, Decimal(count))]
 
 def _li01(repo, connection, request):
+    if not repo.source_coverage(connection, "LITIGIOS", request.as_of_date):
+        return _uncovered("KPI-LI-01", request, "nivel_severidad", ("alto", "medio", "bajo"))
     totals = {severity: Decimal(0) for severity in ("alto", "medio", "bajo")}
     for row in repo.active_litigations(connection, request.as_of_date):
         severity = row["nivel_severidad"]
@@ -499,6 +509,8 @@ def _li05(repo, connection, request):
     return [_available("KPI-LI-05", request, Decimal(len(repo.litigation_rows(connection, request.period_start, request.period_end))))]
 
 def _cn02(repo, connection, request):
+    if not repo.source_coverage(connection, "CUMPLIMIENTO", request.as_of_date):
+        return _uncovered("KPI-CN-02", request)
     count = sum(1 for row in repo.compliance_snapshot(connection, request.as_of_date) if row["fecha_limite"] < request.as_of_date and row["evidencia_cumplimiento"] is None)
     return [_available("KPI-CN-02", request, Decimal(count))]
 

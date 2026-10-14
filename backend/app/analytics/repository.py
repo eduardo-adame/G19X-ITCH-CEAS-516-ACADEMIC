@@ -112,6 +112,20 @@ class AnalyticsRepository:
         return connection.execute("SELECT * FROM app.contract_record WHERE fecha_firma BETWEEN %s AND %s", (period_start, period_end)).fetchall()
 
     @staticmethod
+    def source_coverage(connection, family: str, as_of: date) -> bool:
+        """Cobertura de la fuente al corte: existe una carga tabular aceptada de la familia recibida hasta el fin del día as_of (UTC).
+
+        Cero filas en una tabla no prueban cobertura; sin carga aceptada previa al corte el
+        snapshot no puede afirmarse y es No disponible (aclaración SRS v0.22).
+        """
+        return bool(connection.execute(
+            """SELECT EXISTS (SELECT 1 FROM app.ingest_file
+                   WHERE source_family = %s AND exchange_format IN ('CSV', 'XLSX') AND technical_result = 'ACCEPTED'
+                     AND received_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC') AS covered""",
+            (family, as_of),
+        ).fetchone()["covered"])
+
+    @staticmethod
     def contracts_snapshot(connection, as_of: date | None = None):
         # El corte incluye lo incorporado hasta el fin del día as_of (UTC); los registros no se actualizan en sitio.
         if as_of is None:
