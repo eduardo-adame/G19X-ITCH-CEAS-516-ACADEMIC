@@ -133,7 +133,14 @@ class KpiIntegrationService:
                 request = KpiRecalculationRequest(
                     tuple(sorted(KPI_CODES)), _month_start(reference), _month_end(reference), reference
                 )
-                outcome = self._create_job(connection, operation_id, correlation_id, (request,), "SCHEDULED")
+                # Los KPI por fecha de negocio deben tener resultado en cada mes de su
+                # rango (0 o No disponible según el RF); el ciclo diario materializa los
+                # meses anteriores que nunca se calcularon.
+                backfill = tuple(
+                    KpiRecalculationRequest(tuple(sorted(codes)), month, _month_end(month), _month_end(month))
+                    for month, codes in sorted(self.repository.incomplete_business_months(connection, before=_month_start(reference)).items())
+                )
+                outcome = self._create_job(connection, operation_id, correlation_id, (*backfill, request), "SCHEDULED")
         return self._execute_if_needed(outcome)
 
     def _materialize_reinjection_job(self, connection, *, operation_id: UUID, correlation_id: UUID, reinjected: ReinjectionValidationResult, actor) -> KpiJobOutcome:

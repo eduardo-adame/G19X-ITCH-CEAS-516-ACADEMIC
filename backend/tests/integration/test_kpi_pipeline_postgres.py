@@ -434,3 +434,106 @@ def test_late_litigation_reinjection_refreshes_monthly_count_and_preserves_snaps
         ), {"id": correlation_id}).mappings().all()
         assert {row["action"] for row in audit} >= {"QUARANTINE_REINJECT", "KPI_RECALCULATION"}
         assert not any(row["result"] == "FAILURE" for row in audit)
+
+
+# --- F-08: meses sin registros de los KPI por fecha de negocio ---
+
+def _business_rows(engine, month: int, *, area: str = "Legal", severity: str = "alto") -> None:
+    """Un contrato firmado, un litigio, un incidente y un asunto con fecha de negocio en `month` de 2026."""
+    day = date(2026, month, 10)
+    sources = {family: _seed(engine, family=family)[1] for family in (SourceFamily.CONTRACTS_DOCUMENTS, SourceFamily.LITIGATION, SourceFamily.COMPLIANCE)}
+    with engine.begin() as connection:
+        connection.execute(sa.text("""INSERT INTO app.contract_record (id_contrato, fecha_solicitud, fecha_firma, fecha_vencimiento, estado_revision, payload_sha256, source_record_id)
+            VALUES (:id, :requested, :signed, '2027-01-01', 'En revisión', :sha, :source)"""),
+            {"id": f"C-{uuid4().hex[:8]}", "requested": day - timedelta(days=4), "signed": day, "sha": bytes(32), "source": sources[SourceFamily.CONTRACTS_DOCUMENTS]})
+        connection.execute(sa.text("""INSERT INTO app.litigation (id_litigio, fecha_apertura, estado, nivel_severidad, payload_sha256, source_record_id)
+            VALUES (:id, :day, 'Activo', 'bajo', :sha, :source)"""),
+            {"id": f"L-{uuid4().hex[:8]}", "day": day, "sha": bytes(32), "source": sources[SourceFamily.LITIGATION]})
+        connection.execute(sa.text("""INSERT INTO app.incident (id_incidente, fecha_evento, area, nivel_severidad, payload_sha256, source_record_id)
+            VALUES (:id, :day, :area, :severity, :sha, :source)"""),
+            {"id": f"I-{uuid4().hex[:8]}", "day": day, "area": area, "severity": severity, "sha": bytes(32), "source": sources[SourceFamily.COMPLIANCE]})
+        matter = f"A-{uuid4().hex[:8]}"
+        connection.execute(sa.text("""INSERT INTO app.legal_matter (id_asunto, tipo_asunto, estado, fecha, source_entity_type, source_business_id, payload_sha256, source_record_id)
+            VALUES (:id, 'Auditoría', 'Abierto', :day, 'AUDITORIA_INTERNA', :id, :sha, :source)"""),
+            {"id": matter, "day": day, "sha": bytes(32), "source": sources[SourceFamily.COMPLIANCE]})
+
+
+def _observations(engine):
+    with engine.connect() as connection:
+        rows = connection.execute(sa.text("SELECT kpi_code, period_start, dimensions, value, availability FROM app.kpi_observation ORDER BY kpi_code, period_start, dimensions::text")).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _business_month(engine, conninfo, month: int) -> None:
+    from app.analytics.models import KpiRecalculationContext, KpiRecalculationRequest
+    start = date(2026, month, 1)
+    end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    KPIRecalculationService(AnalyticsRepository(conninfo), SecurityRepository(conninfo)).recalculate(
+        KpiRecalculationRequest(("KPI-CN-03", "KPI-EO-01", "KPI-LI-05", "KPI-RC-01"), start, end, end),
+        KpiRecalculationContext(uuid4(), uuid4(), process_identifier="kpi-test"),
+    )
+
+
+def _job_requests(engine, operation_id):
+    with engine.connect() as connection:
+        refs = connection.execute(sa.text("SELECT result_references FROM app.job_run WHERE operation_id=:id"), {"id": operation_id}).scalar_one()
+    return [(item["period_start"], tuple(item["kpi_codes"])) for item in refs["requests"]]
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_daily_cycle_materializes_intermediate_month_without_records(database) -> None:
+    """SRS_REQUIRED (RF-030, RF-033, RF-035, RF-036): febrero sin registros entre enero y marzo."""
+    engine, conninfo = database
+    with engine.begin() as connection:
+        connection.execute(sa.text("TRUNCATE app.litigation, app.incident, app.legal_matter, app.compliance_obligation CASCADE"))
+    _business_rows(engine, 1)
+    _business_rows(engine, 3)
+    # Enero y marzo ya se calcularon al proyectarse sus registros; febrero nunca.
+    _business_month(engine, conninfo, 1)
+    _business_month(engine, conninfo, 3)
+    _, integration, _ = _services(conninfo)
+    operation_id = uuid4()
+    integration.schedule(operation_id=operation_id, correlation_id=uuid4(), reference=date(2026, 4, 10))
+
+    business = ("KPI-CN-03", "KPI-EO-01", "KPI-LI-05", "KPI-RC-01")
+    assert _job_requests(engine, operation_id)[:-1] == [("2026-02-01", business)]
+    by_key = {(row["kpi_code"], row["period_start"]): row for row in _observations(engine) if row["kpi_code"] in business}
+    february = date(2026, 2, 1)
+    assert (by_key[("KPI-LI-05", february)]["value"], by_key[("KPI-LI-05", february)]["availability"]) == (0, "DISPONIBLE")
+    assert (by_key[("KPI-CN-03", february)]["dimensions"], by_key[("KPI-CN-03", february)]["value"]) == ({"area": "Legal", "nivel_severidad": "alto"}, 0)
+    assert (by_key[("KPI-EO-01", february)]["dimensions"], by_key[("KPI-EO-01", february)]["value"]) == ({"tipo_asunto": "Auditoría", "estado": "Abierto"}, 0)
+    # Un promedio sin registros es No disponible (RF-030), nunca cero.
+    assert (by_key[("KPI-RC-01", february)]["value"], by_key[("KPI-RC-01", february)]["availability"]) == (None, "NO_DISPONIBLE")
+    observations = _observations(engine)
+    assert not any(row["period_start"] < date(2026, 1, 1) for row in observations)
+    snapshot_months = {row["period_start"] for row in observations if row["kpi_code"] in {"KPI-RC-03", "KPI-LI-01", "KPI-CN-02", "KPI-CD-03"}}
+    assert snapshot_months == {date(2026, 4, 1)}
+
+    # Idempotencia: con todos los meses completos, el siguiente ciclo solo calcula su mes.
+    second = uuid4()
+    integration.schedule(operation_id=second, correlation_id=uuid4(), reference=date(2026, 4, 11))
+    assert [start for start, _ in _job_requests(engine, second)] == ["2026-04-01"]
+
+    # Un grupo nuevo de CN-03 completa con 0 los meses anteriores de su rango.
+    _business_rows(engine, 3, area="Operaciones", severity="bajo")
+    third = uuid4()
+    integration.schedule(operation_id=third, correlation_id=uuid4(), reference=date(2026, 4, 12))
+    assert {start for start, codes in _job_requests(engine, third)[:-1] if "KPI-CN-03" in codes} == {"2026-01-01", "2026-02-01", "2026-03-01"}
+    groups = {(row["period_start"], row["dimensions"]["area"]): row["value"] for row in _observations(engine) if row["kpi_code"] == "KPI-CN-03"}
+    assert groups[(date(2026, 1, 1), "Operaciones")] == 0 and groups[(date(2026, 2, 1), "Operaciones")] == 0
+    assert groups[(date(2026, 3, 1), "Operaciones")] == 1 and groups[(date(2026, 3, 1), "Legal")] == 1
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_daily_cycle_without_business_records_creates_no_history(database) -> None:
+    """ROBUSTNESS: sin registros de negocio no se fabrican meses previos."""
+    engine, conninfo = database
+    with engine.begin() as connection:
+        connection.execute(sa.text("TRUNCATE app.litigation, app.incident, app.legal_matter, app.compliance_obligation CASCADE"))
+    _, integration, _ = _services(conninfo)
+    operation_id = uuid4()
+    integration.schedule(operation_id=operation_id, correlation_id=uuid4(), reference=date(2026, 4, 10))
+    assert [start for start, _ in _job_requests(engine, operation_id)] == ["2026-04-01"]
+    assert {row["period_start"] for row in _observations(engine)} == {date(2026, 4, 1)}

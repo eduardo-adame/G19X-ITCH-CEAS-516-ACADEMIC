@@ -10,6 +10,15 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.rows import dict_row
 
+# KPI agregados por fecha de negocio (RF-030, RF-033, RF-035, RF-036): fuente,
+# columna de fecha y dimensiones de agrupación conocidas.
+_BUSINESS_DATE_SOURCES = {
+    "KPI-RC-01": ("contract_record", "fecha_firma", None),
+    "KPI-LI-05": ("litigation", "fecha_apertura", None),
+    "KPI-CN-03": ("incident", "fecha_evento", ("area", "nivel_severidad")),
+    "KPI-EO-01": ("legal_matter", "fecha", ("tipo_asunto", "estado")),
+}
+
 
 class KpiIntegrationRepository:
     def __init__(self, conninfo: str) -> None:
@@ -100,6 +109,37 @@ class KpiIntegrationRepository:
             (business_id,),
         ).fetchone()
         return None if row is None else row["value"]
+
+    @staticmethod
+    def incomplete_business_months(connection, *, before: date) -> dict[date, set[str]]:
+        """Meses previos a `before` sin observación de un KPI por fecha de negocio.
+
+        El rango de cada KPI empieza en el primer mes con registros de su fuente:
+        no se fabrican meses anteriores a los datos. En CN-03 y EO-01 un mes también
+        está incompleto si le falta algún grupo conocido. Los snapshot no se
+        completan: sin cálculo a su corte permanecen sin observación.
+        """
+        missing: dict[date, set[str]] = {}
+        for code, (table, column, groups) in _BUSINESS_DATE_SOURCES.items():
+            if groups is None:
+                incomplete = "NOT EXISTS (SELECT 1 FROM app.kpi_observation o WHERE o.kpi_code=%s AND o.period_start=m.month::date)"
+            else:
+                first, second = groups
+                incomplete = (
+                    f"EXISTS (SELECT 1 FROM (SELECT DISTINCT {first}, {second} FROM app.{table} WHERE {first} IS NOT NULL AND {second} IS NOT NULL) g"
+                    f" WHERE NOT EXISTS (SELECT 1 FROM app.kpi_observation o WHERE o.kpi_code=%s AND o.period_start=m.month::date"
+                    f" AND o.dimensions->>'{first}'=g.{first} AND o.dimensions->>'{second}'=g.{second}))"
+                )
+            rows = connection.execute(
+                f"""SELECT m.month::date AS month
+                      FROM generate_series((SELECT date_trunc('month', min({column})) FROM app.{table}),
+                                           date_trunc('month', %s::date) - interval '1 month', interval '1 month') AS m(month)
+                     WHERE {incomplete}""",
+                (before, code),
+            ).fetchall()
+            for row in rows:
+                missing.setdefault(row["month"], set()).add(code)
+        return missing
 
     @staticmethod
     def final_ocr_for_operation(connection, operation_id: UUID):
