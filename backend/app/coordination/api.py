@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Settings, get_settings
 from app.coordination.repository import CoordinationRepository
+from app.coordination.windows import ScheduledWindowError, validate_scheduled_window
 from app.coordination.kpi_integration import KpiIntegrationService, derive_scheduled_operation_id
 from app.coordination.kpi_repository import KpiIntegrationRepository
 from app.coordination.proactive_integration import (
@@ -137,8 +138,10 @@ def scheduled_kpi_recalculation(
     security: SecurityService = Depends(service_for),
     settings: Settings = Depends(security_settings),
 ) -> KpiJobResponse:
-    if payload.data_interval_end <= payload.data_interval_start:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Intervalo de datos no válido")
+    try:
+        validate_scheduled_window(payload.data_interval_start, payload.data_interval_end)
+    except ScheduledWindowError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Intervalo de datos no válido") from None
     try:
         correlation_id = UUID(payload.correlation_id) if payload.correlation_id else uuid5(
             UUID("8a5d92af-79e4-4644-8752-cc02e8f52c4b"),
@@ -176,6 +179,7 @@ def scheduled_proactive_analysis(
 ) -> ProactiveJobResponse:
     del principal
     try:
+        validate_scheduled_window(payload.data_interval_start, payload.data_interval_end)
         start, end = canonical_interval(
             payload.data_interval_start,
             payload.data_interval_end,
