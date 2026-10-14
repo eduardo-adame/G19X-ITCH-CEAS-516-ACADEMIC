@@ -53,9 +53,26 @@ def handles(fragments: Sequence[RankedFragment]) -> tuple[str, ...]:
     return tuple(f"E{position}" for position in range(1, len(fragments) + 1))
 
 
+def split_citable_evidence(
+    fragments: Sequence[RankedFragment],
+) -> tuple[tuple[RankedFragment, ...], tuple[RankedFragment, ...]]:
+    """Separa la evidencia citable para el Estado 1 de la que solo puede servir de referencia.
+
+    Un fragmento sin metadatos mínimos de citación (RF-053, F-03) sigue autorizado y recuperable,
+    pero no se envía al proveedor: así una respuesta SUPPORTED solo puede apoyarse en evidencia
+    apta para el Estado 1. No se infieren metadatos faltantes. Conserva el orden recibido.
+    """
+    citable = tuple(item for item in fragments if item.citation.complete)
+    reference_only = tuple(item for item in fragments if not item.citation.complete)
+    return citable, reference_only
+
+
 def build_messages(query: str, fragments: Sequence[RankedFragment]) -> tuple[dict[str, str], ...]:
     if not fragments or len(fragments) > _MAX_FRAGMENTS:
         raise ValueError("conjunto de evidencia no válido")
+    if not all(item.citation.complete for item in fragments):
+        # Defensa: la evidencia sin cita completa nunca llega al proveedor.
+        raise ValueError("evidencia no citable en la solicitud al proveedor")
     parts = [f"Consulta: {query}", "Evidencia autorizada:"]
     for handle, fragment in zip(handles(fragments), fragments):
         citation = fragment.citation
@@ -69,6 +86,8 @@ def build_messages(query: str, fragments: Sequence[RankedFragment]) -> tuple[dic
 
 def response_format(fragments: Sequence[RankedFragment]) -> dict:
     """Esquema estricto por solicitud: los handles admitidos son exactamente los entregados."""
+    if not fragments or not all(item.citation.complete for item in fragments):
+        raise ValueError("evidencia no citable en el esquema de respuesta")
     return {
         "type": "json_schema",
         "json_schema": {

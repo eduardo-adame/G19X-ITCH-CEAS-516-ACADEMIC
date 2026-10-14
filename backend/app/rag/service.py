@@ -8,7 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.rag.gates import is_decision_request
-from app.rag.grounded_generation import SUPPORTED, build_messages, parse_grounded_output, response_format
+from app.rag.grounded_generation import SUPPORTED, build_messages, parse_grounded_output, response_format, split_citable_evidence
 from app.rag.models import EvidenceState, ProcessingOutcome, RankedFragment, RetrievalContext, RetrievalError
 from app.rag.operation_repository import RagOperationRepository
 from app.rag.provider import GroqFailure, GroqProvider
@@ -433,17 +433,27 @@ class RagApplicationService:
                     state=str(result.state), fragments=fragments,
                 )
 
+            # Elegibilidad de la evidencia: al proveedor solo llega la evidencia con cita completa.
+            # La incompleta sigue disponible como referencia parcial, pero no puede sustentar el Estado 1.
+            citable, _reference_only = split_citable_evidence(fragments)
+            if not citable:
+                return self._finalize(
+                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
+                    query_hash=query_hash, context_reference_id=reference,
+                    state="EVIDENCIA_INSUFICIENTE", fragments=fragments,
+                )
+
             def before_send() -> None:
                 with self._connection() as fresh:
-                    if not self._authorize_final(fresh, principal, fragments):
+                    if not self._authorize_final(fresh, principal, citable):
                         raise AuthorizationError("Acceso no autorizado")
 
             # Una sola llamada: verifica el soporte, se abstiene o responde con handles entregados.
             try:
                 raw = self.provider.generate(
-                    build_messages(query, fragments), before_send=before_send, response_format=response_format(fragments),
+                    build_messages(query, citable), before_send=before_send, response_format=response_format(citable),
                 )
-                outcome = parse_grounded_output(raw, fragments)
+                outcome = parse_grounded_output(raw, citable)
             except AuthorizationError:
                 return self._finalize(
                     principal=principal, operation_id=operation_id, correlation_id=correlation_id,
@@ -458,10 +468,12 @@ class RagApplicationService:
                     state=None, fragments=fragments, failure_cause=exc.cause_code, generation_attempted=True,
                 )
             if outcome.status == SUPPORTED:
+                # El Estado 1 conserva exactamente la evidencia enviada: sus handles públicos coinciden
+                # con los que vio el proveedor (mismo orden por fragment_id).
                 return self._finalize(
                     principal=principal, operation_id=operation_id, correlation_id=correlation_id,
                     query_hash=query_hash, context_reference_id=reference,
-                    state="EVIDENCIA_SUFICIENTE", fragments=fragments,
+                    state="EVIDENCIA_SUFICIENTE", fragments=citable,
                     generated_response=outcome.answer, evidence_ids=outcome.evidence_ids,
                 )
             return self._finalize(

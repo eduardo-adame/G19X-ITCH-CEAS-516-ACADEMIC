@@ -141,7 +141,7 @@ def _document(database):
     return _document_with_text(database, "El contrato sintético establece un plazo de treinta días.")
 
 
-def _document_with_text(database, text):
+def _document_with_text(database, text, *, name="Synthetic document", document_date=date(2026, 1, 1)):
     file_id, stored_id, version_id = uuid4(), uuid4(), uuid4()
     digest = hashlib.sha256(text.encode()).digest()
     with psycopg.connect(database["owner"], autocommit=True) as connection:
@@ -160,8 +160,8 @@ def _document_with_text(database, text):
         )
         connection.execute(
             "INSERT INTO app.document (id_documento, name, document_type, source_family, document_date) "
-            "VALUES (%s, 'Synthetic document', 'CONTRATO', 'CONTRATOS_DOCUMENTOS', %s)",
-            (str(file_id), date(2026, 1, 1)),
+            "VALUES (%s, %s, 'CONTRATO', 'CONTRATOS_DOCUMENTOS', %s)",
+            (str(file_id), name, document_date),
         )
         connection.execute(
             "INSERT INTO app.document_version (id, id_documento, version_number, stored_object_id, "
@@ -1025,3 +1025,137 @@ def test_qp05_equivalent_supported_with_valid_citation_reaches_state_one(databas
     assert provider.calls == 1
     assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_SUFICIENTE"
     assert [item["fragment_id"] for item in result.payload["citations"]] == [fragment]
+
+
+
+# --- Elegibilidad de la evidencia antes del proveedor (LP28) -------------------------------------
+
+_SCAN_TEXT = "Contrato escaneado de prueba DOC-SCAN-2026-001. Fecha del documento: 06/10/2026. Plazo de entrega de diez días."
+
+
+@pytest.fixture
+def eligibility(database, monkeypatch):
+    """Importancia fija sobre «plazo» para aislar la elegibilidad de Gate 3 (sin modelo de embeddings)."""
+    from app.rag import gates
+    monkeypatch.setattr(gates, "term_importance", lambda *_a, **_k: {"plazo": 0.2})
+    _grant(database)
+    _isolate(database)
+    return database
+
+
+def _sent_handles(provider):
+    return provider.requests[0][1]["json_schema"]["schema"]["properties"]["evidence_handles"]["items"]["enum"]
+
+
+@pytest.mark.requires_db
+def test_eligibility_case_a_only_complete_fragment_reaches_provider_and_state_one(eligibility) -> None:
+    complete = _document_with_text(eligibility, _SCAN_TEXT, name="Copia fechada")
+    principal = _principal(eligibility)
+    provider = _Provider(_contract("SUPPORTED", "El plazo es de diez días [E1].", ("E1",)))
+    result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert provider.calls == 1 and _sent_handles(provider) == ["E1"]
+    assert result.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert [item["fragment_id"] for item in result.payload["citations"]] == [complete]
+
+
+@pytest.mark.requires_db
+def test_eligibility_case_b_only_incomplete_fragment_is_state_two_without_provider(eligibility) -> None:
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+    provider = _Provider()
+    result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert provider.calls == 0
+    assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_INSUFICIENTE"
+    assert result.payload["fragments"] and all(item["usage"] == "REFERENCE" for item in result.payload["fragments"])
+
+
+@pytest.mark.requires_db
+def test_eligibility_service_guard_without_citable_evidence_never_calls_provider(eligibility) -> None:
+    """Aunque un candidato llegara al servicio solo con evidencia incompleta, no hay llamada y es Estado 2."""
+    from app.rag.models import ProcessingOutcome
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+    provider = _Provider()
+    service = _service(eligibility, provider)
+    original = service.retrieval.retrieve
+    service.retrieval.retrieve = lambda connection, context: replace(original(connection, context), state=ProcessingOutcome.GENERATION_CANDIDATE)
+    result = service.execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert provider.calls == 0 and result.payload["state"] == "EVIDENCIA_INSUFICIENTE"
+    assert result.payload["generation_status"] == "NOT_REQUESTED" and result.payload["fragments"]
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("incomplete_text", [_SCAN_TEXT, "Plazo de entrega: diez días naturales desde la orden, según la copia sin fecha."],
+                         ids=["case-c-duplicados", "case-e-incompleto-muy-relevante"])
+def test_eligibility_mixed_complete_incomplete_sends_only_complete(eligibility, incomplete_text) -> None:
+    """Casos C y E (y regresión LP28): el proveedor recibe solo el fragmento con cita completa."""
+    complete = _document_with_text(eligibility, _SCAN_TEXT, name="Copia fechada")
+    incomplete = _document_with_text(eligibility, incomplete_text, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+    provider = _Provider(_contract("SUPPORTED", "El plazo es de diez días [E1].", ("E1",)))
+    result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert provider.calls == 1 and _sent_handles(provider) == ["E1"]
+    sent = provider.requests[0][0][1]["content"]
+    assert "Copia fechada" in sent and "Copia sin fecha" not in sent and sent.count("[E") == 1
+    assert result.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert [item["fragment_id"] for item in result.payload["citations"]] == [complete]
+    # El Estado 1 conserva exactamente la evidencia enviada: la copia incompleta no aparece como cita.
+    assert all(item["fragment_id"] != incomplete for item in result.payload["fragments"])
+
+
+@pytest.mark.requires_db
+def test_eligibility_mixed_set_abstention_keeps_all_relevant_fragments_as_reference(eligibility) -> None:
+    complete = _document_with_text(eligibility, _SCAN_TEXT, name="Copia fechada")
+    incomplete = _document_with_text(eligibility, _SCAN_TEXT, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+    provider = _Provider(_contract("INSUFFICIENT", None, ()))
+    result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert _sent_handles(provider) == ["E1"]
+    assert result.payload["state"] == "EVIDENCIA_INSUFICIENTE" and result.payload["generation_status"] == "ABSTAINED"
+    assert {item["fragment_id"] for item in result.payload["fragments"]} == {complete, incomplete}
+
+
+@pytest.mark.requires_db
+def test_eligibility_case_d_two_complete_fragments_are_both_eligible(eligibility) -> None:
+    _document_with_text(eligibility, _SCAN_TEXT, name="Contrato A")
+    _document_with_text(eligibility, "Anexo B: el plazo de entrega se confirma por escrito.", name="Anexo B")
+    principal = _principal(eligibility)
+    provider = _Provider(_contract("SUPPORTED", "El plazo es de diez días [E1].", ("E1",)))
+    _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert _sent_handles(provider) == ["E1", "E2"]
+
+
+@pytest.mark.requires_db
+def test_eligibility_case_f_revocation_before_send_with_mixed_set_sends_nothing(eligibility) -> None:
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia fechada")
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+
+    class RevokedBeforeSend:
+        sent = 0
+
+        def generate(self, _messages, *, before_send, response_format=None):
+            _grant(eligibility, active=False)
+            before_send()
+            self.sent += 1
+            return _contract()
+
+    provider = RevokedBeforeSend()
+    try:
+        result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    finally:
+        _grant(eligibility)
+    assert provider.sent == 0
+    assert result.payload["state"] == "SIN_AUTORIZACION" and result.payload["fragments"] == []
+
+
+@pytest.mark.requires_db
+def test_eligibility_case_g_supported_citing_unsent_incomplete_handle_is_contract_failure(eligibility) -> None:
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia fechada")
+    _document_with_text(eligibility, _SCAN_TEXT, name="Copia sin fecha", document_date=None)
+    principal = _principal(eligibility)
+    provider = _Provider(_contract("SUPPORTED", "06/10/2026", ("E1", "E2")))   # E2 no se envió
+    result = _service(eligibility, provider).execute(principal=principal, query="¿Cuál es el plazo de entrega?")
+    assert _sent_handles(provider) == ["E1"]
+    assert result.status_code == 503 and result.payload["state"] is None
+    assert _operation(eligibility, result.payload["operation_id"])[:4] == (None, "FAILED", "FAILED", "INVALID_PROVIDER_OUTPUT")

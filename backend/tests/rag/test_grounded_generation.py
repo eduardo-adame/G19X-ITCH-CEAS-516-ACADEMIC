@@ -133,3 +133,33 @@ def test_ejemplos_negativos_abstencion_y_handles_fuera_de_conjunto(case) -> None
     assert contract.parse_grounded_output(_raw("INSUFFICIENT", None, []), fragments).status == contract.INSUFFICIENT
     with pytest.raises(GroqFailure):
         contract.parse_grounded_output(_raw("SUPPORTED", "Dato inventado [E2]", ["E2"]), fragments)
+
+
+# --- Elegibilidad de la evidencia (LP28): solo la evidencia con cita completa llega al proveedor ---
+
+@pytest.mark.contract
+def test_separa_evidencia_citable_de_referencia_sin_inferir_metadatos() -> None:
+    complete, incomplete, other = _fragment(document="Copia fechada"), _fragment(document="Copia sin fecha", complete=False), _fragment()
+    citable, reference_only = contract.split_citable_evidence((complete, incomplete, other))
+    assert citable == (complete, other) and reference_only == (incomplete,)
+    assert incomplete.citation.document_date is None   # no se infiere la fecha
+    assert contract.split_citable_evidence((incomplete,)) == ((), (incomplete,))
+
+
+@pytest.mark.contract
+def test_solicitud_y_esquema_rechazan_evidencia_no_citable() -> None:
+    complete, incomplete = _fragment(), _fragment(complete=False)
+    with pytest.raises(ValueError):
+        contract.build_messages("consulta", (complete, incomplete))
+    with pytest.raises(ValueError):
+        contract.response_format((complete, incomplete))
+    with pytest.raises(ValueError):
+        contract.response_format(())
+    assert contract.response_format((complete,))["json_schema"]["schema"]["properties"]["evidence_handles"]["items"]["enum"] == ["E1"]
+
+
+@pytest.mark.contract
+def test_caso_h_supported_con_handle_incompleto_construido_artificialmente_es_fallo_contractual() -> None:
+    """La validación posterior sigue siendo estricta aunque el filtro previo ya impida este caso."""
+    with pytest.raises(GroqFailure):
+        contract.parse_grounded_output(_raw("SUPPORTED", "06/10/2026", ["E1", "E2"]), (_fragment(), _fragment(complete=False)))
