@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from uuid import UUID, uuid5
 
 from app.ingestion.models import SourceFamily
-from app.validation.contracts import contracts_for_family
+from app.validation.contracts import contracts_for_family, derived_contracts_for_family
 from app.validation.values import is_absent, parse_date, parse_decimal
 from app.validation.models import (
     DataContract,
@@ -77,7 +77,20 @@ def validate_record_for_family(
     """Valida todos los contratos explícitamente presentes de una familia."""
     contracts = contracts_for_family(family)
     if len(contracts) == 1:
-        return validate_record(values_by_name, contracts[0])
+        outcome = validate_record(values_by_name, contracts[0])
+        if not outcome.conforming:
+            return outcome
+        # Las columnas de normalización no compartidas con el contrato principal
+        # activan su propio contrato; así una fila con datos derivados inválidos
+        # se aísla en cuarentena en lugar de omitirse o fallar al persistir.
+        primary = {spec.name for spec in contracts[0].fields}
+        for derived in derived_contracts_for_family(family):
+            own = [spec.name for spec in derived.fields if spec.name not in primary]
+            if any(not _is_absent(values_by_name.get(name)) for name in own):
+                outcome = validate_record(values_by_name, derived)
+                if not outcome.conforming:
+                    return outcome
+        return RecordValidation(True, None, None)
 
     present_contracts = [
         contract

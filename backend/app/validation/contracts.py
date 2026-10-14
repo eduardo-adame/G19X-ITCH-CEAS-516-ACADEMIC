@@ -98,3 +98,20 @@ def contracts_for_family(family: SourceFamily) -> tuple[DataContract, ...]:
         return _COMPOSITE_CONTRACTS.get(family, (CONTRACTS[family],))
     except KeyError:  # pragma: no cover - defensivo
         raise ValueError(f"familia sin contrato de datos: {family}") from None
+
+
+# Incidentes normalizados desde cumplimiento (SRS 5.5.6): todos sus campos son
+# obligatorios y la severidad usa el catálogo del MVP. Un incidente inválido
+# aísla la fila, igual que en la familia de auditoría interna.
+_DERIVED_VALIDATED_CONTRACTS: dict[SourceFamily, tuple[DataContract, ...]] = {
+    SourceFamily.COMPLIANCE: (AUDIT_INCIDENT,),
+}
+
+# Contrato del asunto jurídico normalizado (SRS 5.5.7). Un asunto que no cumple
+# no se cuenta y no invalida el registro fuente (regla 4).
+LEGAL_MATTER = AUDIT_LEGAL_MATTER
+
+
+def derived_contracts_for_family(family: SourceFamily) -> tuple[DataContract, ...]:
+    """Contratos derivados que deben validarse cuando sus columnas propias están presentes."""
+    return _DERIVED_VALIDATED_CONTRACTS.get(family, ())

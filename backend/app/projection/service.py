@@ -12,6 +12,8 @@ from uuid import UUID, uuid5
 from app.ingestion.models import SourceFamily
 from app.projection.models import ProjectionContext, ProjectionError, ProjectionInvariantError, ProjectionResult
 from app.validation.models import ValidatedTabularRecord
+from app.validation.contracts import LEGAL_MATTER
+from app.validation.records import validate_record
 from app.validation.values import is_absent, parse_date, parse_decimal
 
 
@@ -153,7 +155,7 @@ def _targets_for(record: ValidatedTabularRecord) -> tuple[_Target, ...]:
             "fecha_firma": _optional_date(values, "Fecha_Firma"), "fecha_vencimiento": _date(values, "Fecha_Vencimiento"),
             "estado_revision": _text(values, "Estado_Revision"), "payload_sha256": b"", "source_record_id": source_id,
         }, _business(values, "ID_Contrato", "Fecha_Solicitud", "Fecha_Firma", "Fecha_Vencimiento", "Estado_Revision"))]
-        if _complete(values, "ID_Asunto", "Tipo_Asunto", "Estado", "Fecha"):
+        if _normalizable_matter(values):
             targets.append(_legal_matter(values, source_id, "CONTRATO", contract_id))
         return tuple(_with_hash(target) for target in targets)
     if record.family == SourceFamily.LITIGATION:
@@ -165,7 +167,7 @@ def _targets_for(record: ValidatedTabularRecord) -> tuple[_Target, ...]:
             "estimacion_interna": _optional_decimal(values, "Estimacion_Interna"), "id_contrato": None,
             "payload_sha256": b"", "source_record_id": source_id,
         }, _business(values, "ID_Litigio", "Fecha_Apertura", "Estado", "Nivel_Severidad", "Monto_Reclamado", "Estimacion_Interna"), (("id_contrato", "contract_record", contract_id),))]
-        if _complete(values, "ID_Asunto", "Tipo_Asunto", "Estado", "Fecha"):
+        if _normalizable_matter(values):
             targets.append(_legal_matter(values, source_id, "LITIGIO", litigation_id))
         return tuple(_with_hash(target) for target in targets)
     if record.family == SourceFamily.COMPLIANCE:
@@ -178,14 +180,14 @@ def _targets_for(record: ValidatedTabularRecord) -> tuple[_Target, ...]:
         }, _business(values, "ID_Obligacion", "Fecha_Limite", "Evidencia_Cumplimiento"), (("id_contrato", "contract_record", contract_id),))]
         if _complete(values, "ID_Incidente", "Fecha_Evento", "Area", "Nivel_Severidad"):
             targets.append(_incident(values, source_id, obligation_id))
-        if _complete(values, "ID_Asunto", "Tipo_Asunto", "Estado", "Fecha"):
+        if _normalizable_matter(values):
             targets.append(_legal_matter(values, source_id, "OBLIGACION", obligation_id))
         return tuple(_with_hash(target) for target in targets)
     if record.family == SourceFamily.INTERNAL_AUDIT:
         targets: list[_Target] = []
         if _complete(values, "ID_Incidente", "Fecha_Evento", "Area", "Nivel_Severidad"):
             targets.append(_incident(values, source_id, _optional_text(values, "ID_Obligacion")))
-        if _complete(values, "ID_Asunto", "Tipo_Asunto", "Estado", "Fecha"):
+        if _normalizable_matter(values):
             targets.append(_legal_matter(values, source_id, "AUDITORIA_INTERNA", _text(values, "ID_Asunto")))
         return tuple(_with_hash(target) for target in targets)
     raise ProjectionError("familia certificada sin mapping analítico")
@@ -224,6 +226,11 @@ def _resolve_relationships(connection, repository, target: _Target) -> _Target:
 
 def _result(target: _Target, result: str, payload_sha256: bytes, source_record_id: UUID, operation_id: UUID, correlation_id: UUID) -> ProjectionResult:
     return ProjectionResult(target.entity_type, target.business_id, result, payload_sha256, source_record_id, operation_id, correlation_id, result == "INCORPORADO")
+
+
+def _normalizable_matter(values: Mapping[str, object]) -> bool:
+    """SRS 5.5.7 regla 4: sólo un asunto completo y conforme se normaliza; si no, se excluye."""
+    return _complete(values, "ID_Asunto", "Tipo_Asunto", "Estado", "Fecha") and validate_record(values, LEGAL_MATTER).conforming
 
 
 def _complete(values: Mapping[str, object], *names: str) -> bool:
