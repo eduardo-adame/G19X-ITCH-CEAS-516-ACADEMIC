@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -138,3 +139,4 @@ class IngestionResult:
     idempotent: bool = False
     records: ExtractedRecordSet | None = None
     document: DocumentCandidate | None = None
+    document_date: date | None = None

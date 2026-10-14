@@ -55,6 +55,7 @@ def test_revision_chain_is_linear_and_complete() -> None:
         "0014_rag_index_certificate",
         "0015_runtime_privs",
         "0016_rag_operation_lifecycle",
+        "0017_declared_document_date",
     ]
     assert len(script.get_heads()) == 1
 

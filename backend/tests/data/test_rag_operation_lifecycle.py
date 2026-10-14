@@ -172,10 +172,12 @@ def _assert_rejected(conn, user_id, session_id, **overrides):
 def test_revision_chain_has_single_0016_head(database):
     engine, config = database
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == [REVISION]
+    # 0017 solo agrega la fecha declarada del documento sobre 0016.
+    assert script.get_heads() == ["0017_declared_document_date"]
+    assert script.get_revision("0017_declared_document_date").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PREVIOUS_REVISION
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == REVISION
+        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == "0017_declared_document_date"
 
 
 @pytest.mark.requires_db

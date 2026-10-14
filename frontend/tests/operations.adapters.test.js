@@ -17,6 +17,13 @@ describe('SRS_REQUIRED: adaptadores de operaciones', () => {
     expect(ingestionResult(ingestion({ state: 'CUARENTENA' })).reception).toBe('Archivo retenido en cuarentena')
     expect(() => ingestionResult(ingestion({ family: 'INVENTADA' }))).toThrow(ApiError)
   })
+  it('F-03: presenta la fecha declarada del documento sin inferirla', () => {
+    expect(ingestionResult(ingestion({ routing_target: 'DOCUMENT', format: 'PDF', document_date: '2026-10-06' })).documentDateText).toBe('06/10/2026')
+    expect(ingestionResult(ingestion({ routing_target: 'DOCUMENT', format: 'PDF', document_date: null })).documentDateText).toBe('Sin fecha declarada')
+    expect(ingestionResult(ingestion()).documentDateText).toBe('No aplica')
+    expect(ingestionResult(ingestion()).document_date).toBeNull()
+    expect(() => ingestionResult(ingestion({ document_date: '2026-13-40' }))).toThrow(ApiError)
+  })
 
   it('preserva original, candidato y estado terminal de cuarentena', () => {
     const original = { Importe: null }; const candidate = { Importe: 0 }

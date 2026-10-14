@@ -1,5 +1,5 @@
 import { ApiError } from '../../api/errors.js'
-import { formatTimestamp, formatValue, roundDecimal } from '../../shared/formatters.js'
+import { formatDate, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
 import { readQuery, writeQuery } from '../../shared/query.js'
 
 export const uuid = (value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
@@ -8,6 +8,8 @@ const text = (value) => typeof value === 'string'
 const nullable = (value, check = text) => value === null || check(value)
 const assert = (condition) => { if (!condition) throw new ApiError(503) }
 export const families = ['CONTRATOS_DOCUMENTOS', 'LITIGIOS', 'CUMPLIMIENTO', 'AUDITORIA_INTERNA']
+// La fecha del documento solo se declara para documentos PDF/DOCX.
+export const isDocumentFile = (file) => Boolean(file) && /\.(pdf|docx)$/i.test(file.name || '')
 export const locations = [
   { value: 'contracts-documents', label: 'Contratos y documentos' },
   { value: 'litigation', label: 'Litigios' },
@@ -43,8 +45,8 @@ export function filterQuery(filters, kind) {
 }
 export function changeFilters(filters, patch) { const next = { ...filters, ...patch }; delete next.cursor; for (const key of Object.keys(next)) if (next[key] === '') delete next[key]; return next }
 export function ingestionResult(data) {
-  assert(object(data) && uuid(data.file_id) && uuid(data.operation_id) && uuid(data.correlation_id) && ['COMPLETADO', 'CUARENTENA', 'RECHAZADO'].includes(data.state) && nullable(data.format) && families.includes(data.family) && ['VALIDATION', 'DOCUMENT', 'NONE'].includes(data.routing_target) && nullable(data.safe_cause_code) && typeof data.idempotent === 'boolean')
-  return { ...data, id: data.file_id, reception: data.state === 'COMPLETADO' ? 'Archivo recibido; procesamiento downstream pendiente' : data.state === 'CUARENTENA' ? 'Archivo retenido en cuarentena' : 'Archivo rechazado' }
+  assert(object(data) && uuid(data.file_id) && uuid(data.operation_id) && uuid(data.correlation_id) && ['COMPLETADO', 'CUARENTENA', 'RECHAZADO'].includes(data.state) && nullable(data.format) && families.includes(data.family) && ['VALIDATION', 'DOCUMENT', 'NONE'].includes(data.routing_target) && nullable(data.safe_cause_code) && typeof data.idempotent === 'boolean' && (data.document_date === undefined || data.document_date === null || validDate(data.document_date)))
+  return { ...data, document_date: data.document_date ?? null, documentDateText: data.routing_target !== 'DOCUMENT' ? 'No aplica' : data.document_date ? formatDate(data.document_date) : 'Sin fecha declarada', id: data.file_id, reception: data.state === 'COMPLETADO' ? 'Archivo recibido; procesamiento downstream pendiente' : data.state === 'CUARENTENA' ? 'Archivo retenido en cuarentena' : 'Archivo rechazado' }
 }
 export function dispatchResult(data) {
   assert(object(data) && text(data.state) && nullable(data.downstream_target) && nullable(data.operation_id, uuid) && nullable(data.downstream_result_id, uuid))

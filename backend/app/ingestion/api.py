@@ -1,7 +1,9 @@
 """Adaptadores HTTP para los casos de uso de ingesta."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
+import re
 from typing import Annotated
 from uuid import UUID
 
@@ -30,6 +32,7 @@ class IngestionResponse(BaseModel):
     routing_target: str
     safe_cause_code: str | None
     idempotent: bool
+    document_date: date | None = None
 
 
 class RunRequest(BaseModel):
@@ -66,12 +69,25 @@ def ingestion_service_for(
     )
 
 
+def _declared_document_date(value: str | None) -> date | None:
+    """Fecha del documento declarada por quien carga: ISO YYYY-MM-DD estricta u omitida."""
+    if value is None or value == "":
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise HTTPException(status_code=422, detail="La fecha del documento no es válida")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="La fecha del documento no es válida") from None
+
+
 def _response(result: IngestionResult) -> IngestionResponse:
     return IngestionResponse(
         file_id=str(result.file_id), operation_id=str(result.operation_id),
         correlation_id=str(result.correlation_id), state=result.state, format=result.format,
         family=result.family.value, routing_target=result.routing_target.value,
         safe_cause_code=result.safe_cause_code, idempotent=result.idempotent,
+        document_date=result.document_date,
     )
 
 
@@ -82,13 +98,15 @@ def upload_file(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=256)],
     principal: AuthenticatedPrincipal = Depends(require("ingest.upload")),
     service: IngestionService = Depends(ingestion_service_for),
+    document_date: Annotated[str | None, Form(max_length=10)] = None,
 ) -> IngestionResponse:
+    declared_date = _declared_document_date(document_date)
     try:
         result = service.ingest_stream(
             file.file, original_name=file.filename or "", controlled_location=controlled_location,
             principal=principal, capability="ingest.upload",
             source_locator=f"manual/{principal.account_id}/{idempotency_key}",
-            idempotency_key=idempotency_key,
+            idempotency_key=idempotency_key, document_date=declared_date,
         )
     except IdempotencyConflictError:
         raise HTTPException(status_code=409, detail="La clave de idempotencia corresponde a otro contenido") from None

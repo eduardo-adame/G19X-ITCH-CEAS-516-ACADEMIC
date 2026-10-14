@@ -39,7 +39,7 @@ def database():
         pytest.fail("La conexión de pruebas no está disponible", pytrace=False)
     try:
         assert "test" in connection.execute("SELECT current_database() AS name").fetchone()["name"].lower()
-        assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()["version_num"] == "0016_rag_operation_lifecycle"
+        assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()["version_num"] == "0017_declared_document_date"
         yield connection
     finally:
         connection.rollback()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import date
 import hashlib
 import mimetypes
 import os
@@ -93,7 +94,7 @@ class IngestionService:
             state=state, format=exchange_format.value if exchange_format else None,
             family=SourceFamily(str(row["source_family"])), routing_target=routing_target,
             safe_cause_code=str(row["safe_cause_code"]) if row["safe_cause_code"] else None,
-            idempotent=True,
+            idempotent=True, document_date=row.get("declared_document_date"),
         )
 
     def ingest_stream(
@@ -108,6 +109,7 @@ class IngestionService:
         idempotency_key: str | None,
         correlation_id: UUID | None = None,
         automatic_discovery: bool = False,
+        document_date: date | None = None,
     ) -> IngestionResult:
         if controlled_location not in CONTROLLED_LOCATIONS:
             raise RejectedFileError("UNKNOWN_CONTROLLED_LOCATION")
@@ -129,6 +131,11 @@ class IngestionService:
         except Exception:
             staged.path.unlink(missing_ok=True)
             raise
+        # La fecha del documento solo describe documentos PDF/DOCX; en un conjunto
+        # tabular no tiene significado y se rechaza en lugar de ignorarse.
+        if document_date is not None and detection.exchange_format not in {ExchangeFormat.PDF, ExchangeFormat.DOCX}:
+            staged.path.unlink(missing_ok=True)
+            raise RejectedFileError("DOCUMENT_DATE_NOT_APPLICABLE")
         records = None
         document = None
         routing_target = RoutingTarget.NONE
@@ -205,6 +212,7 @@ class IngestionService:
                     existing, conflict = self.repository.find_existing(
                         connection, source_locator=source_locator, actor_identifier=current.username,
                         idempotency_key=idempotency_key, content_sha256=staged.sha256,
+                        document_date=document_date,
                     )
                     if conflict:
                         raise IdempotencyConflictError("La clave ya corresponde a otro contenido")
@@ -219,7 +227,7 @@ class IngestionService:
                         idempotency_key=idempotency_key, family=family.value,
                         detection=detection, state=state, technical_result=technical_result,
                         mime_type=mimetypes.guess_type(original_name)[0] or "application/octet-stream",
-                        safe_cause_code=cause,
+                        safe_cause_code=cause, document_date=document_date,
                     )
                     if records is not None:
                         self.repository.insert_rows(connection, file_id, records)
@@ -257,7 +265,7 @@ class IngestionService:
         return IngestionResult(
             file_id, operation_id, correlation, state,
             detection.exchange_format.value if detection.exchange_format else None,
-            family, routing_target, cause, False, records, document,
+            family, routing_target, cause, False, records, document, document_date,
         )
 
     def run_location(self, controlled_root: Path, controlled_location: str, principal: AuthenticatedPrincipal, *, correlation_id: UUID | None = None) -> list[IngestionResult]:

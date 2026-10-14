@@ -70,7 +70,7 @@ def database():
         previous = os.environ.get("POSTGRES_DB")
         try:
             os.environ["POSTGRES_DB"] = name
-            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0016_rag_operation_lifecycle")
+            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0017_declared_document_date")
         finally:
             if previous is None:
                 os.environ.pop("POSTGRES_DB", None)
@@ -78,7 +78,7 @@ def database():
                 os.environ["POSTGRES_DB"] = previous
         with psycopg.connect(owner_dsn, autocommit=True) as check:
             assert check.execute("SELECT current_database()").fetchone()[0] == name
-            assert check.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0016_rag_operation_lifecycle"
+            assert check.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0017_declared_document_date"
         yield _Database(name=name, owner=owner_dsn, runtime=runtime_dsn, user=runtime)
     finally:
         if created:

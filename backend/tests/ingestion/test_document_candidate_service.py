@@ -141,3 +141,54 @@ def test_scanned_pdf_candidate_preserves_pending_ocr(database) -> None:
     assert candidate is not None
     assert candidate.processing_state == "PENDING_OCR"
     assert candidate.pages[0].requires_ocr is True
+
+
+def _ingest_dated(service, principal, content: bytes, name: str, document_date, *, key=None, location="contracts-documents"):
+    return service.ingest_stream(
+        BytesIO(content), original_name=name, controlled_location=location,
+        principal=principal, capability="ingest.upload",
+        source_locator=f"manual/{principal.account_id}/{key or name}", idempotency_key=key or name,
+        document_date=document_date,
+    )
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_declared_document_date_is_persisted_for_documents(database) -> None:
+    engine, service, principal = database
+    from datetime import date
+    result = _ingest_dated(service, principal, _docx_bytes("acta de entrega"), "acta.docx", date(2026, 10, 6))
+    assert result.state == "COMPLETADO" and result.document_date == date(2026, 10, 6)
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT declared_document_date FROM app.ingest_file WHERE id=:id"), {"id": result.file_id}).scalar_one() == date(2026, 10, 6)
+    undated = _ingest(service, principal, _docx_bytes("sin fecha"), "sin-fecha.docx")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT declared_document_date FROM app.ingest_file WHERE id=:id"), {"id": undated.file_id}).scalar_one() is None
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_document_date_is_rejected_for_tabular_files_without_persisting(database) -> None:
+    engine, service, principal = database
+    from datetime import date
+    from app.ingestion.models import RejectedFileError
+    with engine.connect() as connection:
+        before = connection.execute(sa.text("SELECT count(*) FROM app.ingest_file")).scalar_one()
+    with pytest.raises(RejectedFileError):
+        _ingest_dated(service, principal, b"ID_Litigio,Fecha_Apertura\nL-1,2026-01-01\n", "litigios.csv", date(2026, 1, 1), location="litigation")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT count(*) FROM app.ingest_file")).scalar_one() == before
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_idempotent_replay_requires_the_same_document_date(database) -> None:
+    engine, service, principal = database
+    from datetime import date
+    from app.ingestion.models import IdempotencyConflictError
+    content = _docx_bytes("contrato fechado")
+    first = _ingest_dated(service, principal, content, "fechado.docx", date(2026, 10, 1), key="fechado-key")
+    replay = _ingest_dated(service, principal, content, "fechado.docx", date(2026, 10, 1), key="fechado-key")
+    assert replay.idempotent and replay.file_id == first.file_id and replay.document_date == date(2026, 10, 1)
+    with pytest.raises(IdempotencyConflictError):
+        _ingest_dated(service, principal, content, "fechado.docx", date(2026, 10, 2), key="fechado-key")

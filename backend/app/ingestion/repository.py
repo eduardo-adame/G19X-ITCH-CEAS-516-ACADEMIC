@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import date
 import hashlib
 import json
 from pathlib import Path
@@ -36,20 +37,21 @@ class IngestionRepository:
         actor_identifier: str,
         idempotency_key: str | None,
         content_sha256: bytes,
+        document_date: date | None = None,
     ) -> tuple[dict[str, object] | None, bool]:
         if idempotency_key:
             row = connection.execute(
                 """SELECT id, operation_id, correlation_id, state, exchange_format, source_family,
-                          safe_cause_code, content_sha256
+                          safe_cause_code, content_sha256, declared_document_date
                    FROM app.ingest_file
                    WHERE actor_identifier = %s AND idempotency_key = %s FOR UPDATE""",
                 (actor_identifier, idempotency_key),
             ).fetchone()
             if row is not None:
-                return row, bytes(row["content_sha256"]) != content_sha256
+                return row, bytes(row["content_sha256"]) != content_sha256 or row["declared_document_date"] != document_date
         row = connection.execute(
             """SELECT id, operation_id, correlation_id, state, exchange_format, source_family,
-                      safe_cause_code, content_sha256
+                      safe_cause_code, content_sha256, declared_document_date
                FROM app.ingest_file
                WHERE source_locator = %s AND content_sha256 = %s FOR UPDATE""",
             (source_locator, content_sha256),
@@ -83,6 +85,7 @@ class IngestionRepository:
         technical_result: str,
         mime_type: str,
         safe_cause_code: str | None,
+        document_date: date | None = None,
     ) -> None:
         connection.execute(
             """INSERT INTO app.stored_object
@@ -94,14 +97,15 @@ class IngestionRepository:
             """INSERT INTO app.ingest_file
                (id, stored_object_id, source_family, exchange_format, state, operation_id, correlation_id,
                 declared_extension, detected_format, format_classification, technical_result, safe_cause_code,
-                declared_name, source_locator, source_revision, actor_identifier, idempotency_key, content_sha256)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                declared_name, source_locator, source_revision, actor_identifier, idempotency_key, content_sha256,
+                declared_document_date)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 file_id, object_id, family, detection.exchange_format.value if detection.exchange_format else None,
                 state, operation_id, correlation_id, detection.declared_extension, detection.detected_format,
                 "SUPPORTED" if detection.supported else "UNSUPPORTED", technical_result,
                 safe_cause_code, staged.original_name, source_locator, source_revision,
-                actor_identifier, idempotency_key, staged.sha256,
+                actor_identifier, idempotency_key, staged.sha256, document_date,
             ),
         )
 

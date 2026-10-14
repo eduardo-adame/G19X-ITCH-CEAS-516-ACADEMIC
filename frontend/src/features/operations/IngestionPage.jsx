@@ -7,7 +7,7 @@ import { PageHeader } from '../../components/layout.jsx'
 import { Button, Input, Select } from '../../components/controls.jsx'
 import { DataTable, Badge, KpiMetric } from '../../components/data.jsx'
 import { ErrorState, ResourceState } from '../../components/feedback.jsx'
-import { locations, technicalResult } from './adapters.js'
+import { isDocumentFile, locations, technicalResult } from './adapters.js'
 import { newOperationId, useOperation, useOperationsRead } from './api.js'
 import { OcrPanel } from './OcrPanel.jsx'
 
@@ -22,7 +22,8 @@ export function IngestionPage() {
 }
 function IngestionWorkspace({ principal }) {
   const [file, setFile] = useState(null); const [location, setLocation] = useState(locations[0].value)
-  const [rows, setRows] = useState([]); const [inputKey, setInputKey] = useState(0)
+  const [rows, setRows] = useState([]); const [inputKey, setInputKey] = useState(0); const [documentDate, setDocumentDate] = useState('')
+  const documentSelected = isDocumentFile(file)
   const [ocrRefreshKey, setOcrRefreshKey] = useState(0); const [technicalRefreshKey, setTechnicalRefreshKey] = useState(0)
   const mutation = useOperation()
   const blocked = mutation.busy || Boolean(mutation.error && ![403, 409, 422].includes(mutation.error.status))
@@ -43,9 +44,9 @@ function IngestionWorkspace({ principal }) {
   }
   async function upload(event) {
     event.preventDefault(); if (blocked || !file) return
-    const result = await mutation.execute('ingest.upload', (api) => api.upload(file, location, newOperationId()))
+    const result = await mutation.execute('ingest.upload', (api) => api.upload(file, location, newOperationId(), documentSelected ? documentDate : ''))
     if (!result) return
-    setRows([result]); setFile(null); setInputKey((v) => v + 1)
+    setRows([result]); setFile(null); setDocumentDate(''); setInputKey((v) => v + 1)
     // La recepción y el despacho conservan resultados separados incluso si falla el segundo.
     if (can(principal, 'ingest.execute')) await dispatch([result])
   }
@@ -60,6 +61,8 @@ function IngestionWorkspace({ principal }) {
       <form onSubmit={upload} className="grid grid-cols-1 items-end gap-4 md:grid-cols-2">
         <Select label="Ubicación controlada" options={locations} value={location} disabled={blocked} onChange={(e) => setLocation(e.target.value)} />
         <Input key={inputKey} label="Archivo (máximo 50 MiB)" type="file" required disabled={blocked} accept=".csv,.xlsx,.pdf,.docx" onChange={(e) => setFile(e.target.files[0] || null)} />
+        <Input label="Fecha del documento (PDF/DOCX, opcional)" type="date" value={documentSelected ? documentDate : ''} disabled={blocked || !documentSelected} onChange={(e) => setDocumentDate(e.target.value)} aria-describedby="document-date-help" />
+        <p id="document-date-help" className="text-xs text-secondary md:self-center">Fecha que consta en el documento. Si se omite, el documento se procesa sin fecha y sus citas quedan incompletas; no se infiere de metadatos del archivo.</p>
         <div className="flex flex-wrap gap-3 md:col-span-2"><Button type="submit" busy={mutation.busy} disabled={blocked || !file || file.size > 52428800}>Recibir y procesar</Button>{can(principal, 'ingest.execute') && <Button variant="secondary" disabled={blocked} onClick={run}>Ejecutar ubicación</Button>}</div>
       </form>
       {file?.size > 52428800 && <p role="alert" className="text-[var(--critical)]">El archivo supera 50 MiB.</p>}
@@ -68,7 +71,7 @@ function IngestionWorkspace({ principal }) {
       {blocked && !mutation.busy && <p className="text-sm text-secondary">Resultado incierto. Consulta Auditoría antes de iniciar otra operación; no se repetirá automáticamente.</p>}
     </section>
     <section className="space-y-3"><h2 className="text-base font-semibold">Resultados de esta interacción</h2><DataTable caption="Recepción y despacho actuales" rows={rows} columns={[
-      { key: 'file_id', label: 'Archivo recibido' }, { key: 'reception', label: 'Recepción' }, { key: 'family', label: 'Familia' },
+      { key: 'file_id', label: 'Archivo recibido' }, { key: 'reception', label: 'Recepción' }, { key: 'family', label: 'Familia' }, { key: 'documentDateText', label: 'Fecha del documento' },
       { key: 'dispatch', label: 'Procesamiento downstream', render: (row) => row.dispatch ? <Badge>{row.dispatch.state}</Badge> : <span>{row.state === 'COMPLETADO' && row.routing_target !== 'NONE' ? 'Sin confirmación de despacho' : 'No despachado'}</span> },
     ]} /><p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
     {can(principal, 'document.manage') && <OcrPanel refreshKey={ocrRefreshKey} onProcessingCompleted={() => setTechnicalRefreshKey((value) => value + 1)} />}

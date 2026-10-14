@@ -60,7 +60,7 @@ def process_candidate(
         # evidencia documental protegida. La activación vuelve a comprobarla.
         service._authorize(connection, operation_context, "document.manage")
         meta = connection.execute(
-            "SELECT source_family, exchange_format, declared_name, stored_object_id FROM app.ingest_file WHERE id = %s",
+            "SELECT source_family, exchange_format, declared_name, stored_object_id, declared_document_date FROM app.ingest_file WHERE id = %s",
             (file_id,),
         ).fetchone()
     family = SourceFamily(str(meta["source_family"]))
@@ -105,6 +105,8 @@ def process_candidate(
             name=str(meta["declared_name"] or id_documento),
             document_type=document_type,
             source_family=family.value,
+            # Única fuente de la fecha del documento: la declarada en la carga.
+            document_date=meta["declared_document_date"],
         )
         existing = connection.execute(
             """SELECT id, id_documento, stored_object_id, source_record_id,

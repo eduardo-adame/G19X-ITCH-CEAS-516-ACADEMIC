@@ -53,6 +53,24 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     expect(screen.getByText(/no representa un historial persistente/i)).toBeVisible()
   })
 
+  it('F-03: la fecha del documento solo se habilita para PDF/DOCX y viaja con la carga', async () => {
+    const request = vi.fn(async (path) => path === '/ingestion/uploads'
+      ? { ...ingestion, format: 'PDF', routing_target: 'DOCUMENT', family: 'CONTRATOS_DOCUMENTOS', document_date: '2026-10-06' }
+      : { state: 'COMPLETED', downstream_target: 'DOCUMENT', operation_id: null, downstream_result_id: null })
+    mount(<IngestionPage />, { request })
+    const dateInput = screen.getByLabelText(/Fecha del documento/)
+    expect(dateInput).toBeDisabled()
+    await userEvent.upload(screen.getByLabelText(/Archivo/), new File(['Dato\n1'], 'dato.csv', { type: 'text/csv' }))
+    expect(dateInput).toBeDisabled()
+    await userEvent.upload(screen.getByLabelText(/Archivo/), new File(['%PDF'], 'contrato.pdf', { type: 'application/pdf' }))
+    expect(dateInput).toBeEnabled()
+    fireEvent.change(dateInput, { target: { value: '2026-10-06' } })
+    fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/ingestion/uploads', expect.anything()))
+    expect(request.mock.calls[0][1].body.get('document_date')).toBe('2026-10-06')
+    expect(await screen.findByText('06/10/2026')).toBeVisible()
+  })
+
   it('separa original y candidato y conserva identidad de reinyección', async () => {
     const request = vi.fn(async () => ({ detail: 'La reinyección fue confirmada; el recálculo sigue pendiente' }))
     mount(<QuarantinePage />, { request })

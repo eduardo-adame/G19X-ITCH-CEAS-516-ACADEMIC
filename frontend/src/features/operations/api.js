@@ -3,7 +3,8 @@ import { useSession } from '../../auth/SessionProvider.jsx'
 import { can } from '../../auth/permissions.js'
 import { useResource } from '../../api/useResource.js'
 import { ApiError, safeError } from '../../api/errors.js'
-import { uuid, locations, filterQuery, ingestionResult, dispatchResult, discardResult, reinjectionResult, ocrResult } from './adapters.js'
+import { validDate } from '../../shared/formatters.js'
+import { uuid, locations, isDocumentFile, filterQuery, ingestionResult, dispatchResult, discardResult, reinjectionResult, ocrResult } from './adapters.js'
 
 const segment = (value) => encodeURIComponent(String(value))
 const requireUuid = (value) => { if (!uuid(value)) throw new ApiError(422); return segment(value) }
@@ -11,9 +12,11 @@ export const newOperationId = () => crypto.randomUUID()
 export function queryPath(kind, filters) { return `${{ quarantine: '/validation/quarantine', ocr: '/documents/ocr', audit: '/audit/events' }[kind]}?${filterQuery(filters, kind)}` }
 export function createOperationsApi(client) {
   return {
-    async upload(file, location, key) {
+    async upload(file, location, key, documentDate = '') {
       if (!file || file.size > 52428800 || !locations.some((v) => v.value === location) || !uuid(key)) throw new ApiError(422)
+      if (documentDate && (!validDate(documentDate) || !isDocumentFile(file))) throw new ApiError(422)
       const body = new FormData(); body.set('file', file); body.set('controlled_location', location)
+      if (documentDate) body.set('document_date', documentDate)
       return ingestionResult(await client.request('/ingestion/uploads', { method: 'POST', body, headers: { 'Idempotency-Key': key } }))
     },
     async run(location) {

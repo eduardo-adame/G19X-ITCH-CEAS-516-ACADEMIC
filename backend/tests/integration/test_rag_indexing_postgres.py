@@ -239,7 +239,7 @@ def _activate(database, ids, actor, expected=None):
     )
 
 
-def _seed_ingest_candidate(database, *, declared_name="doc.pdf"):
+def _seed_ingest_candidate(database, *, declared_name="doc.pdf", declared_document_date=None):
     file_id, stored_id = uuid.uuid4(), uuid.uuid4()
     correlation_id = uuid.uuid4()
     with database["engine"].begin() as connection:
@@ -262,10 +262,10 @@ def _seed_ingest_candidate(database, *, declared_name="doc.pdf"):
                 "(id, stored_object_id, source_family, exchange_format, state, "
                 "operation_id, correlation_id, declared_extension, detected_format, "
                 "format_classification, technical_result, declared_name, source_locator, "
-                "source_revision, actor_identifier, content_sha256) "
+                "source_revision, actor_identifier, content_sha256, declared_document_date) "
                 "VALUES (:id, :stored, 'CONTRATOS_DOCUMENTOS', 'PDF', 'COMPLETADO', "
                 ":operation, :correlation, '.pdf', 'PDF', 'SUPPORTED', 'ACCEPTED', "
-                ":name, :locator, 1, 'test', :digest)"
+                ":name, :locator, 1, 'test', :digest, :document_date)"
             ),
             {
                 "id": file_id,
@@ -275,6 +275,7 @@ def _seed_ingest_candidate(database, *, declared_name="doc.pdf"):
                 "locator": f"rag/{file_id}/{declared_name}",
                 "digest": bytes(32),
                 "name": declared_name,
+                "document_date": declared_document_date,
             },
         )
     candidate = DocumentCandidate(
@@ -1463,3 +1464,16 @@ def test_runtime_group_permissions_are_minimal_for_index_evidence(database) -> N
                 "UPDATE": False,
                 "DELETE": False,
             }
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("declared", [date(2026, 9, 30), None])
+def test_declared_document_date_is_the_only_source_of_document_date(database, declared) -> None:
+    """SRS_REQUIRED (RF-023, RF-025, RF-061): la fecha declarada en la carga llega al documento; sin ella queda NULL."""
+    file_id, correlation_id, candidate = _seed_ingest_candidate(database, declared_document_date=declared)
+    _process(database, file_id=file_id, correlation_id=correlation_id, candidate=candidate, operation_id=uuid.uuid4())
+    with database["engine"].connect() as connection:
+        persisted = connection.execute(
+            sa.text("SELECT document_date FROM app.document WHERE id_documento=:id"), {"id": str(file_id)}
+        ).scalar_one()
+    assert persisted == declared
