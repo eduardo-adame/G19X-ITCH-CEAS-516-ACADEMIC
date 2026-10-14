@@ -55,6 +55,8 @@ class RagQueryResponse(BaseModel):
     operation_id: UUID
     correlation_id: UUID
     state: str | None
+    # «RESTRICCION_ALCANCE» cuando Gate 1 restringe una decisión jurídica autónoma (no es un estado de evidencia).
+    policy_result: str | None = None
     operation_status: str
     generation_status: str
     generated_response: str | None

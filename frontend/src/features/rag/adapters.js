@@ -11,11 +11,19 @@ function metadata(item) {
   if (!item || !isUuid(item.fragment_id) || !text(item.document_id) || !item.document_id || !text(item.document_name) || !text(item.document_type) || !(item.document_date === null || validDate(item.document_date)) || !page(item.page_start) || !page(item.page_end) || !nullableText(item.section) || !nullableText(item.clause) || item.page_start !== null && item.page_end !== null && item.page_end < item.page_start) fail()
   return Object.freeze({ fragmentId: item.fragment_id, documentId: item.document_id, documentName: item.document_name, documentType: item.document_type, documentDate: item.document_date, pageStart: item.page_start, pageEnd: item.page_end, section: item.section, clause: item.clause })
 }
+// Restricción de alcance (Gate 1): no es un estado de evidencia ni reutiliza «Sin autorización».
+export const SCOPE_RESTRICTION = 'RESTRICCION_ALCANCE'
 export function adaptRagResponse(dto) {
-  if (!dto || !isUuid(dto.operation_id) || !isUuid(dto.correlation_id) || !(dto.state === null || Object.hasOwn(RAG_STATES, dto.state)) || !['COMPLETED', 'FAILED'].includes(dto.operation_status) || !['NOT_REQUESTED', 'SUCCEEDED', 'FAILED'].includes(dto.generation_status) || !nullableText(dto.generated_response) || !nullableText(dto.safe_result_message) || !(dto.context_reference_id === null || isUuid(dto.context_reference_id)) || !Array.isArray(dto.fragments) || !Array.isArray(dto.citations)) fail()
+  if (dto && dto.policy_result !== undefined && dto.policy_result !== null) {
+    if (dto.policy_result !== SCOPE_RESTRICTION || !isUuid(dto.operation_id) || !isUuid(dto.correlation_id) || dto.state !== null || dto.operation_status !== 'COMPLETED' || dto.generation_status !== 'NOT_REQUESTED' || dto.generated_response !== null || !text(dto.safe_result_message) || !dto.safe_result_message.trim() || !Array.isArray(dto.fragments) || dto.fragments.length || !Array.isArray(dto.citations) || dto.citations.length) fail()
+    return Object.freeze({ state: null, policyResult: SCOPE_RESTRICTION, stateLabel: null, operationId: dto.operation_id, correlationId: dto.correlation_id, operationStatus: dto.operation_status, generationStatus: dto.generation_status, response: null, message: dto.safe_result_message, contextReferenceId: null, fragments: Object.freeze([]), citations: Object.freeze([]), technicalFailure: false })
+  }
+  if (!dto || !isUuid(dto.operation_id) || !isUuid(dto.correlation_id) || !(dto.state === null || Object.hasOwn(RAG_STATES, dto.state)) || !['COMPLETED', 'FAILED'].includes(dto.operation_status) || !['NOT_REQUESTED', 'SUCCEEDED', 'FAILED', 'ABSTAINED'].includes(dto.generation_status) || !nullableText(dto.generated_response) || !nullableText(dto.safe_result_message) || !(dto.context_reference_id === null || isUuid(dto.context_reference_id)) || !Array.isArray(dto.fragments) || !Array.isArray(dto.citations)) fail()
   // Una denegación nunca se transforma en una vista de recursos, incluso ante un DTO defectuoso.
   if (dto.state === 'SIN_AUTORIZACION') return Object.freeze({ state: dto.state, stateLabel: RAG_STATES[dto.state], operationStatus: dto.operation_status, generationStatus: dto.generation_status, response: null, message: 'Acceso no autorizado.', fragments: [], citations: [], technicalFailure: false, contextReferenceId: null })
   if (dto.fragments.length > 5 || dto.citations.length > 5 || dto.state === null && dto.operation_status !== 'FAILED') fail()
+  // Abstención del proveedor: solo es válida como Estado 2 completado, sin respuesta generada.
+  if (dto.generation_status === 'ABSTAINED' && (dto.state !== 'EVIDENCIA_INSUFICIENTE' || dto.operation_status !== 'COMPLETED')) fail()
   const fragments = dto.fragments.map((item) => {
     if (!text(item.fragment_text) || !['EVIDENCE', 'REFERENCE', 'CONTEXT'].includes(item.usage)) fail()
     return Object.freeze({ ...metadata(item), text: item.fragment_text, usage: item.usage })
@@ -32,7 +40,7 @@ export function adaptRagResponse(dto) {
   if (dto.state !== 'EVIDENCIA_SUFICIENTE' && (dto.generated_response !== null || citations.length || fragments.some((item) => item.usage !== 'REFERENCE'))) fail()
   const technicalFailure = dto.operation_status === 'FAILED' || dto.generation_status === 'FAILED'
   if (!technicalFailure && dto.state === 'EVIDENCIA_SUFICIENTE' && (dto.generation_status !== 'SUCCEEDED' || !dto.generated_response || !citations.length)) fail()
-  return Object.freeze({ state: dto.state, stateLabel: dto.state === null ? null : RAG_STATES[dto.state], operationId: dto.operation_id, correlationId: dto.correlation_id, operationStatus: dto.operation_status, generationStatus: dto.generation_status, response: technicalFailure ? null : dto.generated_response, message: dto.safe_result_message, contextReferenceId: dto.context_reference_id, fragments: Object.freeze(fragments), citations: Object.freeze(citations), technicalFailure })
+  return Object.freeze({ state: dto.state, stateLabel: dto.state === null ? null : RAG_STATES[dto.state], operationId: dto.operation_id, correlationId: dto.correlation_id, operationStatus: dto.operation_status, generationStatus: dto.generation_status, policyResult: null, response: technicalFailure ? null : dto.generated_response, message: dto.safe_result_message, contextReferenceId: dto.context_reference_id, fragments: Object.freeze(fragments), citations: Object.freeze(citations), technicalFailure })
 }
 
 export function citationLocation(item) {

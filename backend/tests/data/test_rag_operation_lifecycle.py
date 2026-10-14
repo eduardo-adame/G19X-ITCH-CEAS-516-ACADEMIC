@@ -173,11 +173,12 @@ def test_revision_chain_has_single_0016_head(database):
     engine, config = database
     script = ScriptDirectory.from_config(config)
     # 0017 solo agrega la fecha declarada del documento sobre 0016.
-    assert script.get_heads() == ["0017_declared_document_date"]
+    assert script.get_heads() == ["0018_rag_policy_result"]
+    assert script.get_revision("0018_rag_policy_result").down_revision == "0017_declared_document_date"
     assert script.get_revision("0017_declared_document_date").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PREVIOUS_REVISION
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == "0017_declared_document_date"
+        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == "0018_rag_policy_result"
 
 
 @pytest.mark.requires_db
@@ -202,6 +203,9 @@ def test_lifecycle_columns_and_nullability(database):
         {"state": "SIN_EVIDENCIA", "generation_status": "NOT_REQUESTED", "response": None, "message": "Sin evidencia"},
         {"state": "SIN_AUTORIZACION", "generation_status": "NOT_REQUESTED", "response": None, "message": "Sin autorización"},
         {"state": None, "operation_status": "FAILED", "generation_status": "NOT_REQUESTED", "cause": "RETRIEVAL_FAILED", "response": None, "message": "No fue posible recuperar evidencia"},
+        # Generación sustentada (0018): abstención del proveedor y fallo de generación sin estado de evidencia.
+        {"state": "EVIDENCIA_INSUFICIENTE", "generation_status": "ABSTAINED", "response": None, "message": "Evidencia insuficiente"},
+        {"state": None, "operation_status": "FAILED", "generation_status": "FAILED", "cause": "INVALID_PROVIDER_OUTPUT", "response": None, "message": "La generación no pudo completarse"},
     ],
 )
 def test_exact_terminal_matrix_accepts_only_valid_cases(connection, overrides):
@@ -224,6 +228,13 @@ def test_exact_terminal_matrix_accepts_only_valid_cases(connection, overrides):
         {"state": None, "operation_status": "COMPLETED", "generation_status": "NOT_REQUESTED", "response": None, "message": "Fallo previo", "cause": "INTERNAL_FAILURE"},
         {"state": "EVIDENCIA_SUFICIENTE", "operation_status": "FAILED", "generation_status": "FAILED", "response": None, "message": "Fallo", "cause": None},
         {"state": "EVIDENCIA_SUFICIENTE", "operation_status": "COMPLETED", "generation_status": "SUCCEEDED", "message": "No debe coexistir"},
+        # La abstención solo existe como Estado 2 completado, sin respuesta ni causa.
+        {"state": "EVIDENCIA_SUFICIENTE", "generation_status": "ABSTAINED", "response": None, "message": "x"},
+        {"state": "SIN_EVIDENCIA", "generation_status": "ABSTAINED", "response": None, "message": "x"},
+        {"state": None, "operation_status": "COMPLETED", "generation_status": "ABSTAINED", "response": None, "message": "x"},
+        {"state": "EVIDENCIA_INSUFICIENTE", "generation_status": "ABSTAINED", "response": "Respuesta", "message": "x"},
+        {"state": "EVIDENCIA_INSUFICIENTE", "operation_status": "FAILED", "generation_status": "ABSTAINED", "response": None, "message": "x", "cause": "PROVIDER_TIMEOUT"},
+        {"state": "EVIDENCIA_INSUFICIENTE", "operation_status": "FAILED", "generation_status": "FAILED", "response": None, "message": "x", "cause": "PROVIDER_TIMEOUT"},
     ],
 )
 def test_invalid_terminal_combinations_are_rejected(connection, overrides):
@@ -254,7 +265,8 @@ def test_reject_null_state_completed_generation_succeeded(connection):
     "overrides",
     [
         {"operation_status": "COMPLETED", "generation_status": "FAILED", "cause": "INTERNAL_FAILURE", "response": None, "message": "Fallo"},
-        {"operation_status": "FAILED", "generation_status": "FAILED", "cause": "INTERNAL_FAILURE", "response": None, "message": "Fallo"},
+        {"operation_status": "FAILED", "generation_status": "FAILED", "cause": None, "response": None, "message": "Fallo"},
+        {"operation_status": "FAILED", "generation_status": "FAILED", "cause": "INTERNAL_FAILURE", "response": "Texto", "message": "Fallo"},
         {"operation_status": "FAILED", "generation_status": "NOT_REQUESTED", "cause": None, "response": None, "message": "Fallo"},
         {"operation_status": "FAILED", "generation_status": "NOT_REQUESTED", "cause": "INTERNAL_FAILURE", "response": "Respuesta inválida", "message": "Fallo"},
         {"operation_status": "FAILED", "generation_status": "NOT_REQUESTED", "cause": "INTERNAL_FAILURE", "response": None, "message": None},

@@ -8,7 +8,7 @@ import psycopg
 from app.config import get_settings
 
 
-EXPECTED_REVISION = "0017_declared_document_date"
+EXPECTED_REVISION = "0018_rag_policy_result"
 RUNTIME_GROUP = "riesgo_legal_runtime"
 
 # Contrato DML efectivo exacto, incluidas las tablas añadidas después de Security.

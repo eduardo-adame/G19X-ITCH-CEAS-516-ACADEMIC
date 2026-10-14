@@ -65,17 +65,24 @@ class GroqProvider:
         messages: Sequence[dict[str, str]],
         *,
         before_send: Callable[[], None],
+        response_format: dict | None = None,
     ) -> str:
-        """Revalida antes de cada POST, incluso al reintentar un 429."""
+        """Revalida antes de cada POST, incluso al reintentar un 429.
+
+        ``response_format`` solicita salida estructurada con esquema estricto en la misma llamada.
+        """
         if not self._api_key:
             raise GroqFailure("PROVIDER_UNAVAILABLE")
+        body = {
+            "model": GROQ_MODEL,
+            "messages": list(messages),
+            "max_completion_tokens": 4096,
+            "include_reasoning": False,
+        }
+        if response_format is not None:
+            body["response_format"] = response_format
         payload = json.dumps(
-            {
-                "model": GROQ_MODEL,
-                "messages": list(messages),
-                "max_completion_tokens": 4096,
-                "include_reasoning": False,
-            },
+            body,
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")

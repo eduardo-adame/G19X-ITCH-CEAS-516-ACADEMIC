@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -51,17 +52,26 @@ class _Encoder:
         return [1.0, 0.0, *([0.0] * 1022)]
 
 
+def _contract(status="SUPPORTED", answer="El plazo es de treinta días [E1].", handles=("E1",)) -> str:
+    return json.dumps({"status": status, "answer": answer, "evidence_handles": list(handles)}, ensure_ascii=False)
+
+
 class _Provider:
-    def __init__(self):
+    """Proveedor controlado: devuelve la salida estructurada indicada y registra cada envío."""
+
+    def __init__(self, output=None):
         self.calls = 0
+        self.requests = []
+        self.output = output if output is not None else _contract()
         self._lock = Lock()
 
-    def generate(self, messages, *, before_send):
+    def generate(self, messages, *, before_send, response_format=None):
         before_send()
-        assert len(messages) == 2
+        assert len(messages) == 2 and response_format is not None
         with self._lock:
             self.calls += 1
-        return "El plazo es de treinta días [E1]."
+            self.requests.append((messages, response_format))
+        return self.output
 
 
 @pytest.fixture(scope="module")
@@ -88,14 +98,14 @@ def database():
         previous = os.environ.get("POSTGRES_DB")
         try:
             os.environ["POSTGRES_DB"] = name
-            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0017_declared_document_date")
+            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0018_rag_policy_result")
         finally:
             if previous is None:
                 os.environ.pop("POSTGRES_DB", None)
             else:
                 os.environ["POSTGRES_DB"] = previous
         with psycopg.connect(owner_dsn, autocommit=True) as connection:
-            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0017_declared_document_date"
+            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0018_rag_policy_result"
         yield _Database(name=name, owner=owner_dsn, runtime=runtime_dsn)
     finally:
         if created:
@@ -128,7 +138,10 @@ def _grant(database, active=True):
 
 
 def _document(database):
-    text = "El contrato sintético establece un plazo de treinta días."
+    return _document_with_text(database, "El contrato sintético establece un plazo de treinta días.")
+
+
+def _document_with_text(database, text):
     file_id, stored_id, version_id = uuid4(), uuid4(), uuid4()
     digest = hashlib.sha256(text.encode()).digest()
     with psycopg.connect(database["owner"], autocommit=True) as connection:
@@ -572,7 +585,7 @@ def test_transport_failure_persists_failed_operation_and_single_audit(database) 
     principal = _principal(database)
 
     class FailedProvider:
-        def generate(self, _messages, *, before_send):
+        def generate(self, _messages, *, before_send, response_format=None):
             before_send()
             from app.rag.provider import GroqFailure
             raise GroqFailure("PROVIDER_UNAVAILABLE")
@@ -585,7 +598,9 @@ def test_transport_failure_persists_failed_operation_and_single_audit(database) 
     assert result.payload["operation_status"] == "FAILED"
     assert result.payload["generation_status"] == "FAILED"
     assert result.payload["generated_response"] is None
-    assert result.payload["fragments"]
+    # Un error técnico no se convierte en Estado 1, 2 ni 3: no hay estado final de evidencia.
+    assert result.payload["state"] is None and result.payload["citations"] == []
+    assert result.payload["fragments"] and all(item["usage"] == "REFERENCE" for item in result.payload["fragments"])
     with psycopg.connect(database["owner"], autocommit=True) as connection:
         operation = connection.execute(
             "SELECT safe_cause_code FROM app.rag_operation WHERE operation_id=%s",
@@ -618,6 +633,7 @@ def test_exhausted_429_keeps_only_authorized_fragments_and_one_failure_audit(dat
     result = _service(database, provider).execute(principal=principal, query="¿Cuál es el plazo?")
     assert opener.calls == 3
     assert result.status_code == 503
+    assert result.payload["state"] is None
     assert result.payload["operation_status"] == "FAILED"
     assert result.payload["generation_status"] == "FAILED"
     assert result.payload["generated_response"] is None
@@ -691,7 +707,7 @@ def test_real_groq_smoke_with_synthetic_authorized_document(database) -> None:
     service = _service(database, GroqProvider(api_key=key, timeout_seconds=45))
     result = service.execute(
         principal=principal,
-        query="Según el documento sintético, ¿cuál es el plazo? Responde con cita [E1].",
+        query="Según el documento sintético, ¿cuál es el plazo?",
     )
     with psycopg.connect(database["owner"], autocommit=True) as connection:
         operation = connection.execute(
@@ -715,7 +731,6 @@ def test_real_groq_smoke_with_synthetic_authorized_document(database) -> None:
     assert result.payload["state"] == "EVIDENCIA_SUFICIENTE"
     response = result.payload["generated_response"]
     assert response and response.strip()
-    assert "[E1]" in response
     observed_fact = _synthetic_deadline(response)
     assert observed_fact is not None, "La respuesta no fundamentó el plazo sintético"
     assert _synthetic_deadline(source_text) is not None
@@ -732,3 +747,281 @@ def test_real_groq_smoke_with_synthetic_authorized_document(database) -> None:
     print(f"RF055_OBSERVED_SYNTHETIC_FACT={observed_fact}")
     print("RF055_CITATION_HANDLES=E1")
     print("RF055_PERSISTED_RESPONSE_FACT=PASS")
+
+
+class _CountingRepository(RetrievalRepository):
+    def __init__(self):
+        super().__init__()
+        self.vector_calls = 0
+
+    def vector_top10(self, connection, scope, query_embedding):
+        self.vector_calls += 1
+        return super().vector_top10(connection, scope, query_embedding)
+
+
+@pytest.mark.requires_db
+def test_autonomous_decision_is_scope_restricted_without_retrieval_or_provider(database) -> None:
+    """SRS v0.23 Gate 1: restricción de alcance, sin recuperación ni proveedor y sin reutilizar el Estado 4."""
+    _grant(database)
+    _document(database)
+    principal = _principal(database)
+    provider, repository = _Provider(), _CountingRepository()
+    security = SecurityService(SecurityRepository(database["runtime"]))
+    service = RagApplicationService(conninfo=database["runtime"], security=security,
+                                    retrieval=RetrievalService(security, repository=repository, encoder=_Encoder()), provider=provider)
+    key = uuid4()
+    result = service.execute(principal=principal, query="Decide si debo demandar al proveedor", idempotency_key=key)
+    assert result.status_code == 200
+    assert result.payload["state"] is None and result.payload["policy_result"] == "RESTRICCION_ALCANCE"
+    assert result.payload["fragments"] == [] and result.payload["citations"] == [] and result.payload["generated_response"] is None
+    assert "no toma decisiones jurídicas" in result.payload["safe_result_message"]
+    assert provider.calls == 0 and repository.vector_calls == 0
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        row = connection.execute(
+            "SELECT r.state, r.policy_result, r.operation_status, r.generation_status, e.result, e.safe_cause_code, "
+            "(SELECT count(*) FROM app.rag_final_fragment f WHERE f.rag_operation_id=r.id), "
+            "(SELECT count(*) FROM audit.event_resource er WHERE er.event_id=e.id) "
+            "FROM app.rag_operation r JOIN audit.event e ON e.operation_id=r.operation_id WHERE r.operation_id=%s",
+            (result.payload["operation_id"],),
+        ).fetchone()
+    assert row == (None, "RESTRICCION_ALCANCE", "COMPLETED", "NOT_REQUESTED", "RESTRICTED", "AUTONOMOUS_DECISION_REQUEST", 0, 0)
+    retry = service.execute(principal=principal, query="Decide si debo demandar al proveedor", idempotency_key=key)
+    assert retry.payload == result.payload and provider.calls == 0
+
+
+@pytest.mark.requires_db
+def test_restricted_lifecycle_constraint_rejects_mixed_states(database) -> None:
+    """La restricción no puede convivir con un estado de evidencia ni con una respuesta generada."""
+    principal = _principal(database)
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            connection.execute(
+                "INSERT INTO app.rag_operation (id, user_id, session_id, query_sha256, state, generated_response, safe_result_message, "
+                "operation_id, correlation_id, operation_status, generation_status, policy_result) "
+                "VALUES (%s, %s, %s, %s, 'SIN_AUTORIZACION', NULL, 'x', %s, %s, 'COMPLETED', 'NOT_REQUESTED', 'RESTRICCION_ALCANCE')",
+                (uuid4(), principal.account_id, principal.session_id, bytes(32), uuid4(), uuid4()),
+            )
+
+
+# --- Generación sustentada con proveedor CONTROLADO (F-04, SRS v0.23 borrador) ---------------------
+
+def _isolate(database) -> None:
+    """Deja como único corpus activo el documento que cree la prueba (handles deterministas)."""
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        connection.execute("UPDATE app.document SET active_version_id=NULL WHERE active_version_id IS NOT NULL")
+
+
+def _operation(database, operation_id):
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        return connection.execute(
+            "SELECT r.state, r.operation_status, r.generation_status, r.safe_cause_code, r.generated_response, "
+            "(SELECT count(*) FROM app.rag_final_fragment f WHERE f.rag_operation_id=r.id AND f.usage='EVIDENCE'), "
+            "(SELECT count(*) FROM audit.event e WHERE e.operation_id=r.operation_id) "
+            "FROM app.rag_operation r WHERE r.operation_id=%s", (operation_id,),
+        ).fetchone()
+
+
+@pytest.mark.requires_db
+def test_grounded_supported_valid_is_state_one_with_single_call_and_schema(database) -> None:
+    _grant(database)
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        connection.execute("UPDATE app.document SET active_version_id=NULL WHERE active_version_id IS NOT NULL")
+    fragment = _document(database)
+    principal = _principal(database)
+    provider = _Provider()
+    result = _service(database, provider).execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert result.payload["generation_status"] == "SUCCEEDED" and result.payload["generated_response"] == "El plazo es de treinta días [E1]."
+    assert [item["fragment_id"] for item in result.payload["citations"]] == [fragment]
+    assert provider.calls == 1
+    messages, response_format = provider.requests[0]
+    assert response_format["json_schema"]["strict"] is True
+    assert response_format["json_schema"]["schema"]["properties"]["evidence_handles"]["items"]["enum"] == ["E1"]
+    assert "treinta días" in messages[1]["content"]
+
+
+@pytest.mark.requires_db
+def test_grounded_insufficient_is_state_two_abstained_with_reference_fragments(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    principal = _principal(database)
+    provider = _Provider(_contract("INSUFFICIENT", None, ()))
+    result = _service(database, provider).execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_INSUFICIENTE"
+    assert result.payload["generation_status"] == "ABSTAINED" and result.payload["generated_response"] is None
+    assert result.payload["citations"] == [] and result.payload["fragments"]
+    assert all(item["usage"] == "REFERENCE" for item in result.payload["fragments"])
+    assert provider.calls == 1
+    assert _operation(database, result.payload["operation_id"]) == ("EVIDENCIA_INSUFICIENTE", "COMPLETED", "ABSTAINED", None, None, 0, 1)
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("output", [
+    _contract("SUPPORTED", "El plazo es de treinta días.", ()),                     # SUPPORTED sin citas
+    _contract("SUPPORTED", "El plazo es de treinta días [E4].", ("E4",)),           # handle inventado
+    _contract("SUPPORTED", "El plazo es de treinta días.", ("DOC-OTRO",)),          # referencia a otro documento
+    "El plazo es de treinta días [E1].",                                           # schema inválido (texto libre)
+    json.dumps({"status": "SUPPORTED", "answer": "El plazo es de treinta días [E1]."}),  # campo faltante
+], ids=["sin-citas", "handle-inventado", "otro-documento", "texto-libre", "campo-faltante"])
+def test_grounded_contract_violation_is_controlled_failure_never_state_one(database, output) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    principal = _principal(database)
+    provider = _Provider(output)
+    result = _service(database, provider).execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    assert result.status_code == 503 and result.payload["state"] is None
+    assert result.payload["operation_status"] == "FAILED" and result.payload["generation_status"] == "FAILED"
+    assert result.payload["generated_response"] is None and result.payload["citations"] == []
+    state, operation, generation, cause, response, evidence, audits = _operation(database, result.payload["operation_id"])
+    assert (state, operation, generation, cause, response, evidence, audits) == (None, "FAILED", "FAILED", "INVALID_PROVIDER_OUTPUT", None, 0, 1)
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("cause", ["PROVIDER_TIMEOUT", "PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMITED"])
+def test_grounded_technical_errors_keep_technical_semantics(database, cause) -> None:
+    _grant(database)
+    _document(database)
+    principal = _principal(database)
+
+    class Failing:
+        def generate(self, _messages, *, before_send, response_format=None):
+            before_send()
+            from app.rag.provider import GroqFailure
+            raise GroqFailure(cause)
+
+    result = _service(database, Failing()).execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    assert result.status_code == 503 and result.payload["state"] is None
+    assert _operation(database, result.payload["operation_id"])[:4] == (None, "FAILED", "FAILED", cause)
+
+
+@pytest.mark.requires_db
+def test_local_gates_cannot_declare_state_one_without_provider_validation(database) -> None:
+    """Defensa: si la recuperación devolviera Estado 1 por sí sola, la operación falla sin llamar al proveedor."""
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    principal = _principal(database)
+    provider = _Provider()
+    service = _service(database, provider)
+    original = service.retrieval.retrieve
+    service.retrieval.retrieve = lambda connection, context: replace(original(connection, context), state=EvidenceState.EVIDENCIA_SUFICIENTE)
+    result = service.execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    assert provider.calls == 0
+    assert result.status_code == 503 and result.payload["state"] is None and result.payload["generated_response"] is None
+    assert _operation(database, result.payload["operation_id"])[:4] == (None, "FAILED", "NOT_REQUESTED", "INTERNAL_FAILURE")
+
+
+@pytest.mark.requires_db
+def test_grounded_revocation_right_before_send_prevents_sending_and_leakage(database) -> None:
+    _grant(database)
+    _document(database)
+    principal = _principal(database)
+
+    class RevokedBeforeSend:
+        sent = 0
+
+        def generate(self, _messages, *, before_send, response_format=None):
+            _grant(database, active=False)
+            before_send()
+            self.sent += 1
+            return _contract()
+
+    provider = RevokedBeforeSend()
+    try:
+        result = _service(database, provider).execute(principal=principal, query="¿Cuál es el plazo del contrato sintético?")
+    finally:
+        _grant(database)
+    assert provider.sent == 0
+    assert result.status_code == 403 and result.payload["state"] == "SIN_AUTORIZACION"
+    assert result.payload["fragments"] == [] and result.payload["citations"] == [] and result.payload["generated_response"] is None
+
+
+class _OrthogonalEncoder(_Encoder):
+    """Consulta sin relación con el corpus (coseno 0) y con baja probabilidad de decisión."""
+
+    def encode_query(self, _query):
+        vector = [0.0] * 1024
+        vector[851] = 1.0
+        return vector
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("query", ["¿Cuál es la capital de Japón?", "Dame una receta de enchiladas verdes"])
+def test_out_of_domain_is_state_three_without_provider(database, query) -> None:
+    from app.rag.gates import gates_config
+    assert gates_config().probe.probability(_OrthogonalEncoder().encode_query(query)) < gates_config().probe.threshold
+    _grant(database)
+    _document(database)
+    principal = _principal(database)
+    provider = _Provider()
+    security = SecurityService(SecurityRepository(database["runtime"]))
+    service = RagApplicationService(conninfo=database["runtime"], security=security,
+                                    retrieval=RetrievalService(security, encoder=_OrthogonalEncoder()), provider=provider)
+    result = service.execute(principal=principal, query=query)
+    assert result.status_code == 200 and result.payload["state"] == "SIN_EVIDENCIA"
+    assert result.payload["fragments"] == [] and provider.calls == 0
+
+
+# Importancias registradas con BGE-M3 real en el último confirmation set: reproducen la decisión
+# de los gates locales (candidatos a generación) sin cargar el modelo en la prueba.
+_RESIDUAL_NEGATIVES = {
+    "LN14": ("¿Cuánto suman los intereses moratorios reclamados a Distribuidora Zeta?",
+             "Juicio ordinario mercantil Zeta 88/2026 promovido por Industrias Ficticias Norte contra Distribuidora Zeta por falta de pago de facturas.\n\n"
+             "Monto: se reclama el pago de dos millones trescientos mil pesos por concepto de mercancía entregada y no pagada, más intereses moratorios.",
+             {"distribuidora": 0.0894, "intereses": 0.1164, "moratorios": 0.1161, "reclamados": 0.0678, "suman": 0.046, "zeta": 0.1272}),
+    "LN18": ("¿Cuánto tiempo tiene auditoría interna para revisar las reservaciones de viaje?",
+             "Sección 2. Hospedaje\nEl hospedaje deberá reservarse por conducto del área de compras con al menos cinco días de anticipación, salvo viajes "
+             "urgentes. El área de auditoría interna podrá revisar en cualquier momento las reservaciones y solicitar la documentación de cada estancia.",
+             {"auditoría": 0.0906, "interna": 0.0526, "reservaciones": 0.0549, "revisar": 0.0219, "tiempo": 0.0205, "viaje": 0.056}),
+    "LN21": ("¿Qué legislación rige el reglamento de viáticos Mu?",
+             "Reglamento interno de viáticos Mu de Industrias Ficticias Norte, aplicable a los viajes de trabajo del personal.",
+             {"legislación": 0.0597, "reglamento": 0.0948, "rige": 0.0519, "viáticos": 0.1878}),
+    "LN33": ("¿Cuántos días hábiles tiene el área de compras para confirmar una reservación?",
+             "Plazo de entrega: el Proveedor deberá entregar cada pedido dentro de los diez días hábiles siguientes a la recepción de la orden de compra.",
+             {"compras": 0.077, "confirmar": 0.0336, "días": 0.1304, "hábiles": 0.0353, "reservación": 0.0537, "área": 0.0512}),
+}
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("case", sorted(_RESIDUAL_NEGATIVES))
+def test_residual_negatives_reach_provider_only_with_authorized_evidence_and_abstention_is_state_two(database, case, monkeypatch) -> None:
+    """LN14/LN18/LN21/LN33 superan los gates locales; el proveedor que respeta el contrato se abstiene (Estado 2)."""
+    from app.rag import gates
+    query, text, importance = _RESIDUAL_NEGATIVES[case]
+    monkeypatch.setattr(gates, "term_importance", lambda *_a, **_k: dict(importance))
+    _grant(database)
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        connection.execute("UPDATE app.document SET active_version_id=NULL WHERE active_version_id IS NOT NULL")
+    _document_with_text(database, text)
+    principal = _principal(database)
+    provider = _Provider(_contract("INSUFFICIENT", None, ()))
+    result = _service(database, provider).execute(principal=principal, query=query)
+    assert provider.calls == 1, "el caso debía superar los gates locales como candidato a generación"
+    assert result.payload["state"] == "EVIDENCIA_INSUFICIENTE" and result.payload["generated_response"] is None
+    assert result.payload["generation_status"] == "ABSTAINED"
+    sent = provider.requests[0][0][1]["content"]
+    assert "[E1]" in sent and "[E2]" not in sent
+    # Una afirmación SUPPORTED con un handle fuera del conjunto entregado tampoco produce Estado 1.
+    lying = _Provider(_contract("SUPPORTED", "Dato no sustentado [E2].", ("E2",)))
+    assert _service(database, lying).execute(principal=principal, query=query).payload["state"] is None
+
+
+@pytest.mark.requires_db
+def test_qp05_equivalent_supported_with_valid_citation_reaches_state_one(database, monkeypatch) -> None:
+    from app.rag import gates
+    monkeypatch.setattr(gates, "term_importance", lambda *_a, **_k: {"arrendar": 0.0755, "beta": 0.1752, "bodega": 0.1166,
+                                                                       "importe": 0.037, "mensual": 0.0633, "paga": 0.0372})
+    text = ("Contrato de arrendamiento Beta sobre la bodega ubicada en el Parque Industrial Ficticio, nave 7. Arrendador: Inmobiliaria Beta.\n\n"
+            "Renta: el arrendatario pagará una renta mensual de ochenta mil pesos más IVA dentro de los primeros cinco días de cada mes.")
+    _grant(database)
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        connection.execute("UPDATE app.document SET active_version_id=NULL WHERE active_version_id IS NOT NULL")
+    fragment = _document_with_text(database, text)
+    principal = _principal(database)
+    provider = _Provider(_contract("SUPPORTED", "La renta mensual es de ochenta mil pesos más IVA [E1].", ("E1",)))
+    result = _service(database, provider).execute(principal=principal, query="¿Qué importe mensual se paga por arrendar la bodega Beta?")
+    assert provider.calls == 1
+    assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert [item["fragment_id"] for item in result.payload["citations"]] == [fragment]

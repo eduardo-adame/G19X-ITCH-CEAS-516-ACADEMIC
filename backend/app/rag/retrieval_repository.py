@@ -42,7 +42,8 @@ WITH eligible_versions AS MATERIALIZED (
 authorized_corpus AS MATERIALIZED (
     SELECT c.id AS fragment_id, c.content AS fragment_text, {embedding_projection}
            ev.document_id, ev.document_name, ev.document_type, ev.document_date,
-           c.page_start, c.page_end, c.section, c.clause
+           c.page_start, c.page_end, c.section, c.clause,
+           ev.version_id AS document_version_id, c.ordinal
       FROM eligible_versions ev
       JOIN app.document_chunk c ON c.document_version_id = ev.version_id
       JOIN app.document_chunk_index_receipt receipt ON receipt.fragment_id = c.id
@@ -82,6 +83,8 @@ def _candidate(row: dict[str, object], rank: int, score: float) -> RetrievedCand
         page_end=row["page_end"],
         section=row["section"],
         clause=row["clause"],
+        document_version_id=row.get("document_version_id"),
+        ordinal=row.get("ordinal"),
     )
     return RetrievedCandidate(row["fragment_id"], str(row["fragment_text"]), citation, rank, score)
 
@@ -113,6 +116,7 @@ class RetrievalRepository:
         sql = corpus + """
 SELECT fragment_id, fragment_text, document_id, document_name,
        document_type, document_date, page_start, page_end, section, clause,
+       document_version_id, ordinal,
        embedding <=> %(query_vector)s::vector AS distance
   FROM authorized_corpus
  ORDER BY distance ASC, fragment_id ASC
@@ -122,6 +126,26 @@ SELECT fragment_id, fragment_text, document_id, document_name,
             cursor.execute(sql, {**parameters, "query_vector": _vector_literal(query_embedding)})
             rows = cursor.fetchall()
         return tuple(_candidate(row, rank, float(row["distance"])) for rank, row in enumerate(rows, 1))
+
+    def fragment_cosines(
+        self,
+        connection: psycopg.Connection,
+        scope: AuthorizedDocumentScope,
+        query_embedding: Sequence[float],
+        fragment_ids: Sequence[UUID],
+    ) -> dict[UUID, float]:
+        """Similitud coseno de fragmentos finales dentro del corpus autorizado (Gate 2)."""
+        if not fragment_ids:
+            return {}
+        corpus, parameters = self._corpus(scope)
+        sql = corpus + """
+SELECT fragment_id, 1 - (embedding <=> %(query_vector)s::vector) AS cosine
+  FROM authorized_corpus
+ WHERE fragment_id = ANY(%(fragment_ids)s::uuid[])
+"""
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql, {**parameters, "query_vector": _vector_literal(query_embedding), "fragment_ids": list(fragment_ids)})
+            return {row["fragment_id"]: float(row["cosine"]) for row in cursor.fetchall()}
 
     def _bm25_statement(self, scope: AuthorizedDocumentScope) -> tuple[str, dict[str, object]]:
         corpus, parameters = self._corpus(scope, include_embedding=False)
@@ -165,7 +189,7 @@ scores AS (
 )
 SELECT ac.fragment_id, ac.fragment_text, ac.document_id, ac.document_name,
        ac.document_type, ac.document_date, ac.page_start, ac.page_end,
-       ac.section, ac.clause, scores.score
+       ac.section, ac.clause, ac.document_version_id, ac.ordinal, scores.score
   FROM scores JOIN authorized_corpus ac USING (fragment_id)
  WHERE scores.score > 0
  ORDER BY scores.score DESC, ac.fragment_id ASC

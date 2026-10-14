@@ -19,7 +19,7 @@ from app.corpus.tokenizer import FastTokenizer
 from app.rag.index_repository import IndexRepository
 from app.rag.indexing import IndexingService
 from app.rag.lexical import lexical_term_frequencies
-from app.rag.models import EvidenceState, RetrievalContext
+from app.rag.models import EvidenceState, ProcessingOutcome, RetrievalContext
 from app.rag.retrieval import RetrievalService
 from app.rag.retrieval_repository import RetrievalRepository
 from app.security.models import AuthenticatedPrincipal, AuthenticationError, AuthorizationError, ROLE_PERMISSIONS
@@ -70,7 +70,7 @@ def database():
         previous = os.environ.get("POSTGRES_DB")
         try:
             os.environ["POSTGRES_DB"] = name
-            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0017_declared_document_date")
+            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0018_rag_policy_result")
         finally:
             if previous is None:
                 os.environ.pop("POSTGRES_DB", None)
@@ -78,7 +78,7 @@ def database():
                 os.environ["POSTGRES_DB"] = previous
         with psycopg.connect(owner_dsn, autocommit=True) as check:
             assert check.execute("SELECT current_database()").fetchone()[0] == name
-            assert check.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0017_declared_document_date"
+            assert check.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0018_rag_policy_result"
         yield _Database(name=name, owner=owner_dsn, runtime=runtime_dsn, user=runtime)
     finally:
         if created:
@@ -368,7 +368,8 @@ def test_representative_authorized_retrieval_latency_and_evidence(database) -> N
     assert len(vector) == len(lexical) == 3
     assert {item.fragment_id for item in (*vector, *lexical)} == allowed_ids
     assert restricted["fragment"] not in allowed_ids
-    assert result.state is EvidenceState.EVIDENCIA_SUFICIENTE
+    # La recuperación nunca declara Estado 1: entrega candidatos a la generación sustentada.
+    assert result.state is ProcessingOutcome.GENERATION_CANDIDATE
     assert 0 < len(result.fragments) <= 5
     assert all(item.citation.complete and item.fragment_id in allowed_ids for item in result.fragments)
     assert any(item.vector_rank is not None and item.bm25_rank is not None for item in result.fragments)

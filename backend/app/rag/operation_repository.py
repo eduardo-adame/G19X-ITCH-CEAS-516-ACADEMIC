@@ -25,7 +25,7 @@ class RagOperationRepository:
             cursor.execute(
                 "SELECT id, user_id, session_id, query_sha256, state, generated_response, "
                 "safe_result_message, context_reference_id, operation_id, correlation_id, "
-                "operation_status, generation_status, safe_cause_code "
+                "operation_status, generation_status, safe_cause_code, policy_result "
                 "FROM app.rag_operation WHERE operation_id = %s",
                 (operation_id,),
             )
@@ -86,6 +86,7 @@ class RagOperationRepository:
         safe_cause_code: str | None,
         generated_response: str | None,
         safe_result_message: str | None,
+        policy_result: str | None = None,
     ) -> UUID:
         row_id = uuid5(NAMESPACE_URL, f"riesgo-legal:rag-operation:{operation_id}")
         with connection.cursor() as cursor:
@@ -93,12 +94,12 @@ class RagOperationRepository:
                 "INSERT INTO app.rag_operation "
                 "(id, user_id, session_id, query_sha256, state, generated_response, "
                 "safe_result_message, context_reference_id, operation_id, correlation_id, "
-                "operation_status, generation_status, safe_cause_code) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "operation_status, generation_status, safe_cause_code, policy_result) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     row_id, user_id, session_id, query_sha256, state, generated_response,
                     safe_result_message, context_reference_id, operation_id, correlation_id,
-                    operation_status, generation_status, safe_cause_code,
+                    operation_status, generation_status, safe_cause_code, policy_result,
                 ),
             )
         return row_id
@@ -116,8 +117,9 @@ class RagOperationRepository:
         with connection.cursor() as cursor:
             for fragment in fragments:
                 citation = fragment.citation
+                # Fuera del Estado 1 (incluido un fallo de generación sin estado) los fragmentos solo son referencia.
                 usage = (
-                    "REFERENCE" if state == "EVIDENCIA_INSUFICIENTE"
+                    "REFERENCE" if state != "EVIDENCIA_SUFICIENTE"
                     else "EVIDENCE" if fragment.fragment_id in evidence_ids
                     else "CONTEXT"
                 )

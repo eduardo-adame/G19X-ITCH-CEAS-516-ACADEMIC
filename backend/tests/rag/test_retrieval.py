@@ -24,7 +24,8 @@ def _candidate(rank: int, *, complete: bool = True, fragment_id=None) -> Retriev
         document_id=str(uuid4()), document_name="Contrato de prueba", document_type="PDF",
         document_date=date(2026, 1, 1) if complete else None, fragment_id=identity,
     )
-    return RetrievedCandidate(identity, "Texto sintético", citation, rank, 1.0)
+    # Distancia 0.2 (coseno 0.8) y texto con el término de la consulta: evidencia relevante y respaldada.
+    return RetrievedCandidate(identity, "Texto sintético de la consulta", citation, rank, 0.2)
 
 
 def test_rrf_exact_oracle_deduplicates_and_preserves_original_ranks() -> None:

@@ -11,6 +11,12 @@ export function RagStateBanner({ state }) {
   if (!Object.hasOwn(RAG_STATES, state)) return null
   return <div role="status" aria-live="polite" className="flex items-center gap-2"><Icon name={icon} size={16} /><Badge variant={variant}>{RAG_STATES[state]}</Badge></div>
 }
+export function ScopeRestrictionNotice({ message }) {
+  return <div role="status" aria-live="polite" className="space-y-2 rounded-panel border border-border bg-secondary p-4">
+    <div className="flex items-center gap-2"><Icon name="warning" size={16} /><Badge variant="warning">Fuera del alcance del asistente</Badge></div>
+    <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{message}</p>
+  </div>
+}
 export function Citation({ citation }) {
   const location = citationLocation(citation)
   return <dl className="space-y-2 break-words text-[13px] text-secondary">

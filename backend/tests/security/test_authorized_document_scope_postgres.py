@@ -72,7 +72,7 @@ def authorized_scope_database() -> tuple[dict[str, object], dict[str, object]]:
             POSTGRES_DB=database_name,
         )
         config = Config(str(BACKEND_ROOT / "alembic.ini"))
-        command.upgrade(config, "0017_declared_document_date")
+        command.upgrade(config, "0018_rag_policy_result")
         with psycopg.connect(**owner, autocommit=True) as connection:
             provision(connection, login=runtime_login, password=runtime_password)
         provisioned = True

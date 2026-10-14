@@ -54,7 +54,7 @@ def database(monkeypatch):
         assert connection.execute("SELECT session_user,current_user").fetchone() == ("riesgo_legal_app", "riesgo_legal_app")
     account, session = uuid4(), uuid4()
     with psycopg.connect(owner, row_factory=dict_row) as connection:
-        assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()["version_num"] == "0017_declared_document_date"
+        assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()["version_num"] == "0018_rag_policy_result"
         connection.execute("INSERT INTO app.user_account(id,username,display_name,password_hash) VALUES (%s,%s,'Prueba','hash')", (account, f"document-http-{account.hex}"))
         connection.execute("INSERT INTO app.user_role(user_id,role_id) VALUES (%s,'ANALISTA')", (account,))
         connection.execute("""INSERT INTO app.access_session(id,user_id,refresh_token_sha256,authorization_version,state,expires_at)

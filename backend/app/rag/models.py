@@ -20,6 +20,16 @@ class EvidenceState(StrEnum):
     SIN_EVIDENCIA = "SIN_EVIDENCIA"
 
 
+class ProcessingOutcome(StrEnum):
+    """Resultado interno de los controles locales; no es un estado RAG público ni se persiste.
+
+    Los controles locales solo descartan (Estado 2 o 3). Una consulta que los supera es candidata
+    a generación: el Estado 1 se asigna únicamente después de validar la respuesta del proveedor.
+    """
+
+    GENERATION_CANDIDATE = "GENERATION_CANDIDATE"
+
+
 @dataclass(frozen=True)
 class RetrievalContext:
     principal: AuthenticatedPrincipal
@@ -27,6 +37,8 @@ class RetrievalContext:
     operation_id: UUID
     correlation_id: UUID
     context_reference_id: UUID | None = None
+    # Embedding ya calculado por Gate 1; evita codificar dos veces la misma consulta.
+    query_vector: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +52,9 @@ class CitationMetadata:
     page_end: int | None = None
     section: str | None = None
     clause: str | None = None
+    # Posición estructural del fragmento: delimita la unidad local de evidencia de Gate 3.
+    document_version_id: UUID | None = None
+    ordinal: int | None = None
 
     @property
     def complete(self) -> bool:
@@ -78,7 +93,7 @@ class StructuredContext:
 class RetrievalResult:
     operation_id: UUID
     correlation_id: UUID
-    state: EvidenceState
+    state: EvidenceState | ProcessingOutcome
     fragments: tuple[RankedFragment, ...]
     structured_context: StructuredContext
     context_reference_id: UUID | None

@@ -34,7 +34,7 @@ def connection():
     with _connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT version_num FROM public.alembic_version")
-            assert cursor.fetchone()["version_num"] == "0017_declared_document_date"
+            assert cursor.fetchone()["version_num"] == "0018_rag_policy_result"
         try:
             yield conn
         finally:

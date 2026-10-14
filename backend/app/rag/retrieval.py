@@ -6,9 +6,10 @@ from psycopg.rows import tuple_row
 
 from app.embeddings import get_embedding_service
 from app.rag.context import build_structured_context
-from app.rag.evidence import classify_evidence, fuse_candidates
+from app.rag.evidence import fuse_candidates
+from app.rag.gates import gated_evidence_state
 from app.rag.lexical import lexical_term_frequencies
-from app.rag.models import RetrievalContext, RetrievalError, RetrievalResult
+from app.rag.models import EvidenceState, RetrievalContext, RetrievalError, RetrievalResult
 from app.rag.retrieval_repository import RetrievalRepository, validate_query_vector
 from app.security.models import AuthorizationError
 from app.security.service import SecurityService
@@ -47,7 +48,7 @@ class RetrievalService:
 
         initial_scope = self.security.authorized_document_scope(connection, context.principal)
         try:
-            vector = self.encoder.encode_query(context.query)
+            vector = context.query_vector if context.query_vector is not None else self.encoder.encode_query(context.query)
         except Exception:
             raise RetrievalError("Consulta vectorial no disponible") from None
         vector = validate_query_vector(vector)
@@ -75,10 +76,24 @@ class RetrievalService:
         if not still_authorized:
             raise AuthorizationError("Acceso no autorizado")
         fragments = fuse_candidates(vector_candidates, bm25_candidates)
+        # Coseno de cada fragmento final; los que solo aporta BM25 se miden con el mismo embedding.
+        cosines = {item.fragment_id: 1.0 - float(item.score) for item in vector_candidates}
+        missing = tuple(item.fragment_id for item in fragments if item.fragment_id not in cosines)
+        try:
+            if missing:
+                cosines.update(self.repository.fragment_cosines(connection, final_scope, vector, missing))
+            state = gated_evidence_state(context.query, vector, fragments, cosines, self.encoder.encode_query)
+        except psycopg.Error:
+            raise RetrievalError("La recuperación no pudo completarse") from None
+        except Exception:
+            raise RetrievalError("Consulta vectorial no disponible") from None
+        if state is EvidenceState.SIN_EVIDENCIA:
+            # Sin evidencia relevante no se presentan fragmentos (RF-057).
+            fragments = ()
         result = RetrievalResult(
             operation_id=context.operation_id,
             correlation_id=context.correlation_id,
-            state=classify_evidence(vector_candidates, bm25_candidates, fragments),
+            state=state,
             fragments=fragments,
             structured_context=build_structured_context(fragments),
             context_reference_id=context.context_reference_id,

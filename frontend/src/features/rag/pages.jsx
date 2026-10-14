@@ -8,7 +8,7 @@ import { Icon } from '../../components/Icon.jsx'
 import { readQuery, writeQuery } from '../../shared/query.js'
 import { ApiError } from '../../api/errors.js'
 import { isUuid } from './adapters.js'
-import { DocumentViewer, EvidenceCard, RagStateBanner } from './components.jsx'
+import { DocumentViewer, EvidenceCard, RagStateBanner, ScopeRestrictionNotice } from './components.jsx'
 import { useRag } from './state.jsx'
 import { suggestedQuestions } from './localInteraction.js'
 import { DocumentCatalog } from '../documents/DocumentCatalog.jsx'
@@ -41,7 +41,7 @@ export function RagQueryPage() {
   if (canonicalQuery !== params.toString()) return <Loading label="Preparando la consulta segura…" />
   const result = rag.result
   const submittedQuery = rag.accessPending ? null : rag.local?.query ?? rag.submission?.payload.query
-  const explanation = result?.technicalFailure ? result.message : resultExplanations[result?.state] ?? result?.message
+  const explanation = result?.policyResult ? null : result?.technicalFailure ? result.message : resultExplanations[result?.state] ?? result?.message
   return <div className="mx-auto max-w-[var(--content-width-rag)] space-y-8">
     <PageHeader title="Consulta documental" description="Consulta las fuentes autorizadas y distingue la evidencia original de la respuesta generada." />
     {context && <section className="rounded-control border border-border bg-secondary p-3 text-xs text-secondary"><p>Referencia contextual de un hallazgo. No constituye evidencia ni selecciona documentos.</p><Button className="mt-2" variant="ghost" onClick={() => { rag.clear(); setParams({}, { replace: true }) }}>Quitar referencia</Button></section>}
@@ -57,7 +57,7 @@ export function RagQueryPage() {
     {rag.local && <section role="status" aria-live="polite" aria-label="Respuesta local" className="space-y-3"><h2 className="text-base font-semibold">Respuesta</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{rag.local.message}</p></section>}
     {result && <section className="space-y-5" aria-label="Resultado de la consulta">
       <h2 className="text-base font-semibold">Respuesta</h2>
-      <RagStateBanner state={result.state} />
+      {result.policyResult ? <ScopeRestrictionNotice message={result.message} /> : <RagStateBanner state={result.state} />}
       {result.technicalFailure && <ErrorState error={new ApiError(503)} />}
       {explanation && <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{explanation}</p>}
       {result.response && <section className="rounded-panel border border-border bg-surface p-5"><h3 className="mb-3 text-base font-semibold">Respuesta generada</h3><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{result.response}</p><p className="mt-4 text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}

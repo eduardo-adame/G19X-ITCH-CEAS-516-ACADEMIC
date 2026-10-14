@@ -37,6 +37,7 @@ REVISIONS = (
     "0015_runtime_privs",
     "0016_rag_operation_lifecycle",
     "0017_declared_document_date",
+    "0018_rag_policy_result",
 )
 
 
@@ -100,6 +101,7 @@ def test_every_revision_is_valid_and_round_trips(migrated_database: tuple[sa.Eng
         "0015_runtime_privs": set(),
         "0016_rag_operation_lifecycle": set(),
         "0017_declared_document_date": set(),
+        "0018_rag_policy_result": set(),
     }
     previous = "base"
     for revision in REVISIONS:
@@ -542,6 +544,7 @@ def test_0012_refuses_upgrade_when_kpi_observation_has_rows(
         "0015_runtime_privs",
         "0016_rag_operation_lifecycle",
         "0017_declared_document_date",
+        "0018_rag_policy_result",
     }:
         command.downgrade(config, "0011_document_manage_capability")
     command.upgrade(config, "0011_document_manage_capability")
