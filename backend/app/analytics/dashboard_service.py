@@ -87,7 +87,9 @@ class DashboardService:
             raise ValueError("El rango requiere fechas ordenadas")
         def read(rows):
             rows = [row for row in rows if (period_start is None or row["period_start"] >= period_start) and (period_end is None or row["period_end"] <= period_end)]
-            row = max(rows, key=lambda item: (item["calculated_at"], str(item["id"])), default=None)
+            # Vigente = periodo más reciente; un cierre o corrección tardía de un mes
+            # anterior no desplaza al periodo en curso (RF-072).
+            row = max(rows, key=lambda item: (item["period_start"], item["calculated_at"], str(item["id"])), default=None)
             if row is None:
                 return TechnicalKpi(value=None, availability="NO_DISPONIBLE", as_of_date=None, calculated_at=None, period_start=None, period_end=None)
             return TechnicalKpi(value=_decimal(row["value"]), **{key: row[key] for key in ("availability", "as_of_date", "calculated_at", "period_start", "period_end")})

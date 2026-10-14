@@ -151,6 +151,16 @@ def test_technical_available_zero_and_no_data_are_distinct():
     assert body["value"] is None and body["availability"] == "NO_DISPONIBLE" and body["calculated_at"] is None
 
 
+def test_technical_kpi_vigente_es_el_periodo_mas_reciente_aunque_un_cierre_anterior_sea_posterior():
+    current = row("KPI-CD-03", month=7, value=Decimal(100))
+    closed_late = dict(row("KPI-CD-03", month=5), value=None, availability="NO_DISPONIBLE", calculated_at=datetime(2026, 7, 30, tzinfo=UTC))
+    dashboard, *_ = service([closed_late, current], Security(actor("TI")))
+    body = client(dashboard).get("/api/technical/kpis/KPI-CD-03").json()
+    assert (body["period_start"], body["value"], body["availability"]) == ("2026-07-01", "100", "DISPONIBLE")
+    body = client(dashboard).get("/api/technical/kpis/KPI-CD-03?period_end=2026-05-31").json()
+    assert (body["period_start"], body["value"], body["availability"]) == ("2026-05-01", None, "NO_DISPONIBLE")
+
+
 def test_current_month_and_custom_bounds_are_explicit():
     dashboard, *_ = service([row(month=7)])
     body = client(dashboard).get("/api/dashboard/kpis?period=current_month").json()
