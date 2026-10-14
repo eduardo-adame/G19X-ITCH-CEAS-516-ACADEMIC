@@ -130,11 +130,41 @@ def dispatch_result(
     )
 
 
+def require_process_account(capability: str):
+    """Operaciones programadas: permiso aplicable y cuenta de proceso configurada.
+
+    Una cuenta humana con el mismo permiso no puede invocarlas directamente. La
+    denegación se audita y se responde igual que cualquier falta de permiso.
+    """
+    base = require(capability)
+
+    def dependency(
+        request: Request,
+        principal: AuthenticatedPrincipal = Depends(base),
+        settings: Settings = Depends(security_settings),
+    ) -> AuthenticatedPrincipal:
+        if principal.username in settings.scheduled_process_account_set:
+            return principal
+        security = service_for(request)
+        try:
+            with security.repository.transaction() as connection:
+                security.repository.write_audit_event(
+                    connection, actor=principal, action="AUTHORIZATION_DENIED",
+                    resource_type="SCHEDULED_OPERATION", resource_identifier=capability,
+                    result="DENIED", correlation_id=uuid4(), safe_cause_code="NOT_PROCESS_ACCOUNT",
+                )
+        finally:
+            # La denegación se mantiene aunque no pudiera confirmarse su auditoría.
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso no autorizado")
+
+    return dependency
+
+
 @router.post("/kpi-recalculations/scheduled", response_model=KpiJobResponse)
 def scheduled_kpi_recalculation(
     payload: ScheduledKpiRequest,
     request: Request,
-    principal: AuthenticatedPrincipal = Depends(require("ingest.execute")),
+    principal: AuthenticatedPrincipal = Depends(require_process_account("ingest.execute")),
     security: SecurityService = Depends(service_for),
     settings: Settings = Depends(security_settings),
 ) -> KpiJobResponse:
@@ -173,7 +203,7 @@ def scheduled_kpi_recalculation(
 def scheduled_proactive_analysis(
     payload: ScheduledProactiveRequest,
     request: Request,
-    principal: AuthenticatedPrincipal = Depends(require("ingest.execute")),
+    principal: AuthenticatedPrincipal = Depends(require_process_account("ingest.execute")),
     security: SecurityService = Depends(service_for),
     settings: Settings = Depends(security_settings),
 ) -> ProactiveJobResponse:

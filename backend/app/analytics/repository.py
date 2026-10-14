@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.analytics.models import (
+    SNAPSHOT_KPI_CODES,
     KpiObservationResult,
     ProactiveContextReferenceResult,
     ProactiveEvaluationResult,
@@ -67,6 +68,10 @@ class AnalyticsRepository:
     @staticmethod
     def upsert_observation(connection, observation: KpiObservationResult, run_id: UUID) -> None:
         dimensions = json.dumps(dict(observation.dimensions), ensure_ascii=False, sort_keys=True)
+        # Un snapshot (SNAPSHOT_KPI_CODES) calculado con corte al último día del mes
+        # y después de terminado ese día queda finalizado: ningún recálculo
+        # posterior lo reemplaza con el estado actual. Los agregados por fecha de
+        # negocio conservan el reemplazo de RF-038.
         # La observación lógica se actualiza en sitio. Si un análisis proactivo ya
         # inmovilizó su par observación/ejecución, se conserva ese vínculo histórico
         # y la ejecución nueva queda trazada por su propio run, job y auditoría.
@@ -87,8 +92,11 @@ class AnalyticsRepository:
                    value=EXCLUDED.value,
                    availability=EXCLUDED.availability, as_of_date=EXCLUDED.as_of_date,
                    calculated_at=CURRENT_TIMESTAMP
-               WHERE EXCLUDED.as_of_date >= app.kpi_observation.as_of_date""",
-            (uuid4(), run_id, observation.kpi_code, observation.period_start, observation.period_end, dimensions, observation.value, observation.availability, observation.as_of_date),
+               WHERE EXCLUDED.as_of_date >= app.kpi_observation.as_of_date
+                 AND NOT (app.kpi_observation.kpi_code = ANY(%s)
+                          AND app.kpi_observation.as_of_date = app.kpi_observation.period_end
+                          AND app.kpi_observation.calculated_at >= (app.kpi_observation.period_end + 1)::timestamp AT TIME ZONE 'UTC')""",
+            (uuid4(), run_id, observation.kpi_code, observation.period_start, observation.period_end, dimensions, observation.value, observation.availability, observation.as_of_date, sorted(SNAPSHOT_KPI_CODES)),
         )
 
     @staticmethod
@@ -104,20 +112,27 @@ class AnalyticsRepository:
         return connection.execute("SELECT * FROM app.contract_record WHERE fecha_firma BETWEEN %s AND %s", (period_start, period_end)).fetchall()
 
     @staticmethod
-    def contracts_snapshot(connection):
-        return connection.execute("SELECT * FROM app.contract_record").fetchall()
+    def contracts_snapshot(connection, as_of: date | None = None):
+        # El corte incluye lo incorporado hasta el fin del día as_of (UTC); los registros no se actualizan en sitio.
+        if as_of is None:
+            return connection.execute("SELECT * FROM app.contract_record").fetchall()
+        return connection.execute("SELECT * FROM app.contract_record WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
 
     @staticmethod
     def litigation_rows(connection, period_start: date, period_end: date):
         return connection.execute("SELECT * FROM app.litigation WHERE fecha_apertura BETWEEN %s AND %s", (period_start, period_end)).fetchall()
 
     @staticmethod
-    def active_litigations(connection):
-        return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo'").fetchall()
+    def active_litigations(connection, as_of: date | None = None):
+        if as_of is None:
+            return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo'").fetchall()
+        return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo' AND created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
 
     @staticmethod
-    def compliance_snapshot(connection):
-        return connection.execute("SELECT * FROM app.compliance_obligation").fetchall()
+    def compliance_snapshot(connection, as_of: date | None = None):
+        if as_of is None:
+            return connection.execute("SELECT * FROM app.compliance_obligation").fetchall()
+        return connection.execute("SELECT * FROM app.compliance_obligation WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
 
     @staticmethod
     def incident_rows(connection, period_start: date, period_end: date):
@@ -136,15 +151,18 @@ class AnalyticsRepository:
         return connection.execute("SELECT DISTINCT tipo_asunto, estado FROM app.legal_matter WHERE tipo_asunto IS NOT NULL AND estado IS NOT NULL").fetchall()
 
     @staticmethod
-    def ocr_final_rows(connection):
+    def ocr_final_rows(connection, as_of: date | None = None):
+        # Para un corte sólo existen los resultados OCR procesados hasta ese día (RF-037).
+        cutoff = "" if as_of is None else " AND r.processed_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'"
         return connection.execute(
             """WITH selected AS (
                 SELECT d.id_documento, r.confianza_agregada,
                        row_number() OVER (PARTITION BY d.id_documento ORDER BY r.processed_at DESC, v.version_number DESC, r.attempt_number DESC, r.id DESC) AS ordinal
                   FROM app.document d JOIN app.document_version v ON v.id_documento=d.id_documento
                   JOIN app.ocr_run r ON r.document_version_id=v.id
-                 WHERE r.is_final AND r.estado_ocr IN ('Exitoso','Rechazado por baja confianza')
-               ) SELECT id_documento, confianza_agregada FROM selected WHERE ordinal=1"""
+                 WHERE r.is_final AND r.estado_ocr IN ('Exitoso','Rechazado por baja confianza')""" + cutoff + """
+               ) SELECT id_documento, confianza_agregada FROM selected WHERE ordinal=1""",
+            () if as_of is None else (as_of,),
         ).fetchall()
 
     @staticmethod

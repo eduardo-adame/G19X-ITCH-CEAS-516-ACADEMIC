@@ -166,6 +166,9 @@ services:
       SECURITY_BOOTSTRAP_USERNAME: ${SECURITY_BOOTSTRAP_USERNAME:-}
       SECURITY_BOOTSTRAP_PASSWORD: ${SECURITY_BOOTSTRAP_PASSWORD:-}
       INGESTION_STORAGE_ROOT: /data/ingestion
+      # Cuentas de proceso que pueden invocar operaciones programadas. Por defecto,
+      # solo la identidad con la que Airflow inicia sesión; el backend niega todo si está vacío.
+      SCHEDULED_PROCESS_ACCOUNTS: ${SCHEDULED_PROCESS_ACCOUNTS:-${AIRFLOW_INGESTION_USERNAME:-airflow-ingestion}}
       INGESTION_CONTROLLED_ROOT: /data/controlled
     command:
       - sh

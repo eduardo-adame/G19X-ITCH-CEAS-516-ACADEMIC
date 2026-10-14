@@ -85,7 +85,9 @@ class KPIRecalculationService:
                     self.repository.upsert_observation(connection, observation, run_id)
                 self._audit(connection, context, "SUCCESS")
                 self.repository.complete_run(connection, run_id)
-                return KpiRecalculationResult(run_id, tuple(observations))
+                # Se devuelve la observación vigente persistida: un snapshot finalizado
+                # o una observación más reciente pueden haber conservado su valor.
+                return KpiRecalculationResult(run_id, _to_observations(self.repository.current_observations(connection, codes=tuple(sorted(set(request.kpi_codes))), period_start=request.period_start, period_end=request.period_end)))
         except Exception as exc:
             self._record_failure(operation_id, request, context, exc)
             if isinstance(exc, KpiCalculationError):
@@ -481,12 +483,12 @@ def _rc01(repo, connection, request):
     return [_unavailable("KPI-RC-01", request)] if not values else [_available("KPI-RC-01", request, sum(values) / Decimal(len(values)))]
 
 def _rc03(repo, connection, request):
-    count = sum(1 for row in repo.contracts_snapshot(connection) if row["estado_revision"] == "No iniciado" and request.as_of_date <= row["fecha_vencimiento"] <= request.as_of_date + timedelta(days=60))
+    count = sum(1 for row in repo.contracts_snapshot(connection, request.as_of_date) if row["estado_revision"] == "No iniciado" and request.as_of_date <= row["fecha_vencimiento"] <= request.as_of_date + timedelta(days=60))
     return [_available("KPI-RC-03", request, Decimal(count))]
 
 def _li01(repo, connection, request):
     totals = {severity: Decimal(0) for severity in ("alto", "medio", "bajo")}
-    for row in repo.active_litigations(connection):
+    for row in repo.active_litigations(connection, request.as_of_date):
         severity = row["nivel_severidad"]
         if severity not in totals: continue
         amount = row["estimacion_interna"] if row["estimacion_interna"] is not None else row["monto_reclamado"]
@@ -497,7 +499,7 @@ def _li05(repo, connection, request):
     return [_available("KPI-LI-05", request, Decimal(len(repo.litigation_rows(connection, request.period_start, request.period_end))))]
 
 def _cn02(repo, connection, request):
-    count = sum(1 for row in repo.compliance_snapshot(connection) if row["fecha_limite"] < request.as_of_date and row["evidencia_cumplimiento"] is None)
+    count = sum(1 for row in repo.compliance_snapshot(connection, request.as_of_date) if row["fecha_limite"] < request.as_of_date and row["evidencia_cumplimiento"] is None)
     return [_available("KPI-CN-02", request, Decimal(count))]
 
 def _cn03(repo, connection, request):
@@ -513,7 +515,7 @@ def _eo01(repo, connection, request):
     return [_available("KPI-EO-01", request, Decimal(len(identifiers[key])), {"tipo_asunto": key[0], "estado": key[1]}) for key in sorted(known)]
 
 def _cd03(repo, connection, request):
-    rows = repo.ocr_final_rows(connection)
+    rows = repo.ocr_final_rows(connection, request.as_of_date)
     if not rows: return [_unavailable("KPI-CD-03", request)]
     successful = sum(1 for row in rows if row["confianza_agregada"] is not None and Decimal(row["confianza_agregada"]) >= Decimal("0.80"))
     return [_available("KPI-CD-03", request, Decimal(successful) * Decimal(100) / Decimal(len(rows)))]

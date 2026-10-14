@@ -15,6 +15,11 @@ KPI_CODES = frozenset({
     "KPI-CN-02", "KPI-CN-03", "KPI-EO-01", "KPI-CD-03",
 })
 
+# KPI que representan un estado en la fecha de corte (matriz de semántica temporal):
+# se calculan con lo incorporado hasta el corte y, una vez finalizado el mes
+# (as_of_date = period_end), su observación no se reemplaza.
+SNAPSHOT_KPI_CODES = frozenset({"KPI-RC-03", "KPI-LI-01", "KPI-CN-02", "KPI-CD-03"})
+
 
 class KpiCalculationError(Exception):
     """El cálculo de indicadores no puede confirmarse."""

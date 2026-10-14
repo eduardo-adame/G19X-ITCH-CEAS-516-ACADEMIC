@@ -166,6 +166,11 @@ class Settings(BaseSettings):
     coordination_stale_threshold_seconds: int = 3600
     # Tiempo máximo del cliente de coordinación; mayor que el timeout de OCR.
     coordination_timeout_seconds: int = 360
+    # Cuentas de proceso autorizadas para operaciones programadas (recálculo de
+    # KPI y análisis proactivo), separadas por comas. Vacío = ninguna cuenta:
+    # las operaciones programadas exigen el permiso aplicable y además pertenecer
+    # a esta lista.
+    scheduled_process_accounts: str = ""
 
     @field_validator("ocr_dpi", "ocr_min_dpi", "ocr_max_dpi", "ocr_max_pages_per_document", "ocr_timeout_seconds", "ocr_max_image_pixels", "chunk_max_tokens")
     @classmethod
@@ -195,6 +200,11 @@ class Settings(BaseSettings):
         ):
             raise ValueError("SECURITY_JWT_KEYRING_JSON debe ser un objeto de claves de texto")
         return value
+
+    @property
+    def scheduled_process_account_set(self) -> frozenset[str]:
+        """Identidades de proceso configuradas; conjunto vacío significa denegar a todas."""
+        return frozenset(name.strip() for name in self.scheduled_process_accounts.split(",") if name.strip())
 
     @property
     def cors_origin_list(self) -> list[str]:

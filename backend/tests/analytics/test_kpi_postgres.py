@@ -15,9 +15,9 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
-from app.analytics.models import KpiCalculationError, KpiObservationResult, KpiQuery, KpiRecalculationContext, KpiRecalculationRequest
+from app.analytics.models import KpiCalculationError, KpiObservationResult, KpiQuery, KpiRecalculationContext, KpiRecalculationRequest, ProactiveAnalysisContext
 from app.analytics.repository import AnalyticsRepository
-from app.analytics.service import KPIRecalculationService, KpiQueryService, derive_run_operation_id
+from app.analytics.service import KPIRecalculationService, KpiQueryService, ProactiveAnalysisService, derive_run_operation_id
 from app.ingestion.models import SourceFamily
 from app.projection.models import ProjectionContext
 from app.projection.repository import ProjectionRepository
@@ -171,24 +171,29 @@ def _source(engine, *, family: str = "LITIGIOS"):
     return source_id
 
 
-def _contract(engine, *, expiry: date = date(2026, 1, 20)) -> None:
+# Los KPI snapshot se calculan con corte as-of sobre el momento de ingesta
+# (created_at); los registros de prueba se fechan dentro del periodo calculado.
+INGESTED_AT = datetime(2026, 1, 2, 12, tzinfo=UTC)
+
+
+def _contract(engine, *, expiry: date = date(2026, 1, 20), created_at: datetime = INGESTED_AT) -> None:
     source = _source(engine, family="CONTRATOS_DOCUMENTOS")
     with engine.begin() as connection:
         connection.execute(sa.text("""INSERT INTO app.contract_record
-            (id_contrato, fecha_solicitud, fecha_firma, fecha_vencimiento, estado_revision, payload_sha256, source_record_id)
-            VALUES (:id, '2026-01-01', NULL, :expiry, 'No iniciado', :digest, :source)"""),
-            {"id": f"C-{uuid4()}", "expiry": expiry, "digest": bytes(32), "source": source})
+            (id_contrato, fecha_solicitud, fecha_firma, fecha_vencimiento, estado_revision, payload_sha256, source_record_id, created_at, updated_at)
+            VALUES (:id, '2026-01-01', NULL, :expiry, 'No iniciado', :digest, :source, :created, :created)"""),
+            {"id": f"C-{uuid4()}", "expiry": expiry, "digest": bytes(32), "source": source, "created": created_at})
 
 
-def _litigation(engine, severity: str, estimate, claim, *, state: str = "Activo") -> None:
+def _litigation(engine, severity: str, estimate, claim, *, state: str = "Activo", created_at: datetime = INGESTED_AT) -> None:
     source = _source(engine)
     with engine.begin() as connection:
         connection.execute(sa.text("""INSERT INTO app.litigation
             (id_litigio, fecha_apertura, estado, nivel_severidad, monto_reclamado, estimacion_interna,
-             payload_sha256, source_record_id)
-            VALUES (:id, '2026-01-02', :state, :severity, :claim, :estimate, :digest, :source)"""),
+             payload_sha256, source_record_id, created_at, updated_at)
+            VALUES (:id, '2026-01-02', :state, :severity, :claim, :estimate, :digest, :source, :created, :created)"""),
             {"id": f"L-{uuid4()}", "state": state, "severity": severity, "claim": claim,
-             "estimate": estimate, "digest": bytes(32), "source": source})
+             "estimate": estimate, "digest": bytes(32), "source": source, "created": created_at})
 
 
 @pytest.mark.requires_db
@@ -473,6 +478,9 @@ def test_persisted_projection_effect_routes_to_kpi_calculation(database) -> None
     actor = AuthenticatedPrincipal(uuid4(), uuid4(), "analyst", 1, frozenset({"ANALISTA"}), frozenset({"ingest.execute"}))
     effects = ProjectionService(ProjectionRepository(conninfo)).project(record, ProjectionContext(uuid4(), uuid4(), actor))
     assert len(effects) == 1 and effects[0].result == "INCORPORADO"
+    # Simula que la ingesta ocurrió dentro del periodo calculado (corte as-of de RC-03).
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE app.contract_record SET created_at=:at, updated_at=:at"), {"at": INGESTED_AT})
     service = _service(conninfo)
     request = service.request_for_projection(effects, period_start=date(2026, 1, 1), period_end=date(2026, 1, 31), as_of_date=date(2026, 1, 15))
     assert request is not None and request.kpi_codes == ("KPI-RC-01", "KPI-RC-03")
@@ -480,3 +488,147 @@ def test_persisted_projection_effect_routes_to_kpi_calculation(database) -> None
     by_code = {row["kpi_code"]: row["value"] for row in _rows(engine, "SELECT kpi_code, value FROM app.kpi_observation")}
     assert by_code == {"KPI-RC-01": Decimal(9), "KPI-RC-03": Decimal(1)}
     assert len(result.observations) == 2
+
+
+# --- F-01: semántica as-of de los KPI snapshot y agregados por fecha de negocio ---
+
+def _month(month: int, day: int | None = None, codes: tuple[str, ...] = ("KPI-RC-03",)) -> KpiRecalculationRequest:
+    start = date(2026, month, 1)
+    end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    return KpiRecalculationRequest(codes, start, end, end if day is None else date(2026, month, day))
+
+
+def _state(engine, code: str):
+    return _rows(engine, """SELECT id, analytic_run_id, dimensions, value, availability, as_of_date, calculated_at
+                              FROM app.kpi_observation WHERE kpi_code=:code ORDER BY period_start, dimensions::text""", code=code)
+
+
+def _compliance(engine, *, deadline: date = date(2026, 1, 10), created_at: datetime = INGESTED_AT) -> None:
+    source = _source(engine, family="CUMPLIMIENTO")
+    with engine.begin() as connection:
+        connection.execute(sa.text("""INSERT INTO app.compliance_obligation
+            (id_obligacion, fecha_limite, evidencia_cumplimiento, payload_sha256, source_record_id, created_at, updated_at)
+            VALUES (:id, :deadline, NULL, :digest, :source, :created, :created)"""),
+            {"id": f"O-{uuid4()}", "deadline": deadline, "digest": bytes(32), "source": source, "created": created_at})
+
+
+LATE_IN_PERIOD = datetime(2026, 1, 20, 12, tzinfo=UTC)
+SNAPSHOT_SEEDS = {
+    "KPI-RC-03": lambda engine, at: _contract(engine, expiry=date(2026, 2, 15), created_at=at),
+    "KPI-LI-01": lambda engine, at: _litigation(engine, "alto", Decimal("100"), None, created_at=at),
+    "KPI-CN-02": lambda engine, at: _compliance(engine, created_at=at),
+    "KPI-CD-03": lambda engine, at: _ocr_version(engine, f"D-{uuid4()}", 1, confidence=Decimal("0.90") if at == INGESTED_AT else Decimal("0.50"), processed_at=at),
+}
+
+
+@pytest.mark.requires_db
+@pytest.mark.parametrize("code", sorted(SNAPSHOT_SEEDS))
+def test_snapshot_finalizado_al_cierre_no_se_reescribe(database, code) -> None:
+    engine, conninfo = database
+    SNAPSHOT_SEEDS[code](engine, INGESTED_AT)
+    # El cálculo con corte al último día, ejecutado después de terminado el mes, finaliza el snapshot.
+    _service(conninfo).recalculate(_month(1, codes=(code,)), _context())
+    finalized = _state(engine, code)
+    assert finalized and all(row["as_of_date"] == date(2026, 1, 31) for row in finalized)
+    # Un registro que sí entra en el corte cambiaría el valor si el snapshot se recalculara.
+    SNAPSHOT_SEEDS[code](engine, LATE_IN_PERIOD)
+    result = _service(conninfo).recalculate(_month(1, codes=(code,)), _context())
+    assert _state(engine, code) == finalized
+    assert [(item.value, item.availability) for item in result.observations] == [(row["value"], row["availability"]) for row in finalized]
+
+
+@pytest.mark.requires_db
+def test_snapshot_del_periodo_abierto_se_recalcula_y_el_cierre_lo_finaliza(database) -> None:
+    engine, conninfo = database
+    _contract(engine, expiry=date(2026, 2, 15))
+    _service(conninfo).recalculate(_month(1, 15), _context())
+    assert [row["value"] for row in _state(engine, "KPI-RC-03")] == [1]
+    _contract(engine, expiry=date(2026, 2, 15), created_at=LATE_IN_PERIOD)
+    # Corte al último día calculado mientras ese día sigue en curso: el periodo continúa abierto.
+    _service(conninfo).recalculate(_month(1), _context())
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE app.kpi_observation SET calculated_at='2026-01-31T18:00:00Z'"))
+    assert [row["value"] for row in _state(engine, "KPI-RC-03")] == [2]
+    _contract(engine, expiry=date(2026, 2, 15), created_at=datetime(2026, 1, 31, 20, tzinfo=UTC))
+    _service(conninfo).recalculate(_month(1), _context())
+    closed = _state(engine, "KPI-RC-03")
+    assert [row["value"] for row in closed] == [3] and closed[0]["calculated_at"] >= datetime(2026, 2, 1, tzinfo=UTC)
+
+
+@pytest.mark.requires_db
+def test_snapshot_excluye_registros_ingresados_despues_del_corte(database) -> None:
+    engine, conninfo = database
+    after_cutoff = datetime(2026, 2, 1, 0, 0, 1, tzinfo=UTC)
+    for at in (INGESTED_AT, after_cutoff):
+        _contract(engine, expiry=date(2026, 2, 15), created_at=at)
+        _litigation(engine, "medio", Decimal("10"), None, created_at=at)
+        _compliance(engine, created_at=at)
+    _service(conninfo).recalculate(_month(1, codes=("KPI-RC-03", "KPI-LI-01", "KPI-CN-02")), _context())
+    rows = _rows(engine, "SELECT kpi_code, dimensions, value FROM app.kpi_observation")
+    values = {(row["kpi_code"], row["dimensions"].get("nivel_severidad")): row["value"] for row in rows}
+    assert values[("KPI-RC-03", None)] == 1 and values[("KPI-CN-02", None)] == 1
+    assert values[("KPI-LI-01", "medio")] == Decimal("10")
+
+
+@pytest.mark.requires_db
+def test_kpi_por_fecha_de_negocio_admite_recalculo_historico(database) -> None:
+    engine, conninfo = database
+    _litigation(engine, "bajo", None, None)
+    _service(conninfo).recalculate(_month(1, codes=("KPI-LI-05",)), _context())
+    assert [row["value"] for row in _state(engine, "KPI-LI-05")] == [1]
+    # Ingesta tardía de un litigio abierto en enero: RF-038 reemplaza el agregado del mes de negocio.
+    _litigation(engine, "bajo", None, None, created_at=datetime.now(UTC))
+    _service(conninfo).recalculate(_month(1, codes=("KPI-LI-05",)), _context())
+    assert [row["value"] for row in _state(engine, "KPI-LI-05")] == [2]
+
+
+@pytest.mark.requires_db
+def test_cd03_no_consume_ocr_procesados_despues_del_corte(database) -> None:
+    engine, conninfo = database
+    revised = f"D-{uuid4()}"
+    _ocr_version(engine, revised, 1, confidence=Decimal("0.90"), processed_at=datetime(2026, 1, 10, tzinfo=UTC))
+    _ocr_version(engine, revised, 2, confidence=Decimal("0.50"), processed_at=datetime(2026, 2, 3, tzinfo=UTC))
+    _ocr_version(engine, f"D-{uuid4()}", 1, confidence=Decimal("0.40"), processed_at=datetime(2026, 2, 3, tzinfo=UTC))
+    _service(conninfo).recalculate(_month(1, codes=("KPI-CD-03",)), _context())
+    _service(conninfo).recalculate(_month(2, codes=("KPI-CD-03",)), _context())
+    january, february = _state(engine, "KPI-CD-03")
+    assert (january["value"], january["availability"]) == (Decimal(100), "DISPONIBLE")
+    assert (february["value"], february["availability"]) == (Decimal(0), "DISPONIBLE")
+
+
+@pytest.mark.requires_db
+def test_cd03_sin_ocr_hasta_el_corte_es_no_disponible(database) -> None:
+    engine, conninfo = database
+    _ocr_version(engine, f"D-{uuid4()}", 1, confidence=Decimal("0.95"), processed_at=datetime(2026, 2, 3, tzinfo=UTC))
+    _service(conninfo).recalculate(_month(1, codes=("KPI-CD-03",)), _context())
+    assert [(row["value"], row["availability"]) for row in _state(engine, "KPI-CD-03")] == [(None, "NO_DISPONIBLE")]
+
+
+def _proactive(engine, conninfo):
+    job_id, operation_id, correlation_id = uuid4(), uuid4(), uuid4()
+    with engine.begin() as connection:
+        connection.execute(sa.text("""INSERT INTO app.job_run (id, case_type, state, actor_process, result_references, operation_id, correlation_id)
+            VALUES (:id, 'PROACTIVE_ANALYSIS', 'STARTED', 'controlled_ingestion.proactive_analysis', '{}'::jsonb, :operation, :correlation)"""),
+            {"id": job_id, "operation": operation_id, "correlation": correlation_id})
+    context = ProactiveAnalysisContext(job_id, operation_id, correlation_id, "controlled_ingestion.proactive_analysis")
+    return ProactiveAnalysisService(AnalyticsRepository(conninfo), SecurityRepository(conninfo)).execute(context)
+
+
+@pytest.mark.requires_db
+def test_intento_de_recalculo_historico_no_altera_el_analisis_vigente(database) -> None:
+    engine, conninfo = database
+    for month in range(1, 8):
+        end = _month(month).period_end
+        _contract(engine, expiry=end + timedelta(days=10), created_at=datetime(2026, month, 2, 12, tzinfo=UTC))
+        _service(conninfo).recalculate(_month(month), _context())
+    first = _proactive(engine, conninfo)
+    assert first.status == "COMPLETED"
+    observations = _state(engine, "KPI-RC-03")
+    _contract(engine, expiry=date(2026, 6, 5), created_at=datetime(2026, 5, 20, tzinfo=UTC))
+    _service(conninfo).recalculate(_month(5), _context())
+    assert _state(engine, "KPI-RC-03") == observations
+    second = _proactive(engine, conninfo)
+    assert second.status == "NO_RELEVANT_WORK"
+    assert second.input_fingerprint_sha256 == first.input_fingerprint_sha256
+    completed = _rows(engine, "SELECT id FROM app.analytic_run WHERE run_type='PROACTIVE_ANALYSIS' AND state='COMPLETED'")
+    assert [row["id"] for row in completed] == [first.analytic_run_id]
