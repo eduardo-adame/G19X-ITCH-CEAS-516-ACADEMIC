@@ -15,6 +15,14 @@ const exposure = (levels = ['alto', 'medio', 'bajo'], overrides = {}) => levels.
 const li = (items) => resolve(items).find((slot) => slot.code === 'KPI-LI-01')
 const cn = (items) => resolve(items).find((slot) => slot.code === 'KPI-CN-03')
 
+describe('SRS_REQUIRED: NO_OBSERVATION, NO_DISPONIBLE, ZERO y VALUE se distinguen (RNF-005, RF-078)', () => {
+  const rc = (items) => resolve(items).find((slot) => slot.code === 'KPI-RC-03')
+  it('sin registro de observación → «Sin observación»', () => { expect(rc([])).toMatchObject({ state: 'NO_OBSERVATION', displayValue: 'Sin observación' }) })
+  it('observación con estado NO_DISPONIBLE → «No disponible», nunca cero ni ausencia', () => { expect(rc([observation('KPI-RC-03', { availability: 'NO_DISPONIBLE', value: null })])).toMatchObject({ state: 'NO_DISPONIBLE', displayValue: 'No disponible' }) })
+  it('observación con valor 0 → «0»', () => { expect(rc([observation('KPI-RC-03', { value: '0' })])).toMatchObject({ state: 'ZERO', displayValue: '0' }) })
+  it('observación con valor numérico → el valor', () => { expect(rc([observation('KPI-RC-03', { value: '7' })])).toMatchObject({ state: 'VALUE', displayValue: '7' }) })
+})
+
 describe('SRS_REQUIRED: catálogo y estados ejecutivos sin imputación', () => {
   it('mantiene exactamente cinco identidades y orden del núcleo, sin contexto ni técnico', () => {
     expect(EXECUTIVE_KPI_CATALOG.map((entry) => entry.code)).toEqual(['KPI-RC-03', 'KPI-LI-01', 'KPI-LI-05', 'KPI-CN-02', 'KPI-CN-03'])

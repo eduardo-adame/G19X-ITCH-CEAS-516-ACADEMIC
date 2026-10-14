@@ -258,6 +258,19 @@ describe('SRS_REQUIRED: certificación visual de partición y hallazgos', () => 
     expect(screen.queryByText('$290,000 MXN')).not.toBeInTheDocument()
     expect(JSON.parse(screen.getByTestId('chart').dataset.points)[0].total).toBeUndefined()
   })
+  it('NO_DISPONIBLE en todas las severidades del periodo muestra «No disponible», no «Sin observaciones»', () => {
+    const items = adaptKpis(kpiPage(['alto', 'medio', 'bajo'].map((level) => observation('KPI-LI-01', { dimensions: { nivel_severidad: level }, availability: 'NO_DISPONIBLE', value: null })))).items
+    render(<SeverityChart items={items} />)
+    expect(screen.getByText(/^No disponible: las observaciones de severidad/)).toBeVisible()
+    expect(screen.queryByText(/Sin observaciones de severidad/)).not.toBeInTheDocument()
+  })
+  it('la tabla de exposición conserva los periodos No disponible sin fabricar cero ni ocultarlos', () => {
+    const items = adaptKpis(kpiPage(['2029-11-01', '2029-12-01'].flatMap((start) => ['alto', 'medio', 'bajo'].map((level) => observation('KPI-LI-01', { period_start: start, period_end: start.replace('-01', '-28').replace(/-28$/, '-28'), dimensions: { nivel_severidad: level }, availability: 'NO_DISPONIBLE', value: null }))))).items
+    render(<LitigationExposureChart items={items} />)
+    const rows = screen.getByRole('table', { name: 'Datos de Evolución de exposición litigiosa' }).querySelectorAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect([...rows].every((row) => row.textContent.includes('No disponible') && !/\$0 MXN/.test(row.textContent))).toBe(true)
+  })
   it('el donut vacío conserva EmptyChartState sin periodo inventado', () => {
     render(<SeverityChart items={[]} />)
     expect(screen.getByLabelText('Composición por severidad: sin datos disponibles')).toBeVisible()

@@ -107,7 +107,8 @@ export function severityCompositionViewModel(items) {
     const value = chartNumber(item)
     if (value !== null) selected.set(item.severity, { item, value })
   }
-  if (!selected.size) return { period, total: null, rows: [] }
+  // Observaciones del periodo sin valor disponible: «No disponible», no «Sin observación».
+  if (!selected.size) return { period, total: null, rows: [], unavailable: eligible.some((item) => item.period_start === period && item.availability === 'NO_DISPONIBLE') }
   const totalRaw = sumDecimals([...selected.values()].map((row) => row.item.value))
   const total = Number(totalRaw)
   const rows = SEVERITIES.flatMap((severity) => {

@@ -96,6 +96,19 @@ def test_rc03_uses_latest_valid_observation_not_sum():
     assert [(item["value"], item["period_start"]) for item in response.json()["items"]] == [("11", "2026-02-01")]
 
 
+def test_rc03_all_unavailable_keeps_latest_no_disponible_observation():
+    """RNF-005: una observación No disponible existe; no se omite ni se convierte en «Sin observación»."""
+    dashboard, *_ = service([row("KPI-RC-03", 1, None, "NO_DISPONIBLE"), row("KPI-RC-03", 2, None, "NO_DISPONIBLE")])
+    response = client(dashboard).get("/api/dashboard/kpis?period=custom&period_start=2026-01-01&period_end=2026-03-31")
+    assert [(item["value"], item["availability"], item["period_start"]) for item in response.json()["items"]] == [(None, "NO_DISPONIBLE", "2026-02-01")]
+
+
+def test_rc03_without_observations_returns_no_item():
+    dashboard, *_ = service([row("KPI-LI-05", 1)])
+    response = client(dashboard).get("/api/dashboard/kpis?period=custom&period_start=2026-01-01&period_end=2026-03-31")
+    assert [item for item in response.json()["items"] if item["kpi_code"] == "KPI-RC-03"] == []
+
+
 def test_entity_does_not_infer_area_or_filter_non_applicable_series():
     dashboard, *_ = service([row("KPI-CN-03", dimensions={"area": "Legal"}), row(dimensions={"entity": "A"}), row(dimensions={"entity": "B"})])
     body = client(dashboard).get("/api/dashboard/kpis?entity=A").json()

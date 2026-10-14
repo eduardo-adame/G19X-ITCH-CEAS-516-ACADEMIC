@@ -73,7 +73,10 @@ class DashboardService:
         start, end = period_bounds(filters, reference, today)
         selected = [row for row in executive if start is not None and end is not None and row["period_start"] >= start and row["period_end"] <= end and _matches(row["kpi_code"], row["dimensions"], filters)]
         valid_rc03 = [row for row in selected if row["kpi_code"] == "KPI-RC-03" and row["availability"] == "DISPONIBLE" and row["value"] is not None]
-        latest_rc03 = max(valid_rc03, key=lambda row: (row["calculated_at"], str(row["id"])), default=None)
+        # Sin observación válida en el rango se conserva la observación No disponible más
+        # reciente: existe un registro y no debe presentarse como «Sin observación» (RNF-005).
+        unavailable_rc03 = [row for row in selected if row["kpi_code"] == "KPI-RC-03" and row["availability"] == "NO_DISPONIBLE"]
+        latest_rc03 = max(valid_rc03 or unavailable_rc03, key=lambda row: (row["period_start"], row["calculated_at"], str(row["id"])), default=None)
         selected = [row for row in selected if row["kpi_code"] != "KPI-RC-03"] + ([] if latest_rc03 is None else [latest_rc03])
         selected.sort(key=lambda row: (row["kpi_code"], row["period_start"], str(row["dimensions"]), str(row["id"])))
         items = []
