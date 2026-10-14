@@ -1,5 +1,5 @@
 import { ApiError } from '../../api/errors.js'
-import { formatTimestamp, formatValue } from '../../shared/formatters.js'
+import { formatTimestamp, formatValue, roundDecimal } from '../../shared/formatters.js'
 import { readQuery, writeQuery } from '../../shared/query.js'
 
 export const uuid = (value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
@@ -94,5 +94,5 @@ export function auditPage(data) {
 }
 export function technicalResult(data) {
   assert(object(data) && data.kpi_code === 'KPI-CD-03' && ['DISPONIBLE', 'NO_DISPONIBLE'].includes(data.availability) && nullable(data.value, (v) => text(v) && /^\d+(\.\d+)?$/.test(v)) && nullable(data.calculated_at, timestamp) && !(data.availability === 'DISPONIBLE' && data.value === null))
-  return { ...data, displayValue: formatValue(data.value, data.availability, { suffix: ' %' }), calculatedLabel: formatTimestamp(data.calculated_at) }
+  return { ...data, displayValue: formatValue(roundDecimal(data.value), data.availability, { suffix: ' %' }), calculatedLabel: formatTimestamp(data.calculated_at) }
 }

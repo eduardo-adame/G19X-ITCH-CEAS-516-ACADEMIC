@@ -51,7 +51,7 @@ describe('SRS_REQUIRED: actualización OCR y CD03 por resultado confirmado', () 
     expect(state.count('/technical/kpis')).toBe(role === 'TI' ? 2 : 0)
     expect(screen.getByLabelText('Documento conocido')).toHaveValue('DOC-REF')
     expect(state.acquireRead.mock.calls.filter(([p]) => p.startsWith('/documents/ocr')).every(([p]) => p.includes('document_id=DOC-REF'))).toBe(true)
-    if (role === 'TI') expect(await screen.findByText('66.66666666666667 %')).toBeVisible()
+    if (role === 'TI') expect(await screen.findByText('66.67 %')).toBeVisible()
   })
 
   it('recepción no invalida mientras dispatch no confirma y la llegada preserva el modal OCR', async () => {

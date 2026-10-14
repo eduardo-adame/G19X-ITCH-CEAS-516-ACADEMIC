@@ -44,11 +44,13 @@ describe('SRS_REQUIRED: adapters analíticos', () => {
     expect(chartSeries(data.items, 'KPI-LI-05')[0].points.map((row) => row.month)).toEqual(['2030-01', '2030-03'])
     expect(chartSeries(data.items, 'KPI-RC-01')[0].unit).toBe('días')
   })
-  it('no redondea el decimal fuente ni grafica magnitudes imprecisas', () => {
+  it('conserva importes exactos, excluye magnitudes fuera de rango seguro y grafica decimales válidos de alta precisión', () => {
     const data = adaptKpis(page([observation('KPI-LI-01', { value: '9007199254740993.125' }), observation('KPI-RC-01', { value: '0.1234567890123456789' })]))
     expect(data.items[0].displayValue).toBe('9,007,199,254,740,993.125')
+    expect(data.items[1].displayValue).toBe('0.12')
+    expect(data.items[1].value).toBe('0.1234567890123456789')
     expect(chartSeries(data.items, 'KPI-LI-01')[0].points[0].chartValue).toBeNull()
-    expect(chartSeries(data.items, 'KPI-RC-01')[0].points[0].chartValue).toBeNull()
+    expect(chartSeries(data.items, 'KPI-RC-01')[0].points[0].chartValue).toBeCloseTo(0.1234567890123456789, 15)
   })
   it('consume variaciones, tendencia y recurrencia sin recalcular', () => {
     const data = adaptAnalysis(analysis({ evaluations: [evaluation({ absolute_variation: '17', percentage_variation: '33.3', recurrence_month_count: 3, trend_direction: 'INCREASING' })] }))
@@ -94,9 +96,11 @@ describe('SRS_REQUIRED: View Models de presentación analítica', () => {
     const complete = adaptKpis(page(['alto', 'medio', 'bajo'].map((nivel_severidad) => observation('KPI-LI-01', { dimensions: { nivel_severidad }, value: '0.1' })))).items
     expect(litigationExposureViewModel(complete).rows[0]).toMatchObject({ totalText: '$0.3 MXN' })
   })
-  it('omite coordenadas que no preservan exactamente el decimal fuente', () => {
+  it('grafica un importe válido de alta precisión y conserva su texto exacto', () => {
     const items = adaptKpis(page([observation('KPI-LI-01', { dimensions: { nivel_severidad: 'alto' }, value: '0.1234567890123456789' })])).items
-    expect(exposureEvolutionViewModel(items).rows).toHaveLength(0)
+    const [row] = exposureEvolutionViewModel(items).rows
+    expect(row.alto).toBeCloseTo(0.1234567890123456789, 15)
+    expect(row).toMatchObject({ altoRaw: '0.1234567890123456789', altoText: '$0.1234567890123456789 MXN' })
   })
 })
 describe('ROBUSTNESS: DTO inválido', () => {

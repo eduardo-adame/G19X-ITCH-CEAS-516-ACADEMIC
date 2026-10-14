@@ -1,5 +1,5 @@
 import { ApiError } from '../../api/errors.js'
-import { formatDate, formatDecimal, formatTimestamp, formatValue, validDate } from '../../shared/formatters.js'
+import { formatDate, formatDecimal, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
 import { findingSeverity } from './viewModels.js'
 
 export const KPI_CATALOG = Object.freeze({
@@ -34,7 +34,7 @@ export function adaptKpis(data) {
     const severity = ['alto', 'medio', 'bajo'].includes(item.dimensions.nivel_severidad)
       ? item.dimensions.nivel_severidad
       : null
-    return { ...item, id: `observation-${index}`, severity, displayValue: formatValue(item.value, item.availability), dimensionsText: dimensionsLabel(item.dimensions), periodText: `${formatDate(item.period_start)} – ${formatDate(item.period_end)}`, entityText: item.entity_filter_applicable ? String(item.dimensions.entity) : 'No aplicable' }
+    return { ...item, id: `observation-${index}`, severity, displayValue: formatValue(item.unit === 'días' ? roundDecimal(item.value) : item.value, item.availability), dimensionsText: dimensionsLabel(item.dimensions), periodText: `${formatDate(item.period_start)} – ${formatDate(item.period_end)}`, entityText: item.entity_filter_applicable ? String(item.dimensions.entity) : 'No aplicable' }
   })
   const identities = new Set()
   for (const item of items) { const key = `${seriesIdentity(item)}:${item.period_start}`; if (identities.has(key)) fail(); identities.add(key) }
@@ -87,10 +87,10 @@ export function chartSeries(items, kpiCode) {
   for (const item of items.filter((row) => row.kpi_code === kpiCode)) {
     const key = seriesIdentity(item)
     if (!groups.has(key)) groups.set(key, { id: key, name: item.name, unit: item.unit, dimensions: item.dimensions, dimensionsText: item.dimensionsText, points: [] })
-    // Number se limita a coordenadas; tablas y cifras conservan el decimal original.
+    // Number se limita a coordenadas: un decimal válido se grafica aunque su
+    // representación binaria no sea exacta; tablas y cifras usan el texto decimal.
     const number = item.availability === 'DISPONIBLE' && item.value !== null ? Number(item.value) : null
-    const normalizeDecimal = (value) => value.replace(/^(-?)0+(?=\d)/, '$1').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^-0$/, '0')
-    const chartValue = number !== null && Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER && normalizeDecimal(String(number)) === normalizeDecimal(item.value) ? number : null
+    const chartValue = number !== null && Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? number : null
     groups.get(key).points.push({ ...item, chartValue, month: item.period_start.slice(0, 7) })
   }
   return [...groups.values()].sort((a, b) => a.id.localeCompare(b.id)).map((series) => ({ ...series, points: series.points.sort((a, b) => a.period_start.localeCompare(b.period_start)) }))

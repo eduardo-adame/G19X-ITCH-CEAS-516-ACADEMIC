@@ -49,7 +49,7 @@ test.describe('SRS_REQUIRED: refresh OCR/CD03 confirmado — BROWSER_CONTRACT_E2
     await upload(page); await ocrResponse
     const table = page.getByRole('table', { name: 'Resultados operativos OCR' })
     await expect(table.getByRole('cell', { name: 'Exitoso', exact: true })).toHaveCount(2)
-    if (role === 'TI') await expect(page.getByText('66.66666666666667 %', { exact: true })).toBeVisible()
+    if (role === 'TI') await expect(page.getByText('66.67 %', { exact: true })).toBeVisible()
     expect(state.ocr()).toBe(2); expect(state.technical()).toBe(role === 'TI' ? 2 : 0)
     expect(state.queries).toEqual(['DOC-REF', 'DOC-REF'])
     await assertSamePage(page)

@@ -24,7 +24,7 @@ const adapted = (items) => adaptKpis({ items, filters: {}, period_start: null, p
 const exposure = (values = ['200000', '90000', '25000']) => ['alto', 'medio', 'bajo'].map((level, index) => item('KPI-LI-01', '2026-10', values[index], { dimensions: { nivel_severidad: level } }))
 
 describe('ROBUSTNESS: gráficas temporales según calendario y escalas aprobados', () => {
-  it('RC01 dibuja dos segmentos, conserva julio null y todos los periodos en tabla', () => {
+  it('real_null_breaks_line: julio sin observación interrumpe la línea en dos segmentos y figura en tabla', () => {
     const items = adapted([['2026-05', '10'], ['2026-06', '20'], ['2026-08', '30'], ['2026-09', '15']].map(([month, value]) => item('KPI-RC-01', month, value)))
     render(<TemporalChart items={items} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
     expect(JSON.parse(screen.getByTestId('chart').dataset.points).map(({ value }) => value)).toEqual([10, 20, null, 30, 15])
@@ -46,12 +46,49 @@ describe('ROBUSTNESS: gráficas temporales según calendario y escalas aprobados
   })
 })
 
+describe('SRS_REQUIRED: F-07 decimales de alta precisión en RC01 (RF-030, RF-078, RNF-005)', () => {
+  const months = [['2026-05', '15.75'], ['2026-06', '18.5'], ['2026-07', '18.33333333333333333333333333'], ['2026-08', '21.5'], ['2026-09', '18']]
+  const rc01 = () => adapted(months.map(([month, value]) => item('KPI-RC-01', month, value)))
+  it('high_precision_decimal_chart: julio con 28 dígitos se grafica y la serie es una sola línea', () => {
+    render(<TemporalChart items={rc01()} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
+    const points = JSON.parse(screen.getByTestId('chart').dataset.points)
+    expect(points).toHaveLength(5)
+    expect(points.every((point) => Object.entries(point).some(([key, value]) => key.startsWith('value') && typeof value === 'number'))).toBe(true)
+    expect(screen.getAllByTestId('line')).toHaveLength(1)
+    expect(screen.queryByText(/Periodos sin observación/)).toBeNull()
+  })
+  it('valid_period_not_null: el periodo disponible no se convierte en ausencia', () => {
+    const july = temporalSeriesViewModel(rc01(), 'KPI-RC-01').find((row) => row.month === '2026-07')
+    expect(july.value).not.toBeNull()
+    expect(july.value).toBeCloseTo(18.3333333333, 9)
+    expect(july).toMatchObject({ availability: 'DISPONIBLE', rawValue: '18.33333333333333333333333333' })
+  })
+  it('table_chart_consistency: tabla, tooltip y coordenada coinciden con dos decimales y no muestran 28 dígitos', () => {
+    const rows = temporalSeriesViewModel(rc01(), 'KPI-RC-01')
+    const july = rows.find((row) => row.month === '2026-07')
+    expect(july.valueText).toBe('18.33')
+    expect(july.value.toFixed(2)).toBe(july.valueText)
+    const { unmount } = render(<TemporalChart items={rc01()} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
+    expect(screen.getByRole('table')).toHaveTextContent('01/07/2026 – 31/07/202618.33díasDisponible')
+    expect(screen.getByRole('table')).not.toHaveTextContent('18.333')
+    unmount()
+    render(<TemporalTooltip active payload={[{ payload: july }]} rows={rows} unit="días" />)
+    expect(screen.getByText('18.33 días')).toBeVisible()
+  })
+  it('real_null_breaks_line: una observación No disponible no se grafica ni se presenta como cero', () => {
+    const items = adapted([['2026-05', '15.75'], ['2026-06', null], ['2026-07', '18.33333333333333333333333333']].map(([month, value]) => item('KPI-RC-01', month, value)))
+    render(<TemporalChart items={items} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
+    expect(screen.getAllByTestId('line')).toHaveLength(2)
+    expect(screen.getByRole('table')).toHaveTextContent('01/06/2026 – 30/06/2026No disponibledíasNo disponible')
+  })
+})
+
 describe('SRS_REQUIRED: tooltips y tablas conservan valores, unidad y disponibilidad', () => {
-  it('tooltip RC01 presenta periodo, ciclo y decimal original sin usar Number', () => {
-    const rows = temporalSeriesViewModel(adapted([item('KPI-RC-01', '2026-05', '0.1234567890123456789')]), 'KPI-RC-01')
+  it('tooltip RC01 presenta periodo, ciclo y el decimal redondeado a dos cifras sin usar Number', () => {
+    const rows = temporalSeriesViewModel(adapted([item('KPI-RC-01', '2026-05', '0.1254567890123456789')]), 'KPI-RC-01')
     render(<TemporalTooltip active payload={[{ payload: rows[0] }]} rows={rows} unit="días" />)
     expect(screen.getByText('Tiempo de ciclo')).toBeVisible()
-    expect(screen.getByText('0.1234567890123456789 días')).toBeVisible()
+    expect(screen.getByText('0.13 días')).toBeVisible()
     expect(screen.getByText('01/05/2026 – 31/05/2026')).toBeVisible()
   })
   it.each([['NO_OBSERVATION', 'Sin observación'], ['NO_DISPONIBLE', 'No disponible']])('tooltip temporal %s no muestra cero', (availability, text) => {

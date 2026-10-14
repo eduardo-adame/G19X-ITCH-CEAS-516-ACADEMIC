@@ -1,4 +1,4 @@
-import { formatDate, formatDecimal } from '../../shared/formatters.js'
+import { formatDate, formatDecimal, roundDecimal } from '../../shared/formatters.js'
 
 export const SEVERITIES = Object.freeze([
   { key: 'alto', label: 'Alto', color: 'var(--critical)' },
@@ -8,9 +8,10 @@ export const SEVERITIES = Object.freeze([
 
 function chartNumber(item) {
   if (item.availability !== 'DISPONIBLE' || item.value === null) return null
+  // Coordenada de la gráfica: no se descarta un decimal válido por precisión
+  // binaria (p. ej. 18.333…); solo se excluyen valores fuera de rango seguro.
   const number = Number(item.value)
-  const normalize = (value) => value.replace(/^(-?)0+(?=\d)/, '$1').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^-0$/, '0')
-  return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER && normalize(String(number)) === normalize(item.value) ? number : null
+  return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? number : null
 }
 
 export function sumDecimals(values) {
@@ -63,7 +64,7 @@ export function formatCompactCurrencyMXN(value) {
 }
 
 export function formatDays(value) {
-  return value === null || value === undefined ? 'No disponible' : `${formatDecimal(String(value))} días`
+  return value === null || value === undefined ? 'No disponible' : `${formatDecimal(roundDecimal(String(value)))} días`
 }
 
 export function formatCount(value, unit = '') {

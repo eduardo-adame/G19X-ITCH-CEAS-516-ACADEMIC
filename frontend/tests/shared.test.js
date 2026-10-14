@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDecimal, formatValue, formatDate, formatTimestamp, validDate } from '../src/shared/formatters.js'
+import { formatDecimal, formatValue, formatDate, formatTimestamp, roundDecimal, validDate } from '../src/shared/formatters.js'
 import { readQuery, writeQuery } from '../src/shared/query.js'
 import { can, capabilitiesFor, validatePrincipal } from '../src/auth/permissions.js'
 describe('SRS_REQUIRED: datos y permisos de presentación', () => {
@@ -14,4 +14,11 @@ describe('ROBUSTNESS: formatos y URL', () => {
   it('no transforma fechas u horas imposibles en timestamps aparentemente válidos', () => { for (const value of ['2030-02-30T12:00:00Z', '2030-01-01T24:00:00Z', '2030-01-01T12:60:00Z', '2030-01-01T12:00:60Z', '2030-01-01T12:00:00+01:60']) expect(formatTimestamp(value)).toBe('—'); expect(formatTimestamp('2030-01-01T12:00:00.123456-06:00')).toContain('UTC') })
   it('solo persiste query params permitidos y válidos', () => { const rules = { entity: (value) => ['Área norte', 'Área sur'].includes(value), period: (value) => ['last_6_months'].includes(value) }; expect(readQuery('?entity=%C3%81rea+norte&password=oculta&period=incorrecto', rules)).toEqual({ entity: 'Área norte' }); expect(writeQuery({ period: 'last_6_months', entity: 'Área norte', query: 'consulta sensible' }, rules)).toBe('entity=%C3%81rea+norte&period=last_6_months') })
   it('rechaza claves duplicadas y respeta navegación Back/Forward', () => { const rules = { period: (value) => ['a', 'b'].includes(value) }; expect(readQuery('?period=a&period=b', rules)).toEqual({}); window.history.replaceState(null, '', '/?period=a'); const first = readQuery(window.location.search, rules); window.history.pushState(null, '', '/?period=b'); expect(first.period).toBe('a'); expect(readQuery(window.location.search, rules).period).toBe('b') })
+})
+describe('SRS_REQUIRED: redondeo de presentación de promedios y porcentajes (F-07)', () => {
+  it.each([
+    ['18.33333333333333333333333333', '18.33'], ['66.66666666666666666666666667', '66.67'], ['0.125', '0.13'], ['2.005', '2.01'],
+    ['99.995', '100'], ['-0.004', '0'], ['-1.005', '-1.01'], ['18.5', '18.5'], ['18', '18'], ['12.5000', '12.5'],
+  ])('roundDecimal(%s) = %s sin pasar por Number', (value, expected) => { expect(roundDecimal(value)).toBe(expected) })
+  it('conserva ausencia y valores no decimales', () => { expect(roundDecimal(null)).toBeNull(); expect(roundDecimal(undefined)).toBeUndefined(); expect(roundDecimal('1e3')).toBe('1e3') })
 })

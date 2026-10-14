@@ -72,6 +72,7 @@ describe('SRS_REQUIRED: adaptadores de operaciones', () => {
 
   it('presenta CD-03 sin confundir no disponible con cero', () => {
     expect(technicalResult({ kpi_code: 'KPI-CD-03', availability: 'DISPONIBLE', value: '0', calculated_at: '2030-01-01T00:00:00Z' }).displayValue).toBe('0 %')
+    expect(technicalResult({ kpi_code: 'KPI-CD-03', availability: 'DISPONIBLE', value: '66.66666666666666666666666667', calculated_at: '2030-01-01T00:00:00Z' }).displayValue).toBe('66.67 %')
     expect(technicalResult({ kpi_code: 'KPI-CD-03', availability: 'NO_DISPONIBLE', value: null, calculated_at: null }).displayValue).toBe('No disponible')
   })
 })

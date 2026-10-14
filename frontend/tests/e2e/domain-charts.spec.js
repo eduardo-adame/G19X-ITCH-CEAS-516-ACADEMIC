@@ -91,7 +91,7 @@ test.describe('ROBUSTNESS: calendario, unidades y gráficas aprobadas por domini
 })
 
 test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputación', () => {
-  test('RC01 diferencia cero, ND y ausencia; preserva promedio decimal en tabla/tooltip', async ({ page }) => {
+  test('RC01 diferencia cero, ND y ausencia; presenta el promedio decimal con dos cifras en tabla/tooltip', async ({ page }) => {
     await routes(page, [['2026-05', '0'], ['2026-06', null], ['2026-08', '12.5000']].map(([month, value]) => item('KPI-RC-01', month, value)))
     await page.goto('/contratos')
     const rows = table(page, cycleTitle).locator('tbody tr')
@@ -99,10 +99,23 @@ test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputació
     await expect(rows.nth(0)).toContainText('0díasDisponible')
     await expect(rows.nth(1)).toContainText('No disponible')
     await expect(rows.nth(2)).toContainText('Sin observación')
-    await expect(rows.nth(3)).toContainText('12.5000')
+    await expect(rows.nth(3)).toContainText('12.5díasDisponible')
     const chart = figure(page, cycleTitle)
     await chart.locator('circle.recharts-line-dot').last().hover()
-    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('12.5000 días')
+    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('12.5 días')
+  })
+  test('RC01 con decimal de alta precisión dibuja una línea continua y presenta dos cifras', async ({ page }) => {
+    await routes(page, [['2026-05', '15.75'], ['2026-06', '18.5'], ['2026-07', '18.33333333333333333333333333'], ['2026-08', '21.5'], ['2026-09', '18']].map(([month, value]) => item('KPI-RC-01', month, value)))
+    await page.goto('/contratos')
+    const chart = figure(page, cycleTitle)
+    const dots = chart.locator('circle.recharts-line-dot')
+    await expect(dots).toHaveCount(5)
+    await expect(chart.locator('path.recharts-line-curve')).toHaveCount(1)
+    const rows = table(page, cycleTitle).locator('tbody tr')
+    await expect(rows.nth(2)).toContainText('18.33díasDisponible')
+    await expect(table(page, cycleTitle)).not.toContainText('18.333')
+    await dots.nth(2).hover()
+    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('18.33 días')
   })
   test('LI05 cero observado y huecos ND/ausencia no generan conteos fabricados', async ({ page }) => {
     await routes(page, [['2026-05', '1'], ['2026-07', '0'], ['2026-08', null], ['2026-09', '3']].map(([month, value]) => item('KPI-LI-05', month, value)))

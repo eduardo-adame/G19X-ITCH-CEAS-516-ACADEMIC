@@ -6,6 +6,19 @@ export function formatDecimal(value, { prefix = '', suffix = '' } = {}) {
   if (!match) return 'No disponible'
   return `${prefix}${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${match[3] !== undefined ? `.${match[3]}` : ''}${suffix}`
 }
+// Presentación de promedios y porcentajes: un cociente puede tener expansión
+// periódica (p. ej. 18.333…) y no se muestra con todos sus dígitos. Se redondea
+// half-up sobre el texto decimal, sin Number, para no introducir error binario.
+export const PRESENTATION_FRACTION_DIGITS = 2
+export function roundDecimal(value, digits = PRESENTATION_FRACTION_DIGITS) {
+  const match = String(value).match(decimalPattern)
+  if (!match || match[3] === undefined || match[3].length <= digits) return value
+  const [, sign, integer, fraction] = match
+  const scaled = (BigInt(integer + fraction.slice(0, digits)) + (Number(fraction[digits]) >= 5 ? 1n : 0n)).toString().padStart(digits + 1, '0')
+  const part = scaled.slice(-digits).replace(/0+$/, '')
+  const result = `${scaled.slice(0, -digits)}${part ? `.${part}` : ''}`
+  return sign && /[1-9]/.test(result) ? `-${result}` : result
+}
 export function formatValue(value, availability, options) { return availability === 'NO_DISPONIBLE' ? 'No disponible' : formatDecimal(value, options) }
 export function validDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false

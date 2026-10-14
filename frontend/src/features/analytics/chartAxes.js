@@ -1,4 +1,4 @@
-import { formatDecimal } from '../../shared/formatters.js'
+import { formatDecimal, roundDecimal } from '../../shared/formatters.js'
 import { formatCompactCurrencyMXN, formatPercentage } from './viewModels.js'
 
 export const AXIS_UNITS = Object.freeze({ COUNT: 'COUNT', DAYS: 'DAYS', MXN: 'MXN', PERCENTAGE: 'PERCENTAGE' })
@@ -16,6 +16,6 @@ export function chartAxisConfig(unit, values = []) {
   if (unit === AXIS_UNITS.PERCENTAGE) return { domain: [0, 100], allowDecimals: true, tickFormatter: formatPercentage }
   return {
     domain: [0, maximum > 0 ? maximum * 1.1 : 1], allowDecimals: true,
-    tickFormatter: unit === AXIS_UNITS.DAYS ? (value) => `${formatDecimal(String(value))} d` : formatCompactCurrencyMXN,
+    tickFormatter: unit === AXIS_UNITS.DAYS ? (value) => `${formatDecimal(roundDecimal(String(value)))} d` : formatCompactCurrencyMXN,
   }
 }

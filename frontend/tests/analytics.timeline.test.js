@@ -39,10 +39,11 @@ describe('SRS_REQUIRED: fuentes temporales sin imputación ni pérdida de precis
     expect(temporalSeriesViewModel(series(code, [['2026-09', '1']]), code).map(({ month }) => month)).toEqual(['2026-09'])
     expect(temporalSeriesViewModel([], code)).toEqual([])
   })
-  it('RC01 conserva promedios decimales y precisión textual aunque la coordenada no sea representable', () => {
+  it('RC01 conserva el decimal fuente, lo presenta con dos decimales y grafica la coordenada', () => {
     const rows = temporalSeriesViewModel(series('KPI-RC-01', [['2026-05', '12.5000'], ['2026-06', '0.1234567890123456789']]), 'KPI-RC-01')
-    expect(rows[0]).toMatchObject({ value: 12.5, rawValue: '12.5000', valueText: '12.5000' })
-    expect(rows[1]).toMatchObject({ value: null, rawValue: '0.1234567890123456789', valueText: '0.1234567890123456789', availability: 'DISPONIBLE' })
+    expect(rows[0]).toMatchObject({ value: 12.5, rawValue: '12.5000', valueText: '12.5' })
+    expect(rows[1]).toMatchObject({ rawValue: '0.1234567890123456789', valueText: '0.12', availability: 'DISPONIBLE' })
+    expect(rows[1].value).toBeCloseTo(0.1234567890123456789, 15)
   })
 })
 
