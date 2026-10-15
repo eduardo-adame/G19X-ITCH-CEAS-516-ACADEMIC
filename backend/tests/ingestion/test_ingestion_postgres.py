@@ -270,16 +270,19 @@ def test_empty_documents_enter_quarantine_with_a_stable_cause(database, name: st
 @pytest.mark.contract
 def test_resource_limit_rejection_is_audited_without_storing_a_partial_object(database, monkeypatch) -> None:
     engine, service, principal = database
-    service.limits = IngestionLimits(6, 2_000, 268_435_456, 67_108_864, 100, 65_536, 1_048_576, 250_000, 256, 5_000_000)
+    # El control de tamaño exacto debe ser estructuralmente válido para la familia; si no, la validación
+    # estructural lo rechazaría y la prueba no distinguiría el límite de recursos.
+    exact_payload = b"ID_Litigio,Fecha_Apertura,Estado,Nivel_Severidad\n"
+    service.limits = IngestionLimits(len(exact_payload), 2_000, 268_435_456, 67_108_864, 100, 65_536, 1_048_576, 250_000, 256, 5_000_000)
     exact = service.ingest_stream(
-        BytesIO(b"value\n"), original_name="exact.csv", controlled_location="litigation", principal=principal,
+        BytesIO(exact_payload), original_name="exact.csv", controlled_location="litigation", principal=principal,
         capability="ingest.upload", source_locator="manual/analyst/exact", idempotency_key="exact",
     )
     assert exact.state == "COMPLETADO"
     monkeypatch.setattr("app.ingestion.service.detect_format", lambda *args: pytest.fail("parser invoked"))
 
     result = service.ingest_stream(
-        BytesIO(b"value\nX"), original_name="large.csv", controlled_location="litigation", principal=principal,
+        BytesIO(exact_payload + b"X"), original_name="large.csv", controlled_location="litigation", principal=principal,
         capability="ingest.upload", source_locator="manual/analyst/large", idempotency_key="large",
     )
 
@@ -296,7 +299,7 @@ def test_resource_limit_rejection_is_audited_without_storing_a_partial_object(da
             sa.text("SELECT result, safe_cause_code FROM audit.event WHERE correlation_id = :id"),
             {"id": result.correlation_id},
         ).one()
-    assert row == (None, None, False, 7, "UNDETERMINED", "REJECTED", "RESOURCE_LIMIT_EXCEEDED")
+    assert row == (None, None, False, len(exact_payload) + 1, "UNDETERMINED", "REJECTED", "RESOURCE_LIMIT_EXCEEDED")
     assert event == ("REJECTED", "RESOURCE_LIMIT_EXCEEDED")
 
 

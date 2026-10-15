@@ -10,6 +10,7 @@ import subprocess
 from threading import Event, Thread
 from uuid import uuid4
 
+import psycopg
 from psycopg.conninfo import conninfo_to_dict
 import pytest
 
@@ -27,6 +28,15 @@ from fastapi.testclient import TestClient
 
 
 def owner_scalar(database, sql):
+    # Con VIEWER_TEST_OWNER_CONNINFO la lectura privilegiada usa el mismo clúster aislado de la prueba;
+    # sin ella se conserva la lectura mediante el contenedor PostgreSQL local.
+    owner = os.getenv("VIEWER_TEST_OWNER_CONNINFO", "")
+    if owner:
+        if conninfo_to_dict(owner).get("dbname") != database:
+            pytest.fail("La conexión de propietario debe apuntar a la misma base aislada del visor")
+        with psycopg.connect(owner) as connection:
+            row = connection.execute(sql).fetchone()
+        return "" if row is None or row[0] is None else str(row[0])
     result = subprocess.run(
         ["docker", "exec", "riesgo-legal-postgres", "psql", "-U", "app", "-d", database,
          "-v", "ON_ERROR_STOP=1", "-tAc", sql], capture_output=True, text=True, check=True)
