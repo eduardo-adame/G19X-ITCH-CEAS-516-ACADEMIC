@@ -95,7 +95,7 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
     await expect(page.getByText('Fallo técnico sintético controlado.', { exact: true })).toBeVisible()
     await expect(page.getByText(explanations.EVIDENCIA_INSUFICIENTE, { exact: true })).toHaveCount(0)
     await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Reintentar la misma operación' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Reintentar con una nueva operación' })).toBeVisible()
   })
 
   test('estado null fallido con mensaje null conserva error explícito sin inventar evidencia', async ({ page }) => {
