@@ -158,6 +158,8 @@ límites se ajustan con las variables `GROQ_*` documentadas en `.env.example`.
 | `riesgo-legal-bge-cache` | `/home/appuser/.cache/bge-m3` | Caché del modelo de embeddings |
 | `riesgo-legal-airflow-db` | `/opt/airflow/sqlite_db` | Metadatos SQLite de Airflow |
 | `riesgo-legal-airflow-logs` | `/opt/airflow/logs` | Logs de Airflow |
+| `riesgo-legal-ingestion-storage` | `/data/ingestion` (backend) | Staging y objetos almacenados de la ingesta |
+| `riesgo-legal-ingestion-controlled` | `/data/controlled` (backend; solo lectura en Airflow) | Ubicaciones controladas de ingesta |
 
 Los volúmenes se mantienen separados a propósito: los datos de la base, la caché
 del modelo y los metadatos de la orquestación tienen ciclos de vida distintos y no
@@ -167,6 +169,15 @@ Los metadatos de Airflow usan SQLite en su propio volumen, no la base de datos d
 la aplicación.
 
 Ningún volumen se versiona en Git.
+
+`docker compose` crea y usa estos volúmenes. **No se requiere preparación ni `chown` manual previo.**
+El backend se ejecuta como el usuario no root `appuser`, y la imagen crea `/data/ingestion` y
+`/data/controlled` con ese propietario, de modo que Docker inicializa los volúmenes nuevos con el
+propietario correcto. La comprobación con volúmenes realmente nuevos y escritura funcional es:
+
+```bash
+python scripts/check_fresh_volumes.py --image riesgo-legal-backend:bootstrap
+```
 
 ---
 

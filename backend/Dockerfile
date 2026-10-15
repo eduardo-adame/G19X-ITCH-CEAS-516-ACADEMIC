@@ -34,6 +34,11 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # Usuario sin privilegios de root: el servicio no necesita permisos elevados.
 RUN useradd --create-home --uid 10001 appuser
+
+# Puntos de montaje del almacenamiento persistente de ingesta. Docker inicializa un
+# volumen nombrado vacío con el propietario del directorio de la imagen; sin ellos,
+# los volúmenes nuevos quedarían como root y appuser no podría escribir.
+RUN install -d -o appuser -g appuser /data/ingestion /data/controlled
 USER appuser
 
 # Caché persistente del modelo. La ruta debe coincidir con el punto de montaje del
