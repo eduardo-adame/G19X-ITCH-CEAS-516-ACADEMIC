@@ -2,7 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '../../components/data.jsx'
 import { Icon } from '../../components/Icon.jsx'
-import { formatDate } from '../../shared/formatters.js'
+import { formatDocumentDate as formatDate } from '../../shared/presentation.js'
 import { citationLocation, RAG_STATES } from './adapters.js'
 
 export function RagStateBanner({ state }) {

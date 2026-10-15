@@ -13,12 +13,12 @@ const readOcr = (row) => ocrPage({ items: [row], next_cursor: null }).items[0]
 
 describe('SRS_REQUIRED: adaptadores de operaciones', () => {
   it('distingue recepción de procesamiento downstream', () => {
-    expect(ingestionResult(ingestion()).reception).toMatch(/downstream pendiente/)
+    expect(ingestionResult(ingestion()).reception).toMatch(/procesamiento pendiente/)
     expect(ingestionResult(ingestion({ state: 'CUARENTENA' })).reception).toBe('Archivo retenido en cuarentena')
     expect(() => ingestionResult(ingestion({ family: 'INVENTADA' }))).toThrow(ApiError)
   })
   it('F-03: presenta la fecha declarada del documento sin inferirla', () => {
-    expect(ingestionResult(ingestion({ routing_target: 'DOCUMENT', format: 'PDF', document_date: '2026-10-06' })).documentDateText).toBe('06/10/2026')
+    expect(ingestionResult(ingestion({ routing_target: 'DOCUMENT', format: 'PDF', document_date: '2026-10-06' })).documentDateText).toBe('6 oct 2026')
     expect(ingestionResult(ingestion({ routing_target: 'DOCUMENT', format: 'PDF', document_date: null })).documentDateText).toBe('Sin fecha declarada')
     expect(ingestionResult(ingestion()).documentDateText).toBe('No aplica')
     expect(ingestionResult(ingestion()).document_date).toBeNull()
@@ -47,7 +47,7 @@ describe('SRS_REQUIRED: adaptadores de operaciones', () => {
   it('preserva null de confianza OCR sin convertirlo en cero', () => {
     const page = ocrPage({ items: [ocrItem()], next_cursor: null })
     expect(page.items[0].confidenceLabel).toBe('No disponible')
-    expect(readOcr(ocrItem({ confidence: 0 })).confidenceLabel).toBe('0')
+    expect(readOcr(ocrItem({ confidence: 0 })).confidenceLabel).toBe('0 %')
   })
 
   it('distingue OCR no aplicable de escaneado sin resultado sin fabricar Pendiente', () => {

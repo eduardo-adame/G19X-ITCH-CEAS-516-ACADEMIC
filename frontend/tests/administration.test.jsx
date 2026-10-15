@@ -32,7 +32,7 @@ describe('SRS_REQUIRED: administración TI', () => {
     await userEvent.type(screen.getByLabelText('Usuario'), 'nuevo')
     await userEvent.type(screen.getByLabelText('Nombre visible'), 'Cuenta nueva')
     await userEvent.type(screen.getByLabelText('Contraseña nueva'), 'Temporal-123')
-    await userEvent.click(screen.getByRole('checkbox', { name: 'JURIDICO' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Jurídico' }))
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar operación' }))
     expect(await screen.findByRole('status')).toHaveTextContent(`Identificador creado: ${otherId}`)
     expect(request.mock.calls[0][0]).toBe('/security/users'); expect(request.mock.calls[0][0]).not.toContain('Temporal-123')
@@ -42,7 +42,7 @@ describe('SRS_REQUIRED: administración TI', () => {
   it('impide modificar roles propios antes de invocar backend', async () => {
     const { request } = mount(); await selectAction('roles')
     await userEvent.type(screen.getByLabelText(/Identificador conocido/), ownId)
-    await userEvent.click(screen.getByRole('checkbox', { name: 'ANALISTA' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Analista' }))
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar operación' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Acceso no autorizado'); expect(request).not.toHaveBeenCalled()
   })
@@ -63,7 +63,7 @@ describe('SRS_REQUIRED: administración TI', () => {
 
   it('una revocación durante revalidación impide la mutación', async () => {
     const { request } = mount({ onRevalidate: async (previous) => ({ status: 'authenticated', principal: { ...previous.principal, roles: ['ANALISTA'] }, generation: previous.generation + 1 }) })
-    await userEvent.type(screen.getByLabelText('Usuario'), 'nuevo'); await userEvent.type(screen.getByLabelText('Nombre visible'), 'Cuenta'); await userEvent.type(screen.getByLabelText('Contraseña nueva'), 'Temporal'); await userEvent.click(screen.getByRole('checkbox', { name: 'JURIDICO' }))
+    await userEvent.type(screen.getByLabelText('Usuario'), 'nuevo'); await userEvent.type(screen.getByLabelText('Nombre visible'), 'Cuenta'); await userEvent.type(screen.getByLabelText('Contraseña nueva'), 'Temporal'); await userEvent.click(screen.getByRole('checkbox', { name: 'Jurídico' }))
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar operación' }))
     await waitFor(() => expect(request).not.toHaveBeenCalled())
     expect(screen.queryByText(/Identificador creado/)).not.toBeInTheDocument()

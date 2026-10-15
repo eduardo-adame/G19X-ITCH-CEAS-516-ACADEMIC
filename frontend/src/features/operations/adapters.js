@@ -1,5 +1,7 @@
 import { ApiError } from '../../api/errors.js'
-import { formatDate, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
+import { formatDecimal, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
+import { formatAuditTimestamp, formatDocumentDate, formatUserTimestamp } from '../../shared/presentation.js'
+import { familyLabel } from '../../shared/labels.js'
 import { readQuery, writeQuery } from '../../shared/query.js'
 
 export const uuid = (value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
@@ -41,12 +43,13 @@ export function filterQuery(filters, kind) {
   if (!validators || Object.entries(filters).some(([key, value]) => !validators[key]?.(value))) throw new ApiError(422)
   const prefix = { quarantine: 'rejected', ocr: 'processed', audit: 'occurred' }[kind]
   if (filters[`${prefix}_from`] && filters[`${prefix}_to`] && new Date(filters[`${prefix}_from`]) > new Date(filters[`${prefix}_to`])) throw new ApiError(422)
-  return writeQuery({ limit: '100', ...filters }, validators)
+  // Auditoría pagina de 25 en 25 por defecto: la bitácora es extensa y la lectura empieza por lo reciente.
+  return writeQuery({ limit: kind === 'audit' ? '25' : '100', ...filters }, validators)
 }
 export function changeFilters(filters, patch) { const next = { ...filters, ...patch }; delete next.cursor; for (const key of Object.keys(next)) if (next[key] === '') delete next[key]; return next }
 export function ingestionResult(data) {
   assert(object(data) && uuid(data.file_id) && uuid(data.operation_id) && uuid(data.correlation_id) && ['COMPLETADO', 'CUARENTENA', 'RECHAZADO'].includes(data.state) && nullable(data.format) && families.includes(data.family) && ['VALIDATION', 'DOCUMENT', 'NONE'].includes(data.routing_target) && nullable(data.safe_cause_code) && typeof data.idempotent === 'boolean' && (data.document_date === undefined || data.document_date === null || validDate(data.document_date)))
-  return { ...data, document_date: data.document_date ?? null, documentDateText: data.routing_target !== 'DOCUMENT' ? 'No aplica' : data.document_date ? formatDate(data.document_date) : 'Sin fecha declarada', id: data.file_id, reception: data.state === 'COMPLETADO' ? 'Archivo recibido; procesamiento downstream pendiente' : data.state === 'CUARENTENA' ? 'Archivo retenido en cuarentena' : 'Archivo rechazado' }
+  return { ...data, document_date: data.document_date ?? null, documentDateText: data.routing_target !== 'DOCUMENT' ? 'No aplica' : data.document_date ? formatDocumentDate(data.document_date) : 'Sin fecha declarada', familyText: familyLabel(data.family), id: data.file_id, reception: data.state === 'COMPLETADO' ? 'Archivo recibido; procesamiento pendiente' : data.state === 'CUARENTENA' ? 'Archivo retenido en cuarentena' : 'Archivo rechazado' }
 }
 export function dispatchResult(data) {
   assert(object(data) && text(data.state) && nullable(data.downstream_target) && nullable(data.operation_id, uuid) && nullable(data.downstream_result_id, uuid))
@@ -56,7 +59,7 @@ export function quarantinePage(data) {
   assert(object(data) && Array.isArray(data.items) && nullable(data.next_cursor))
   const items = data.items.map((row) => {
     assert(object(row) && uuid(row.id) && nullable(row.ingest_file_id, uuid) && nullable(row.source_record_id, uuid) && nullable(row.row_number, Number.isInteger) && nullable(row.source_family, (v) => families.includes(v)) && timestamp(row.created_at) && quarantineCauses.includes(row.cause_code) && text(row.cause_description) && quarantineStates.includes(row.state) && nullable(row.original_payload, object) && nullable(row.candidate_payload, object) && nullable(row.discard_justification))
-    return { ...row, canAct: row.state === 'Pendiente', canCorrect: row.state === 'Pendiente' && object(row.original_payload), createdLabel: formatTimestamp(row.created_at) }
+    return { ...row, canAct: row.state === 'Pendiente', canCorrect: row.state === 'Pendiente' && object(row.original_payload), createdLabel: formatUserTimestamp(row.created_at), createdAudit: formatAuditTimestamp(row.created_at) }
   })
   return { items, next_cursor: data.next_cursor }
 }
@@ -69,6 +72,11 @@ export function reinjectionResult(data) {
   const pending = committed && !['COMPLETED', 'NO_RELEVANT_WORK'].includes(data.job_state)
   return { ...data, upstreamCommitted: committed, pending, message: pending ? 'Reinyección confirmada. El recálculo sigue pendiente.' : committed ? 'Reinyección confirmada.' : 'El registro permanece pendiente de validación.' }
 }
+// Confianza OCR (0–1) como porcentaje con un decimal; el valor recibido se conserva en el detalle.
+export function confidencePercent(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'No disponible'
+  return `${formatDecimal(roundDecimal((value * 100).toFixed(4), 1))} %`
+}
 export function ocrPage(data) {
   assert(object(data) && Array.isArray(data.items) && nullable(data.next_cursor))
   const items = data.items.map((row) => {
@@ -76,7 +84,7 @@ export function ocrPage(data) {
     assert(object(row) && text(row.document_id) && uuid(row.document_version_id) && text(row.document_name) && nullable(row.file_name) && text(row.processing_state) && typeof row.ocr_applicable === 'boolean' && typeof row.reprocess_eligible === 'boolean' && nullable(row.ocr_state, ocrState) && nullable(row.processed_at, timestamp) && nullable(row.confidence, (v) => typeof v === 'number' && Number.isFinite(v)) && nullable(row.total_page_count, Number.isInteger) && nullable(row.ocr_processed_page_count, Number.isInteger) && nullable(row.granularity) && nullable(row.outcome, ocrState) && row.outcome === row.ocr_state)
     // Las etiquetas describen aplicabilidad; no sustituyen el estado persistido.
     const ocrStateLabel = !row.ocr_applicable ? 'No aplica' : row.ocr_state ?? 'Sin resultado OCR'
-    return { ...row, id: `${row.document_id}:${row.document_version_id}`, ocrStateLabel, outcomeLabel: ocrStateLabel, processedLabel: formatTimestamp(row.processed_at), confidenceLabel: row.confidence === null ? 'No disponible' : String(row.confidence) }
+    return { ...row, id: `${row.document_id}:${row.document_version_id}`, ocrStateLabel, outcomeLabel: ocrStateLabel, processedLabel: formatUserTimestamp(row.processed_at), confidenceLabel: confidencePercent(row.confidence), confidenceRaw: row.confidence === null ? 'No disponible' : String(row.confidence) }
   })
   return { items, next_cursor: data.next_cursor }
 }
@@ -90,13 +98,13 @@ export function auditPage(data) {
   const items = data.items.map((row) => {
     assert(object(row) && uuid(row.id) && timestamp(row.occurred_at) && text(row.actor_type) && text(row.actor_identifier) && nullable(row.actor_user_id, uuid) && text(row.action) && text(row.resource_type) && nullable(row.resource_identifier) && text(row.result) && nullable(row.safe_cause_code) && uuid(row.operation_id) && uuid(row.correlation_id) && nullable(row.query_sha256) && Array.isArray(row.resources))
     assert(row.resources.every((r) => object(r) && text(r.resource_type) && text(r.resource_identifier) && nullable(r.id_documento) && nullable(r.fragment_id, uuid)))
-    return { ...row, occurredLabel: formatTimestamp(row.occurred_at) }
+    return { ...row, occurredLabel: formatAuditTimestamp(row.occurred_at) }
   })
   return { items, next_cursor: data.next_cursor }
 }
 export function technicalResult(data) {
   assert(object(data) && data.kpi_code === 'KPI-CD-03' && ['DISPONIBLE', 'NO_DISPONIBLE'].includes(data.availability) && nullable(data.value, (v) => text(v) && /^\d+(\.\d+)?$/.test(v)) && nullable(data.calculated_at, timestamp) && !(data.availability === 'DISPONIBLE' && data.value === null))
-  return { ...data, displayValue: formatValue(roundDecimal(data.value), data.availability, { suffix: ' %' }), calculatedLabel: formatTimestamp(data.calculated_at) }
+  return { ...data, displayValue: formatValue(roundDecimal(data.value), data.availability, { suffix: ' %' }), calculatedLabel: formatUserTimestamp(data.calculated_at) }
 }
 // Estado del procesamiento downstream (despacho). No informa el resultado de validación de registros,
 // así que ninguna etiqueta afirma éxito de validación; un estado desconocido usa un rótulo neutro.

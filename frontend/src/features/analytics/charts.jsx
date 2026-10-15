@@ -1,7 +1,7 @@
 import React from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DataTable, KpiRow, KpiSkeleton } from '../../components/data.jsx'
-import { formatDate, formatTimestamp } from '../../shared/formatters.js'
+import { DataTable, KpiRow, KpiSkeleton, TechnicalDetails } from '../../components/data.jsx'
+import { formatAuditTimestamp, formatDocumentDate } from '../../shared/presentation.js'
 import {
   exposureEvolutionViewModel,
   formatCompactCurrencyMXN,
@@ -12,15 +12,11 @@ import {
   severityCompositionViewModel,
   temporalSeriesViewModel,
 } from './viewModels.js'
-import { AXIS_UNITS, chartAxisConfig } from './chartAxes.js'
+import { AXIS_UNITS, chartAxisConfig, monthTick } from './chartAxes.js'
+import { KPI_CATALOG } from './adapters.js'
 
 const AXIS_TICK = Object.freeze({ fill: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 11 })
 const axisProps = Object.freeze({ axisLine: { stroke: 'var(--border-default)' }, tickLine: false, tick: AXIS_TICK })
-const observationColumns = [
-  { key: 'periodText', label: 'Periodo' }, { key: 'displayValue', label: 'Valor', numeric: true },
-  { key: 'unit', label: 'Unidad' }, { key: 'dimensionsText', label: 'Dimensiones' },
-  { key: 'availability', label: 'Disponibilidad', render: (row) => row.availability === 'DISPONIBLE' ? 'Disponible' : 'No disponible' },
-]
 
 function monthDistance(value) {
   return Number(value.slice(0, 4)) * 12 + Number(value.slice(5, 7))
@@ -109,7 +105,7 @@ export function ExposureEvolutionChart({ items = [] }) {
   const columns = [{ key: 'periodText', label: 'Periodo' }, ...model.series.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true }))]
   return <ChartContainer title={title} subtitle="Importes por severidad y periodo; no se imputan meses ni valores." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}>
     <ChartLegend items={model.series} />
-    <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><BarChart data={model.rows} margin={{ left: 10, right: 8 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} /><YAxis {...axisProps} tickFormatter={formatCompactCurrencyMXN} width={62} /><Tooltip content={<SeriesTooltip series={model.series} />} />{model.series.map((series) => <Bar key={series.key} dataKey={series.key} name={series.label} stackId="exposure" fill={series.color} barSize={32} isAnimationActive={false} />)}</BarChart></ResponsiveContainer></div>
+    <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><BarChart data={model.rows} margin={{ left: 10, right: 8 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} tickFormatter={formatCompactCurrencyMXN} width={62} /><Tooltip content={<SeriesTooltip series={model.series} />} />{model.series.map((series) => <Bar key={series.key} dataKey={series.key} name={series.label} stackId="exposure" fill={series.color} barSize={32} isAnimationActive={false} />)}</BarChart></ResponsiveContainer></div>
   </ChartContainer>
 }
 
@@ -131,9 +127,9 @@ export function TemporalChart({ items = [], kpiCode, title, subtitle, unit, empt
   const Graph = count ? BarChart : LineChart
   const axis = chartAxisConfig(count ? AXIS_UNITS.COUNT : AXIS_UNITS.DAYS, rows.map((row) => row.value))
   const gaps = rows.filter((row) => row.availability === 'NO_OBSERVATION')
-  return <ChartContainer title={title} subtitle={subtitle} footer={<DataTable caption={`Datos de ${title}`} columns={[{ key: 'periodText', label: 'Periodo' }, { key: 'valueText', label: 'Valor', numeric: true }, { key: 'unit', label: 'Unidad' }, { key: 'availability', label: 'Disponibilidad', render: (row) => row.availability === 'NO_OBSERVATION' ? 'Sin observación' : row.availability === 'DISPONIBLE' ? 'Disponible' : 'No disponible' }]} rows={rows} />}>
+  return <ChartContainer title={title} subtitle={subtitle} footer={<DataTable caption={`Datos de ${title}`} columns={[{ key: 'periodText', label: 'Periodo' }, { key: 'valueText', label: 'Valor', numeric: true }]} rows={rows} />}>
     {gaps.length > 0 && <p className="text-xs text-secondary">Periodos sin observación: {gaps.map((row) => row.periodText).join('; ')}. {count ? 'Estos periodos no generan una barra.' : 'La línea se interrumpe en estos periodos.'}</p>}
-    <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><Graph data={count ? rows : data} margin={{ left: 4, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} /><YAxis {...axisProps} {...axis} width={48} /><Tooltip filterNull={false} content={<TemporalTooltip rows={rows} unit={unit} />} />{count ? <Bar dataKey="value" name="Nuevos litigios" fill="var(--chart-bar-1)" barSize={32} isAnimationActive={false} /> : keys.map((key) => <Line key={key} type="linear" dataKey={key} stroke="var(--text-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />)}</Graph></ResponsiveContainer></div>
+    <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><Graph data={count ? rows : data} margin={{ left: 4, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} {...axis} width={48} /><Tooltip filterNull={false} content={<TemporalTooltip rows={rows} unit={unit} />} />{count ? <Bar dataKey="value" name="Nuevos litigios" fill="var(--chart-bar-1)" barSize={32} isAnimationActive={false} /> : keys.map((key) => <Line key={key} type="linear" dataKey={key} stroke="var(--text-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />)}</Graph></ResponsiveContainer></div>
   </ChartContainer>
 }
 
@@ -145,18 +141,35 @@ export function LitigationExposureChart({ items = [] }) {
     ...(model.hasTotal ? [{ key: 'total', label: 'Total', color: 'var(--text-primary)' }] : []),
     ...(model.hasHigh ? [{ key: 'high', label: 'Alta', color: 'var(--critical)' }] : []),
   ]
-  const columns = [{ key: 'periodText', label: 'Periodo' }, { key: 'contextText', label: 'Contexto' }, ...SEVERITIES.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true })), ...(model.hasTotal ? [{ key: 'totalText', label: 'Total', numeric: true, render: (row) => row.complete ? row.totalText : 'Partición incompleta' }] : [])]
+  const showContext = new Set(model.rows.map((row) => row.contextKey)).size > 1 || model.rows.some((row) => row.contextKey !== '[]')
+  const columns = [{ key: 'periodText', label: 'Periodo' }, ...(showContext ? [{ key: 'contextText', label: 'Contexto' }] : []), ...SEVERITIES.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true })), ...(model.hasTotal ? [{ key: 'totalText', label: 'Total', numeric: true, render: (row) => row.complete ? row.totalText : 'Partición incompleta' }] : [])]
   return <ChartContainer title={title} subtitle="Total disponible solo con alto, medio y bajo del mismo periodo y contexto; no se completan observaciones ausentes." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}>
     <ChartLegend items={series} />
     <div className="space-y-5">{model.traces.map((trace) => {
       const { data, keys } = mergeSegmented(trace.rows, series)
       const values = trace.rows.flatMap((row) => [row.total, row.high])
       const hasCoordinates = values.some((value) => typeof value === 'number' && Number.isFinite(value))
-      return <div key={trace.id} className="min-w-0 space-y-2">{(model.traces.length > 1 || trace.rows[0].contextKey !== '[]') && <p className="text-xs text-secondary">{trace.label}</p>}{hasCoordinates ? <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><LineChart data={data} margin={{ left: 10, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} /><YAxis {...axisProps} {...chartAxisConfig(AXIS_UNITS.MXN, values)} width={62} /><Tooltip filterNull={false} content={<ExposureTooltip />} />{series.flatMap((seriesItem) => keys[seriesItem.key].map((key) => <Line key={key} type="linear" dataKey={key} name={seriesItem.label} stroke={seriesItem.color} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />))}</LineChart></ResponsiveContainer></div> : <EmptyChartState chartTitle={title} title={trace.rows.every((row) => row.sources?.every((item) => item.availability === 'NO_DISPONIBLE')) ? 'No disponible' : 'Sin datos disponibles'} message="Las observaciones recibidas se conservan en la tabla; no hay una serie representable de total o severidad alta." />}</div>
+      return <div key={trace.id} className="min-w-0 space-y-2">{(model.traces.length > 1 || trace.rows[0].contextKey !== '[]') && <p className="text-xs text-secondary">{trace.label}</p>}{hasCoordinates ? <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><LineChart data={data} margin={{ left: 10, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} {...chartAxisConfig(AXIS_UNITS.MXN, values)} width={62} /><Tooltip filterNull={false} content={<ExposureTooltip />} />{series.flatMap((seriesItem) => keys[seriesItem.key].map((key) => <Line key={key} type="linear" dataKey={key} name={seriesItem.label} stroke={seriesItem.color} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />))}</LineChart></ResponsiveContainer></div> : <EmptyChartState chartTitle={title} title={trace.rows.every((row) => row.sources?.every((item) => item.availability === 'NO_DISPONIBLE')) ? 'No disponible' : 'Sin datos disponibles'} message="Las observaciones recibidas se conservan en la tabla; no hay una serie representable de total o severidad alta." />}</div>
     })}</div>
   </ChartContainer>
 }
 
-export function ObservationTable({ items }) {
-  return <DataTable caption="Observaciones de indicadores" columns={[{ key: 'name', label: 'Indicador' }, ...observationColumns, { key: 'entityText', label: 'Entidad' }, { key: 'as_of_date', label: 'Fecha de referencia', render: (row) => formatDate(row.as_of_date) }, { key: 'calculated_at', label: 'Fecha de cálculo', render: (row) => formatTimestamp(row.calculated_at) }]} rows={items} />
+const catalogOrder = Object.keys(KPI_CATALOG)
+const observationOrder = (a, b) => catalogOrder.indexOf(a.kpi_code) - catalogOrder.indexOf(b.kpi_code) || a.period_start.localeCompare(b.period_start) || a.dimensionsText.localeCompare(b.dimensionsText)
+// Periodo con la fecha de corte cuando el mes aún no termina: «octubre 2026 (al 13 oct 2026)».
+const observationPeriod = (row) => row.as_of_date && row.as_of_date < row.period_end ? `${row.periodText} (al ${formatDocumentDate(row.as_of_date)})` : row.periodText
+
+// Datos de los indicadores (DESIGN §16.3): columnas de decisión; Ámbito y Entidad solo cuando alguna fila
+// los tiene; fecha de cálculo, fecha de corte e identificador del indicador en el detalle de cada fila.
+export function ObservationTable({ items, caption = 'Datos de los indicadores' }) {
+  const rows = [...items].sort(observationOrder)
+  const columns = [
+    { key: 'name', label: 'Indicador' },
+    { key: 'periodText', label: 'Periodo', render: observationPeriod },
+    { key: 'valueText', label: 'Valor', numeric: true },
+    ...(rows.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', render: (row) => row.dimensionsText || '—' }] : []),
+    ...(rows.some((row) => row.entity_filter_applicable) ? [{ key: 'entityText', label: 'Entidad' }] : []),
+    { key: 'detail', label: 'Detalle', render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Calculado</dt><dd className="mono">{formatAuditTimestamp(row.calculated_at)}</dd><dt>Datos al</dt><dd>{formatDocumentDate(row.as_of_date)}</dd></dl></TechnicalDetails> },
+  ]
+  return <DataTable caption={caption} columns={columns} rows={rows} />
 }

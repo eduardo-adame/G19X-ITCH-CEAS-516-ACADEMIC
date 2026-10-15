@@ -17,7 +17,7 @@ describe('ROBUSTNESS: calendario mensual aprobado con espaciado cronológico', (
     const rows = temporalSeriesViewModel(items, code)
     expect(rows.map(({ month }) => month)).toEqual(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09'])
     expect(rows.map(({ value }) => value)).toEqual([10, 20, null, 30, 15])
-    expect(rows[2]).toMatchObject({ rawValue: null, valueText: 'Sin observación', availability: 'NO_OBSERVATION', observed: false, periodText: '01/07/2026 – 31/07/2026' })
+    expect(rows[2]).toMatchObject({ rawValue: null, valueText: 'Sin observación', availability: 'NO_OBSERVATION', observed: false, periodText: 'julio 2026' })
     expect(items).toEqual(before)
     expect(items).toHaveLength(4)
   })
@@ -32,7 +32,8 @@ describe('SRS_REQUIRED: fuentes temporales sin imputación ni pérdida de precis
   it.each(['KPI-RC-01', 'KPI-LI-05'])('%s distingue cero, ND explícito y ausencia de mes', (code) => {
     const rows = temporalSeriesViewModel(series(code, [['2026-05', '0'], ['2026-06', null], ['2026-08', '1']]), code)
     expect(rows.map(({ availability }) => availability)).toEqual(['DISPONIBLE', 'NO_DISPONIBLE', 'NO_OBSERVATION', 'DISPONIBLE'])
-    expect(rows.map(({ valueText }) => valueText)).toEqual(['0', 'No disponible', 'Sin observación', '1'])
+    const unit = code === 'KPI-RC-01' ? ['días', 'día'] : ['litigios', 'litigio']
+    expect(rows.map(({ valueText }) => valueText)).toEqual([`0 ${unit[0]}`, 'No disponible', 'Sin observación', `1 ${unit[1]}`])
     expect(rows.map(({ value }) => value)).toEqual([0, null, null, 1])
   })
   it.each(['KPI-RC-01', 'KPI-LI-05'])('%s singlepoint no inventa historia ni meses fuera de selección', (code) => {
@@ -41,8 +42,8 @@ describe('SRS_REQUIRED: fuentes temporales sin imputación ni pérdida de precis
   })
   it('RC01 conserva el decimal fuente, lo presenta con dos decimales y grafica la coordenada', () => {
     const rows = temporalSeriesViewModel(series('KPI-RC-01', [['2026-05', '12.5000'], ['2026-06', '0.1234567890123456789']]), 'KPI-RC-01')
-    expect(rows[0]).toMatchObject({ value: 12.5, rawValue: '12.5000', valueText: '12.5' })
-    expect(rows[1]).toMatchObject({ rawValue: '0.1234567890123456789', valueText: '0.12', availability: 'DISPONIBLE' })
+    expect(rows[0]).toMatchObject({ value: 12.5, rawValue: '12.5000', valueText: '12.5 días' })
+    expect(rows[1]).toMatchObject({ rawValue: '0.1234567890123456789', valueText: '0.12 días', availability: 'DISPONIBLE' })
     expect(rows[1].value).toBeCloseTo(0.1234567890123456789, 15)
   })
 })

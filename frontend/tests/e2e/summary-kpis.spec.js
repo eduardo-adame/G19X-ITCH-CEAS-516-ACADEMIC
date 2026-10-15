@@ -97,7 +97,7 @@ test.describe('SRS_REQUIRED: estructura ejecutiva y estados', () => {
     test(`error KPI ${status} preserva frontera sin cinco ceros`, async ({ page }) => {
       await responseRoutes(page, [], status)
       await page.goto('/')
-      await expect(page.getByRole('alert').first()).toContainText(status === 403 ? 'Sin autorización' : 'No se pudo completar')
+      await expect(page.getByRole('alert').first()).toContainText(status === 403 ? 'Sin autorización' : 'Error al cargar los indicadores')
       await expect(cards(page)).toHaveCount(0)
       await expect(page.locator('.kpi-metric')).toHaveCount(0)
     })

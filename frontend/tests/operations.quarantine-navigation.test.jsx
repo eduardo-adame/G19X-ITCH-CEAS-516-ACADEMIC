@@ -6,6 +6,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
 import { QuarantinePage } from '../src/features/operations/QuarantinePage.jsx'
 import { quarantineCauseItem } from './fixtures/quarantineCauses.js'
+import { localDayBoundary } from '../src/shared/presentation.js'
 
 const fileA = '11111111-1111-4111-8111-111111111111'
 const fileB = '22222222-2222-4222-8222-222222222222'
@@ -26,14 +27,14 @@ function mount(initial = '/cuarentena') {
 }
 async function consistent(client, id) {
   await waitFor(() => {
-    expect(screen.getByLabelText('Archivo de origen (UUID)')).toHaveValue(id)
+    expect(screen.getByLabelText('Archivo de origen (identificador)')).toHaveValue(id)
     expect(new URLSearchParams(screen.getByLabelText('Consulta actual').textContent).get('ingest_file_id') || '').toBe(id)
     expect(new URLSearchParams(client.acquireRead.mock.calls.at(-1)[0].split('?')[1]).get('ingest_file_id') || '').toBe(id)
   })
 }
 async function setFile(id) {
-  fireEvent.change(screen.getByLabelText('Archivo de origen (UUID)'), { target: { value: id } })
-  fireEvent.blur(screen.getByLabelText('Archivo de origen (UUID)'))
+  fireEvent.change(screen.getByLabelText('Archivo de origen (identificador)'), { target: { value: id } })
+  fireEvent.blur(screen.getByLabelText('Archivo de origen (identificador)'))
 }
 
 describe('SRS_REQUIRED: URL autoritativa en navegación de cuarentena', () => {
@@ -45,13 +46,13 @@ describe('SRS_REQUIRED: URL autoritativa en navegación de cuarentena', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Adelante de prueba' })); await consistent(client, fileB)
   })
   it('restaura también las fechas de rechazo al navegar en el historial', async () => {
-    mount('/cuarentena?rejected_from=2030-01-01T00%3A00%3A00Z'); await screen.findByText('Formato incompatible')
-    fireEvent.change(screen.getByLabelText('Rechazo desde (fecha con zona)'), { target: { value: '2030-02-01T00:00:00Z' } })
-    fireEvent.blur(screen.getByLabelText('Rechazo desde (fecha con zona)'))
+    mount(`/cuarentena?rejected_from=${encodeURIComponent(localDayBoundary('2030-01-01'))}`); await screen.findByText('Formato incompatible')
+    fireEvent.change(screen.getByLabelText('Retenido desde'), { target: { value: '2030-02-01' } })
+    await waitFor(() => expect(new URLSearchParams(screen.getByLabelText('Consulta actual').textContent).get('rejected_from')).toBe(localDayBoundary('2030-02-01')))
     await userEvent.click(screen.getByRole('button', { name: 'Atrás de prueba' }))
-    await waitFor(() => expect(screen.getByLabelText('Rechazo desde (fecha con zona)')).toHaveValue('2030-01-01T00:00:00Z'))
+    await waitFor(() => expect(screen.getByLabelText('Retenido desde')).toHaveValue('2030-01-01'))
     await userEvent.click(screen.getByRole('button', { name: 'Adelante de prueba' }))
-    await waitFor(() => expect(screen.getByLabelText('Rechazo desde (fecha con zona)')).toHaveValue('2030-02-01T00:00:00Z'))
+    await waitFor(() => expect(screen.getByLabelText('Retenido desde')).toHaveValue('2030-02-01'))
   })
 })
 describe('ROBUSTNESS: validación de filtros sin alterar el destino', () => {

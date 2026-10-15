@@ -27,7 +27,7 @@ async function prepare(page, { role = 'TI', dispatch = refreshDispatch, reproces
     return r.fulfill({ status: reprocess.detail ? 503 : 200, json: reprocess })
   })
   await page.goto('/ingesta?document_id=DOC-REF')
-  await expect(page.getByRole('cell', { name: 'DOC-REF', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('cell', { name: 'Documento sintético', exact: true })).toHaveCount(1)
   if (role === 'TI') await expect(page.getByText('50 %', { exact: true })).toBeVisible()
   await page.evaluate(() => { window.__refreshTestIdentity = 'misma-pagina' })
   return { ocr: () => ocrReads, technical: () => technicalReads, posts: () => reprocessPosts, queries: ocrQueries }
@@ -48,7 +48,7 @@ test.describe('SRS_REQUIRED: refresh OCR/CD03 confirmado — BROWSER_CONTRACT_E2
     const ocrResponse = page.waitForResponse((r) => r.url().includes('/api/documents/ocr?'))
     await upload(page); await ocrResponse
     const table = page.getByRole('table', { name: 'Resultados operativos OCR' })
-    await expect(table.getByRole('cell', { name: 'Exitoso', exact: true })).toHaveCount(2)
+    await expect(table.getByRole('cell', { name: 'Exitoso', exact: true })).toHaveCount(1)
     if (role === 'TI') await expect(page.getByText('66.67 %', { exact: true })).toBeVisible()
     expect(state.ocr()).toBe(2); expect(state.technical()).toBe(role === 'TI' ? 2 : 0)
     expect(state.queries).toEqual(['DOC-REF', 'DOC-REF'])

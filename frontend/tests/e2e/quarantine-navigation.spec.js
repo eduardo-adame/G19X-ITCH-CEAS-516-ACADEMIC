@@ -14,7 +14,8 @@ test('SRS_REQUIRED: A/B/Atrás/Adelante sincroniza URL, UUID visible y GET sin r
     return route.fulfill({ json: { items: [{ ...quarantineCauseItem('FORMAT_MISMATCH', 'Formato incompatible'), ingest_file_id: query.get('ingest_file_id') || fileA }], next_cursor: null } })
   })
   await page.goto('/cuarentena'); await expect(page.getByText('Formato incompatible')).toBeVisible()
-  const input = page.getByLabel('Archivo de origen (UUID)', { exact: true })
+  await page.getByText('Filtros avanzados', { exact: true }).click()
+  const input = page.getByLabel('Archivo de origen (identificador)', { exact: true })
   async function transition(action, id) {
     const read = page.waitForResponse(r => new URL(r.url()).pathname === '/api/validation/quarantine')
     await action(); const response = await read

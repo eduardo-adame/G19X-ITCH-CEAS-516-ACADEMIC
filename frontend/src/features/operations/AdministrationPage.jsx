@@ -6,6 +6,7 @@ import { PageHeader, Modal } from '../../components/layout.jsx'
 import { Button, Input, Select } from '../../components/controls.jsx'
 import { ErrorState } from '../../components/feedback.jsx'
 import { families, uuid } from './adapters.js'
+import { familyLabel, roleLabel } from '../../shared/labels.js'
 import { useOperation } from './api.js'
 
 export const adminActions = [
@@ -63,9 +64,9 @@ function AdministrationWorkspace({ principal }) {
       {action === 'create' && <Input label="Usuario" name="username" required maxLength={256} autoComplete="off" disabled={blocked} />}
       {['create', 'update'].includes(action) && <Input label="Nombre visible" name="display_name" required maxLength={256} disabled={blocked} />}
       {requiresPassword && <Input label="Contraseña nueva" name="password" type="password" autoComplete="new-password" minLength={1} maxLength={128} required disabled={blocked} />}
-      {['create', 'roles'].includes(action) && <fieldset className="space-y-2"><legend className="text-xs font-medium text-secondary">Roles activos</legend>{roles.map((value) => <label key={value} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" name="roles" value={value} disabled={blocked} />{value}</label>)}</fieldset>}
-      {role && <Select label="Rol" name="role_id" options={roles.map((v) => ({ value: v, label: v }))} disabled={blocked} />}
-      {action === 'scope' && <Select label="Familia documental" name="source_family" options={families.map((v) => ({ value: v, label: v }))} disabled={blocked} />}
+      {['create', 'roles'].includes(action) && <fieldset className="space-y-2"><legend className="text-xs font-medium text-secondary">Roles activos</legend>{roles.map((value) => <label key={value} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" name="roles" value={value} disabled={blocked} />{roleLabel(value)}</label>)}</fieldset>}
+      {role && <Select label="Rol" name="role_id" options={roles.map((v) => ({ value: v, label: roleLabel(v) }))} disabled={blocked} />}
+      {action === 'scope' && <Select label="Familia documental" name="source_family" options={families.map((v) => ({ value: v, label: familyLabel(v) }))} disabled={blocked} />}
       {['user-exception', 'role-exception'].includes(action) && <><Input label="Identificador conocido de documento" name="document_id" required maxLength={256} disabled={blocked} /><Select label="Decisión documental" name="decision" options={[{ value: 'DENY', label: 'Denegar' }, { value: 'ALLOW', label: 'Autorizar' }]} disabled={blocked} /></>}
       {['scope', 'user-exception', 'role-exception'].includes(action) && <Select label="Vigencia del permiso" name="active" options={[{ value: 'true', label: 'Activo' }, { value: 'false', label: 'Inactivo' }]} disabled={blocked} />}
       <div className="md:col-span-2"><Button type="submit" busy={mutation.busy} disabled={blocked}>Aplicar operación</Button></div>

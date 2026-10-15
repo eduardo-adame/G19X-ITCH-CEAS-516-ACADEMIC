@@ -35,8 +35,8 @@ test.describe('ROBUSTNESS: calendario, unidades y gráficas aprobadas por domini
     expect(Math.abs((positions[2] - positions[1]) / (positions[1] - positions[0]) - 2)).toBeLessThan(0.02)
     await expect(chart.locator('path.recharts-line-curve')).toHaveCount(2)
     expect(await table(page, cycleTitle).locator('tbody tr').allTextContents()).toEqual([
-      '01/05/2026 – 31/05/202610díasDisponible', '01/06/2026 – 30/06/202620díasDisponible',
-      '01/07/2026 – 31/07/2026Sin observacióndíasSin observación', '01/08/2026 – 31/08/202630díasDisponible', '01/09/2026 – 30/09/202615díasDisponible',
+      'mayo 202610 días', 'junio 202620 días',
+      'julio 2026Sin observación', 'agosto 202630 días', 'septiembre 202615 días',
     ])
     await dots.nth(1).hover()
     const tooltip = chart.locator('.recharts-tooltip-wrapper')
@@ -96,10 +96,10 @@ test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputació
     await page.goto('/contratos')
     const rows = table(page, cycleTitle).locator('tbody tr')
     await expect(rows).toHaveCount(4)
-    await expect(rows.nth(0)).toContainText('0díasDisponible')
+    await expect(rows.nth(0)).toContainText('mayo 20260 días')
     await expect(rows.nth(1)).toContainText('No disponible')
     await expect(rows.nth(2)).toContainText('Sin observación')
-    await expect(rows.nth(3)).toContainText('12.5díasDisponible')
+    await expect(rows.nth(3)).toContainText('agosto 202612.5 días')
     const chart = figure(page, cycleTitle)
     await chart.locator('circle.recharts-line-dot').last().hover()
     await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('12.5 días')
@@ -112,7 +112,7 @@ test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputació
     await expect(dots).toHaveCount(5)
     await expect(chart.locator('path.recharts-line-curve')).toHaveCount(1)
     const rows = table(page, cycleTitle).locator('tbody tr')
-    await expect(rows.nth(2)).toContainText('18.33díasDisponible')
+    await expect(rows.nth(2)).toContainText('julio 202618.33 días')
     await expect(table(page, cycleTitle)).not.toContainText('18.333')
     await dots.nth(2).hover()
     await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('18.33 días')
@@ -123,7 +123,7 @@ test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputació
     const rows = table(page, countTitle).locator('tbody tr')
     await expect(rows).toHaveCount(5)
     await expect(rows.nth(1)).toContainText('Sin observación')
-    await expect(rows.nth(2)).toContainText('0litigiosDisponible')
+    await expect(rows.nth(2)).toContainText('julio 20260 litigios')
     await expect(rows.nth(3)).toContainText('No disponible')
     const chart = figure(page, countTitle)
     const ticks = await chart.locator('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value').allTextContents()

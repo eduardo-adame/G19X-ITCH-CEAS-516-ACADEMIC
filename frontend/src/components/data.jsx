@@ -1,9 +1,19 @@
 import React from 'react'
 import { EmptyState } from './feedback.jsx'
 import { Icon } from './Icon.jsx'
+import { statusPresentation } from '../shared/labels.js'
 export function Badge({ variant = 'neutral', children }) {
   const semantic = ['critical', 'warning', 'success', 'information'].includes(variant)
   return <span className="badge" style={semantic ? { color: `var(--${variant})`, background: `var(--${variant}-subtle)`, borderColor: `var(--${variant}-border)` } : undefined}>{children}</span>
+}
+// Estado de sistema con rótulo legible y variante semántica (labels.statusPresentation).
+export function StatusBadge({ kind, value }) {
+  const { label, variant } = statusPresentation(kind, value)
+  return <Badge variant={variant}>{label}</Badge>
+}
+// Metadatos técnicos plegados: identificadores, códigos y textos registrados que no son la lectura principal.
+export function TechnicalDetails({ summary = 'Detalle técnico', children, className = '' }) {
+  return <details className={`technical-details ${className}`}><summary>{summary}</summary><div className="technical-details-body">{children}</div></details>
 }
 export function RiskBadge({ level }) { return <Badge variant={{ Alto: 'critical', Medio: 'warning', Bajo: 'success' }[level] || 'neutral'}><span aria-hidden="true" className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current opacity-80" />{level}</Badge> }
 export function KpiMetric({ label, displayValue, shortContext, delta, previousContext, state, accessibleValue, valueKind, entryIndex }) {

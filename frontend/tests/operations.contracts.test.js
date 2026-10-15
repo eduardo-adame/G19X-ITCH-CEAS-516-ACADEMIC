@@ -25,7 +25,7 @@ describe('SRS_REQUIRED: contratos HTTP de operaciones', () => {
   it('F-03: envía la fecha del documento solo para PDF/DOCX y valida su formato', async () => {
     const { api, request } = fixture({ ...response, format: 'PDF', routing_target: 'DOCUMENT', family: 'CONTRATOS_DOCUMENTOS', document_date: '2026-10-06' })
     const pdf = new File(['%PDF'], 'contrato.pdf', { type: 'application/pdf' })
-    await expect(api.upload(pdf, 'contracts-documents', id, '2026-10-06')).resolves.toMatchObject({ document_date: '2026-10-06', documentDateText: '06/10/2026' })
+    await expect(api.upload(pdf, 'contracts-documents', id, '2026-10-06')).resolves.toMatchObject({ document_date: '2026-10-06', documentDateText: '6 oct 2026' })
     expect(request.mock.calls[0][1].body.get('document_date')).toBe('2026-10-06')
     await api.upload(pdf, 'contracts-documents', id)
     expect(request.mock.calls[1][1].body.has('document_date')).toBe(false)

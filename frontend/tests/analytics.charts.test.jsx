@@ -30,8 +30,8 @@ describe('ROBUSTNESS: gráficas temporales según calendario y escalas aprobados
     expect(JSON.parse(screen.getByTestId('chart').dataset.points).map(({ value }) => value)).toEqual([10, 20, null, 30, 15])
     expect(screen.getAllByTestId('line')).toHaveLength(2)
     expect(screen.getAllByTestId('line').every((line) => line.dataset.connect === 'false' && line.dataset.animation === 'false')).toBe(true)
-    expect(screen.getByRole('table')).toHaveTextContent('01/07/2026 – 31/07/2026Sin observación')
-    expect(screen.getByText(/Periodos sin observación:.*01\/07\/2026.*La línea se interrumpe/)).toBeVisible()
+    expect(screen.getByRole('table')).toHaveTextContent('julio 2026Sin observación')
+    expect(screen.getByText(/Periodos sin observación:.*julio 2026.*La línea se interrumpe/)).toBeVisible()
     expect(screen.getByTestId('axis')).toHaveAttribute('data-decimals', 'true')
   })
   it('LI05 utiliza barras discretas, ticks enteros y headroom0..2 para cinco unos', () => {
@@ -66,10 +66,10 @@ describe('SRS_REQUIRED: F-07 decimales de alta precisión en RC01 (RF-030, RF-07
   it('table_chart_consistency: tabla, tooltip y coordenada coinciden con dos decimales y no muestran 28 dígitos', () => {
     const rows = temporalSeriesViewModel(rc01(), 'KPI-RC-01')
     const july = rows.find((row) => row.month === '2026-07')
-    expect(july.valueText).toBe('18.33')
-    expect(july.value.toFixed(2)).toBe(july.valueText)
+    expect(july.valueText).toBe('18.33 días')
+    expect(`${july.value.toFixed(2)} días`).toBe(july.valueText)
     const { unmount } = render(<TemporalChart items={rc01()} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
-    expect(screen.getByRole('table')).toHaveTextContent('01/07/2026 – 31/07/202618.33díasDisponible')
+    expect(screen.getByRole('table')).toHaveTextContent('julio 202618.33 días')
     expect(screen.getByRole('table')).not.toHaveTextContent('18.333')
     unmount()
     render(<TemporalTooltip active payload={[{ payload: july }]} rows={rows} unit="días" />)
@@ -79,7 +79,7 @@ describe('SRS_REQUIRED: F-07 decimales de alta precisión en RC01 (RF-030, RF-07
     const items = adapted([['2026-05', '15.75'], ['2026-06', null], ['2026-07', '18.33333333333333333333333333']].map(([month, value]) => item('KPI-RC-01', month, value)))
     render(<TemporalChart items={items} kpiCode="KPI-RC-01" title="Ciclo" unit="días" />)
     expect(screen.getAllByTestId('line')).toHaveLength(2)
-    expect(screen.getByRole('table')).toHaveTextContent('01/06/2026 – 30/06/2026No disponibledíasNo disponible')
+    expect(screen.getByRole('table')).toHaveTextContent('junio 2026No disponible')
   })
 })
 
@@ -89,7 +89,7 @@ describe('SRS_REQUIRED: tooltips y tablas conservan valores, unidad y disponibil
     render(<TemporalTooltip active payload={[{ payload: rows[0] }]} rows={rows} unit="días" />)
     expect(screen.getByText('Tiempo de ciclo')).toBeVisible()
     expect(screen.getByText('0.13 días')).toBeVisible()
-    expect(screen.getByText('01/05/2026 – 31/05/2026')).toBeVisible()
+    expect(screen.getByText('mayo 2026')).toBeVisible()
   })
   it.each([['NO_OBSERVATION', 'Sin observación'], ['NO_DISPONIBLE', 'No disponible']])('tooltip temporal %s no muestra cero', (availability, text) => {
     const row = { month: '2026-07', periodText: 'Julio 2026', availability, value: null, rawValue: null }

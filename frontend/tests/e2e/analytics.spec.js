@@ -56,11 +56,9 @@ test.describe('Analítica — Resumen ejecutivo', () => {
       await expect(page.getByLabel('Periodo', { exact: true })).toBeEnabled()
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'current_month')).toBe(true)
       await page.getByLabel('Periodo', { exact: true }).selectOption('last_6_months')
-      await page.getByRole('button', { name: 'Aplicar filtros', exact: true }).click()
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
       await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('current')
       await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
-      await page.getByRole('button', { name: 'Aplicar filtros', exact: true }).click()
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/analysis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
     })
   }
@@ -123,7 +121,8 @@ test.describe('Analítica — Riesgo contractual', () => {
     // Cambiar a histórico no inventa datos
     const modeSelect = page.getByRole('combobox', { name: /análisis/i })
     await modeSelect.selectOption('historical')
-    await expect(page.getByRole('button', { name: /aplicar filtros/i })).toBeEnabled()
+    await expect(modeSelect).toHaveValue('historical')
+    await expect(page.getByText(/análisis completados dentro del periodo seleccionado/i)).toBeVisible()
   })
 })
 
@@ -155,7 +154,7 @@ test.describe('Analítica — Tendencias y riesgos', () => {
     mockAnalytics(page, [])
     await page.goto('/tendencias')
     await expect(page.getByText(/sin análisis completados/i)).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText(/reglas deterministas/i)).toBeVisible()
+    await expect(page.getByText(/No son predicciones ni asesoría jurídica/i)).toBeVisible()
     await expect(page.locator('figure')).toHaveCount(0)
   })
 })
@@ -205,7 +204,10 @@ test.describe('Analítica — Tabla alternativa a gráfica', () => {
   test('la tabla de observaciones contiene los datos del KPI sintético', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '42')])
     await page.goto('/')
-    await expect(page.getByRole('table', { name: /observaciones/i }).first()).toBeVisible({ timeout: 8000 })
+    await page.getByText(/^Datos de los indicadores \(\d+\)$/).click()
+    const table = page.getByRole('table', { name: 'Datos de los indicadores' })
+    await expect(table).toBeVisible({ timeout: 8000 })
+    await expect(table).toContainText('42 contratos')
   })
 })
 

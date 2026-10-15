@@ -48,7 +48,7 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     await userEvent.upload(screen.getByLabelText(/Archivo/), file)
     fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
     await waitFor(() => expect(request).toHaveBeenCalled())
-    expect(await screen.findByText(/Archivo recibido; procesamiento downstream pendiente/)).toBeVisible()
+    expect(await screen.findByText(/Archivo recibido; procesamiento pendiente/)).toBeVisible()
     expect(screen.getByText('Sin confirmación de despacho')).toBeVisible()
     expect(await screen.findByRole('alert')).toHaveTextContent('conflicto')
     expect(screen.getByText(/no representa un historial persistente/i)).toBeVisible()
@@ -69,7 +69,7 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
     await waitFor(() => expect(request).toHaveBeenCalledWith('/ingestion/uploads', expect.anything()))
     expect(request.mock.calls[0][1].body.get('document_date')).toBe('2026-10-06')
-    expect(await screen.findByText('06/10/2026')).toBeVisible()
+    expect(await screen.findByText('6 oct 2026')).toBeVisible()
   })
 
   it('separa original y candidato y conserva identidad de reinyección', async () => {
@@ -108,12 +108,12 @@ describe('SRS_REQUIRED: vistas operativas', () => {
   })
 
   it('auditoría distingue alcance propio de alcance total', async () => {
-    const analyst = mount(<AuditPage />); expect(await screen.findByText(/Tus eventos autorizados/)).toBeVisible(); expect(analyst.client.acquireRead.mock.calls[0][0]).toContain('limit=100')
+    const analyst = mount(<AuditPage />); expect(await screen.findByText(/Tus eventos de ingesta y cuarentena/)).toBeVisible(); expect(analyst.client.acquireRead.mock.calls[0][0]).toContain('limit=25')
   })
 
   it('filtros inválidos de cuarentena muestran error seguro y no cambian la consulta', async () => {
     const { client } = mount(<QuarantinePage />); await screen.findByText('Falta campo obligatorio'); const before = client.acquireRead.mock.calls.length
-    await userEvent.type(screen.getByLabelText('Rechazo desde (fecha con zona)'), '2030-01-01')
+    await userEvent.type(screen.getByLabelText('Archivo de origen (identificador)'), 'no-es-uuid')
     await userEvent.tab()
     expect(await screen.findByRole('alert')).toHaveTextContent('Revisa los datos')
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
@@ -134,9 +134,9 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     await screen.findByText('DOCX-NATIVO')
     for (const [id, , , eligible, processing, confidence, label] of cases) {
       const row = within(screen.getByText(id).closest('tr'))
-      expect(row.getAllByText(label)).toHaveLength(2)
-      expect(row.getByText(processing)).toBeVisible()
-      expect(row.getByText(confidence === null ? 'No disponible' : String(confidence))).toBeVisible()
+      expect(row.getAllByText(label)).toHaveLength(1)
+      expect(row.getByText({ LISTA: 'Listo', PROCESANDO: 'En procesamiento', RECHAZADA: 'Rechazado', FALLIDA: 'Fallido' }[processing])).toBeVisible()
+      expect(row.getAllByText(confidence === null ? 'No disponible' : `${confidence * 100} %`)[0]).toBeVisible()
       expect(Boolean(row.queryByRole('button', { name: 'Reprocesar' }))).toBe(eligible)
     }
     expect(screen.getAllByRole('button', { name: 'Reprocesar' })).toHaveLength(1)

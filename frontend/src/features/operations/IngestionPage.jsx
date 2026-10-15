@@ -76,8 +76,8 @@ function IngestionWorkspace({ principal }) {
       {blocked && !mutation.busy && <p className="text-sm text-secondary">Resultado incierto. Consulta Auditoría antes de iniciar otra operación; no se repetirá automáticamente.</p>}
     </section>
     <section className="space-y-3"><h2 className="text-base font-semibold">Resultados de esta interacción</h2><DataTable caption="Recepción y despacho actuales" rows={rows} columns={[
-      { key: 'file_id', label: 'Archivo recibido' }, { key: 'reception', label: 'Recepción' }, { key: 'family', label: 'Familia' }, { key: 'documentDateText', label: 'Fecha del documento' },
-      { key: 'dispatch', label: 'Procesamiento downstream', render: (row) => row.dispatch ? <DispatchResult row={row} canQuarantine={can(principal, 'quarantine.read')} /> : <span>{row.state === 'COMPLETADO' && row.routing_target !== 'NONE' ? 'Sin confirmación de despacho' : 'No despachado'}</span> },
+      { key: 'file_id', label: 'Archivo recibido' }, { key: 'reception', label: 'Recepción' }, { key: 'familyText', label: 'Familia' }, { key: 'documentDateText', label: 'Fecha del documento' },
+      { key: 'dispatch', label: 'Procesamiento', render: (row) => row.dispatch ? <DispatchResult row={row} canQuarantine={can(principal, 'quarantine.read')} /> : <span>{row.state === 'COMPLETADO' && row.routing_target !== 'NONE' ? 'Sin confirmación de despacho' : 'No despachado'}</span> },
     ]} />{rows.some((row) => row.dispatch) && <p className="text-xs text-secondary">El procesamiento indica si el archivo se procesó, no el resultado de su validación: los registros aceptados o enviados a cuarentena se consultan en Zona de cuarentena y Auditoría.</p>}<p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
     {can(principal, 'document.manage') && <OcrPanel refreshKey={ocrRefreshKey} onProcessingCompleted={() => setTechnicalRefreshKey((value) => value + 1)} />}
     {principal.roles.includes('TI') && <TechnicalMetric key={technicalRefreshKey} />}

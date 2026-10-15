@@ -26,7 +26,7 @@ test.describe('SRS_REQUIRED: motivos técnicos de cuarentena — BROWSER_CONTRAC
     await expect(filter.getByRole('option')).toHaveCount(26)
     for (const [code, description] of canonicalQuarantineCauses) {
       await expect(table.getByRole('cell', { name: description, exact: true })).toHaveCount(1)
-      await expect(filter.getByRole('option', { name: code.replaceAll('_', ' '), exact: true })).toHaveAttribute('value', code)
+      await expect(filter.getByRole('option', { name: description, exact: true })).toHaveAttribute('value', code)
     }
     for (const [code, description] of canonicalQuarantineCauses) {
       const response = page.waitForResponse((r) => r.url().includes('/api/validation/quarantine?') && new URL(r.url()).searchParams.get('cause_code') === code)

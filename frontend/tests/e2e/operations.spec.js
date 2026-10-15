@@ -196,15 +196,17 @@ test.describe('SRS_REQUIRED: OCR veraz y autorizado — BROWSER_CONTRACT_E2E', (
         ['ESCANEADO-EXITOSO', true, 'Exitoso', false, 'LISTA', 0.96, 'Exitoso'],
         ['ESCANEADO-FALLIDO', true, null, false, 'FALLIDA', null, 'Sin resultado OCR'],
       ]
-      const items = cases.map(([document_id, ocr_applicable, ocr_state, reprocess_eligible, processing_state, confidence]) => ({ ...OCR_PAGE.items[0], document_id, ocr_applicable, ocr_state, outcome: ocr_state, reprocess_eligible, processing_state, confidence }))
+      const items = cases.map(([document_id, ocr_applicable, ocr_state, reprocess_eligible, processing_state, confidence]) => ({ ...OCR_PAGE.items[0], document_id, document_name: document_id, ocr_applicable, ocr_state, outcome: ocr_state, reprocess_eligible, processing_state, confidence }))
       await page.route('**/api/documents/ocr**', (r) => r.fulfill({ json: { items, next_cursor: null } }))
       await page.goto('/ingesta')
       const table = page.getByRole('table', { name: 'Resultados operativos OCR' })
       for (const [id, , , eligible, processing, confidence, label] of cases) {
         const row = table.getByRole('row').filter({ has: page.getByRole('cell', { name: id, exact: true }) })
-        await expect(row.getByRole('cell', { name: label, exact: true })).toHaveCount(2)
-        await expect(row.getByRole('cell', { name: processing, exact: true })).toHaveCount(1)
-        await expect(row.getByRole('cell', { name: confidence === null ? 'No disponible' : String(confidence), exact: true })).toHaveCount(1)
+        const processingLabel = { LISTA: 'Listo', PROCESANDO: 'En procesamiento', PENDIENTE: 'Pendiente', RECHAZADA: 'Rechazado', FALLIDA: 'Fallido' }[processing]
+        // Estado OCR y procesamiento son columnas distintas; pueden coincidir en rótulo («Pendiente»).
+        await expect(row.getByRole('cell', { name: label, exact: true })).toHaveCount(label === processingLabel ? 2 : 1)
+        await expect(row.getByRole('cell', { name: processingLabel, exact: true })).toHaveCount(label === processingLabel ? 2 : 1)
+        await expect(row.getByRole('cell', { name: confidence === null ? 'No disponible' : `${confidence * 100} %`, exact: true })).toHaveCount(1)
         await expect(row.getByRole('button', { name: 'Reprocesar', exact: true })).toHaveCount(eligible ? 1 : 0)
       }
       await expect(table.getByRole('button', { name: 'Reprocesar', exact: true })).toHaveCount(1)
@@ -272,7 +274,7 @@ test.describe('Operaciones — Auditoría', () => {
     )
     await page.goto('/auditoria')
     await expect(page.getByRole('cell', { name: 'usuario-prueba' })).toBeVisible({ timeout: 8000 })
-    await expect(page.getByText('LOGIN')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('cell', { name: 'LOGIN', exact: true })).toBeVisible({ timeout: 8000 })
   })
 
   test('solo lectura: no hay botones de edición ni exportación', async ({ page }) => {

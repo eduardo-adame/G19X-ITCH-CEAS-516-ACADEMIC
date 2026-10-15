@@ -1,5 +1,6 @@
 import { ApiError } from '../../api/errors.js'
-import { formatDate, formatDecimal, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
+import { formatDecimal, formatTimestamp, formatValue, roundDecimal, validDate } from '../../shared/formatters.js'
+import { formatPeriodRange, formatQuantity } from '../../shared/presentation.js'
 import { findingSeverity } from './viewModels.js'
 
 export const KPI_CATALOG = Object.freeze({
@@ -21,9 +22,12 @@ const nullableString = (value) => value === null || typeof value === 'string'
 const code = (value) => Object.hasOwn(KPI_CATALOG, value)
 const core = (value) => code(value) && KPI_CATALOG[value].core
 // Rótulos de las claves estructuradas de dimensión; una clave no catalogada conserva su nombre legible.
-const DIMENSION_LABELS = Object.freeze({ area: 'Área', nivel_severidad: 'Nivel de severidad', entity: 'Entidad' })
+// Sin dimensiones devuelve texto vacío: la ausencia de ámbito no se presenta como un dato.
+const DIMENSION_LABELS = Object.freeze({ area: 'Área', nivel_severidad: 'Nivel de severidad', entity: 'Entidad', tipo_asunto: 'Tipo de asunto', estado: 'Estado' })
+const DIMENSION_VALUES = Object.freeze({ nivel_severidad: Object.freeze({ alto: 'Alto', medio: 'Medio', bajo: 'Bajo' }) })
+const dimensionKey = (key) => DIMENSION_LABELS[key] || `${key.charAt(0).toUpperCase()}${key.slice(1).replace(/_/g, ' ')}`
 export function dimensionsLabel(dimensions) {
-  return Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${DIMENSION_LABELS[key] || key.replace(/_/g, ' ')}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ') || 'Sin dimensiones'
+  return Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${dimensionKey(key)}: ${typeof value === 'object' ? JSON.stringify(value) : DIMENSION_VALUES[key]?.[value] || String(value)}`).join(' · ')
 }
 // recurrent_pattern es un valor estructurado (N_OF_4); otros valores se muestran tal como se recibieron.
 export function recurrenceLabel(pattern) {
@@ -42,7 +46,7 @@ export function adaptKpis(data) {
     const severity = ['alto', 'medio', 'bajo'].includes(item.dimensions.nivel_severidad)
       ? item.dimensions.nivel_severidad
       : null
-    return { ...item, id: `observation-${index}`, severity, displayValue: formatValue(item.unit === 'días' ? roundDecimal(item.value) : item.value, item.availability), dimensionsText: dimensionsLabel(item.dimensions), periodText: `${formatDate(item.period_start)} – ${formatDate(item.period_end)}`, entityText: item.entity_filter_applicable ? String(item.dimensions.entity) : 'No aplicable' }
+    return { ...item, id: `observation-${index}`, severity, displayValue: formatValue(item.unit === 'días' ? roundDecimal(item.value) : item.value, item.availability), valueText: item.availability === 'NO_DISPONIBLE' ? 'No disponible' : formatQuantity(item.value, item.unit), dimensionsText: dimensionsLabel(item.dimensions), periodText: formatPeriodRange(item.period_start, item.period_end), entityText: item.entity_filter_applicable ? String(item.dimensions.entity) : 'No aplicable' }
   })
   const identities = new Set()
   for (const item of items) { const key = `${seriesIdentity(item)}:${item.period_start}`; if (identities.has(key)) fail(); identities.add(key) }

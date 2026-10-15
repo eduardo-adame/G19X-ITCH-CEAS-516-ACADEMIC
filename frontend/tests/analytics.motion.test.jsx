@@ -52,7 +52,8 @@ describe('ROBUSTNESS: entrada KPI aprobada, acotada y estable', () => {
   it('un rerender interno del filtro no remonta las tarjetas ni cambia su entrada', async () => {
     const f = fixture(); await f.resolveReads()
     const nodes = metrics(); const before = f.client.acquireRead.mock.calls.length
-    await userEvent.selectOptions(screen.getByLabelText('Tipo de riesgo'), 'litigation')
+    await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'custom')
+    await userEvent.type(screen.getByLabelText('Desde'), '2030-01-01')
     expect(metrics().every((metric, index) => metric === nodes[index])).toBe(true)
     expect(metrics().every((metric) => metric.classList.contains('kpi-entry'))).toBe(true)
     expect(f.client.acquireRead).toHaveBeenCalledTimes(before)
@@ -70,8 +71,8 @@ describe('ROBUSTNESS: entrada KPI aprobada, acotada y estable', () => {
   it('cambio material de periodo inicia una entrada para la nueva selección', async () => {
     const f = fixture(); await f.resolveReads()
     await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
+    await f.resolveReads()
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'last_3_months')
-    await userEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }))
     await f.resolveReads()
     expect(document.querySelectorAll('.kpi-entry')).toHaveLength(5)
     expect(f.client.acquireRead.mock.calls.some(([path]) => path.includes('period=last_3_months'))).toBe(true)

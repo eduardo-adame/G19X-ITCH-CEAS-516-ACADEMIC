@@ -1,4 +1,5 @@
 import { formatDate, formatDecimal, roundDecimal } from '../../shared/formatters.js'
+import { formatPeriodRange } from '../../shared/presentation.js'
 
 export const SEVERITIES = Object.freeze([
   { key: 'alto', label: 'Alto', color: 'var(--critical)' },
@@ -139,7 +140,7 @@ export function temporalSeriesViewModel(items, kpiCode) {
     ...periodRow(item),
     value: chartNumber(item),
     rawValue: item.value,
-    valueText: item.displayValue,
+    valueText: item.valueText ?? item.displayValue,
     unit: item.unit,
     availability: item.availability,
     dimensionsText: item.dimensionsText,
@@ -169,7 +170,7 @@ export function monthlyTimeline(rows) {
     date.setUTCMonth(date.getUTCMonth() + 1); date.setUTCDate(0)
     const period_end = date.toISOString().slice(0, 10)
     // El hueco pertenece al calendario visual, no a las observaciones productivas.
-    return [{ id: `gap-${month}`, month, period_start, period_end, periodText: `${formatDate(period_start)} – ${formatDate(period_end)}`, value: null, rawValue: null, valueText: 'Sin observación', availability: 'NO_OBSERVATION', observed: false }]
+    return [{ id: `gap-${month}`, month, period_start, period_end, periodText: formatPeriodRange(period_start, period_end), value: null, rawValue: null, valueText: 'Sin observación', availability: 'NO_OBSERVATION', observed: false }]
   }).flat()
 }
 

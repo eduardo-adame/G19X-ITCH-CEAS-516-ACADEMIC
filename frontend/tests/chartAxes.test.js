@@ -23,7 +23,8 @@ describe('ROBUSTNESS: escalas por unidad sin fracciones ni clipping de conteos',
     expect(axis.allowDecimals).toBe(true)
     expect(axis.domain[1]).toBeGreaterThan(12.75)
     expect(axis.tickFormatter(2.5)).toBe('2.5 d')
-    expect(axis.ticks).toBeUndefined()
+    expect(axis.ticks.at(-1)).toBe(axis.domain[1])
+    expect(axis.ticks.every((tick) => Number.isInteger(tick))).toBe(true)
   })
   it('MXN conserva escala compacta y no usa la precisión COUNT', () => {
     const axis = chartAxisConfig(AXIS_UNITS.MXN, [315000, 200000])
