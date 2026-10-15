@@ -22,6 +22,10 @@ class ValidationError(SecurityError):
     """La entrada no cumple una precondición de seguridad."""
 
 
+class AccountConflictError(SecurityError):
+    """La cuenta solicitada entra en conflicto con una identidad única existente."""
+
+
 class AuditPersistenceError(SecurityError):
     """Una operación auditable no pudo confirmar su evento."""
 

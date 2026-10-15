@@ -9,7 +9,7 @@ from app.main import app
 
 def test_scheduled_kpi_endpoint_is_the_only_coordination_kpi_trigger() -> None:
     client = TestClient(app)
-    paths = client.get("/openapi.json").json()["paths"]
+    paths = client.app.openapi()["paths"]
     kpi_paths = [path for path in paths if path.startswith("/api/coordination/") and "kpi" in path]
     assert kpi_paths == ["/api/coordination/kpi-recalculations/scheduled"]
 

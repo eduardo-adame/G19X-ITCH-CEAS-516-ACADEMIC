@@ -363,7 +363,8 @@ class SecurityService:
 
     def set_document_exception(self, actor: AuthenticatedPrincipal, *, account_id: UUID | None, role_id: str | None, document_id: str, decision: str, active: bool, correlation_id: UUID | None = None) -> None:
         self._require(actor, "document_acl.manage")
-        if not document_id or (account_id is None) == (role_id is None):
+        if (not document_id or (account_id is None) == (role_id is None) or decision not in {"ALLOW", "DENY"}
+                or (role_id is not None and role_id not in KNOWN_ROLES)):
             raise ValidationError("Excepción documental no válida")
         correlation = correlation_id or uuid4()
         with self.repository.transaction() as connection:

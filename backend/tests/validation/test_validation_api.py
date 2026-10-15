@@ -19,14 +19,14 @@ from app.validation.quarantine import QuarantineError
 
 def test_openapi_has_exactly_one_canonical_reinjection_endpoint() -> None:
     client = TestClient(app)
-    paths = client.get("/openapi.json").json()["paths"]
+    paths = client.app.openapi()["paths"]
     matches = [path for path, methods in paths.items() if "patch" in methods and "reinject" in path]
     assert matches == ["/api/validation/quarantine/{item_id}/reinject"]
 
 
 def test_coordination_has_no_legacy_reinjection_bypass() -> None:
     client = TestClient(app)
-    paths = client.get("/openapi.json").json()["paths"]
+    paths = client.app.openapi()["paths"]
     assert not [path for path in paths if path.startswith("/api/coordination/") and "reinject" in path]
 
 
@@ -238,7 +238,7 @@ def test_global_quarantine_page_serializes_every_persistable_cause() -> None:
     assert response.status_code == 200
     assert [item["cause_code"] for item in response.json()["items"]] == list(_PERSISTABLE_QUARANTINE_CAUSES)
     assert response.json()["next_cursor"] is None
-    schema = client.get("/openapi.json").json()["components"]["schemas"]["QuarantineCause"]
+    schema = client.app.openapi()["components"]["schemas"]["QuarantineCause"]
     assert set(schema["enum"]) == set(_PERSISTABLE_QUARANTINE_CAUSES)
 
 

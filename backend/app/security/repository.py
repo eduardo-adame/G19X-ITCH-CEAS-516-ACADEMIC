@@ -10,7 +10,14 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 import psycopg
 from psycopg.rows import dict_row
 
-from app.security.models import AuditPersistenceError, AuthenticatedPrincipal, KNOWN_FAMILIES, KNOWN_ROLES
+from app.security.models import (
+    AccountConflictError,
+    AuditPersistenceError,
+    AuthenticatedPrincipal,
+    KNOWN_FAMILIES,
+    KNOWN_ROLES,
+    ValidationError,
+)
 
 
 class SecurityRepository:
@@ -204,11 +211,18 @@ class SecurityRepository:
     def create_account(connection: psycopg.Connection, *, username: str, display_name: str, password_hash: str) -> UUID:
         account_id = uuid4()
         with connection.cursor() as cursor:
-            cursor.execute(
-                """INSERT INTO app.user_account (id, username, display_name, password_hash)
-                   VALUES (%s, %s, %s, %s)""",
-                (account_id, username, display_name, password_hash),
-            )
+            try:
+                cursor.execute(
+                    """INSERT INTO app.user_account (id, username, display_name, password_hash)
+                       VALUES (%s, %s, %s, %s)""",
+                    (account_id, username, display_name, password_hash),
+                )
+            except psycopg.errors.UniqueViolation as exc:
+                # Solo la unicidad del nombre de usuario es un conflicto de negocio; cualquier otra
+                # violación sigue siendo un fallo técnico. El detalle de la restricción no sale del dominio.
+                if exc.diag.constraint_name == "uq_user_account_username":
+                    raise AccountConflictError("La cuenta entra en conflicto con un registro existente") from None
+                raise
         return account_id
 
     @staticmethod
@@ -299,7 +313,18 @@ class SecurityRepository:
     @staticmethod
     def set_document_exception(connection: psycopg.Connection, *, account_id: UUID | None, role_id: str | None, document_id: str, decision: str, active: bool) -> None:
         if decision not in {"ALLOW", "DENY"}:
-            raise ValueError("Decisión documental desconocida")
+            raise ValidationError("Excepción documental no válida")
+        try:
+            SecurityRepository._write_document_exception(
+                connection, account_id=account_id, role_id=role_id, document_id=document_id,
+                decision=decision, active=active,
+            )
+        except psycopg.errors.ForeignKeyViolation:
+            # Cuenta o rol inexistente: entrada inválida, no fallo interno.
+            raise ValidationError("Excepción documental no válida") from None
+
+    @staticmethod
+    def _write_document_exception(connection: psycopg.Connection, *, account_id: UUID | None, role_id: str | None, document_id: str, decision: str, active: bool) -> None:
         with connection.cursor() as cursor:
             if account_id is not None:
                 cursor.execute(

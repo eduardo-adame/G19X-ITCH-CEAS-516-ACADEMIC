@@ -13,7 +13,7 @@ from app.main import app
 
 
 def test_scheduled_proactive_endpoint_is_single_application_boundary() -> None:
-    paths = TestClient(app).get("/openapi.json").json()["paths"]
+    paths = app.openapi()["paths"]
     proactive = [path for path in paths if "proactive-analysis" in path]
     assert proactive == ["/api/coordination/proactive-analysis/scheduled"]
 

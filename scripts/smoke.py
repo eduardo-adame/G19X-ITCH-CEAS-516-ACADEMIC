@@ -412,37 +412,28 @@ def check_runtime(report: Report, env: dict[str, str], profile: str | None) -> N
 def check_embeddings(report: Report, env: dict[str, str]) -> None:
     backend = f"http://localhost:{env.get('BACKEND_PORT', '8000')}"
 
-    status, body = http_post(f"{backend}/health/embeddings/probe", timeout=900)
+    # La sonda fuerza la carga del modelo y exige una sesión con technical_config.manage.
+    # El smoke no dispone de credenciales TI, así que comprueba que rechaza la llamada
+    # anónima y lee el estado sin carga desde GET /health/embeddings.
+    probe_status, probe_body = http_post(f"{backend}/health/embeddings/probe", timeout=30)
+    if probe_status is None:
+        report.add("EMB-01", "la sonda de embeddings exige autenticación", "CONTRACT", SKIP,
+                   f"backend no alcanzable: {probe_body[:160]}")
+    else:
+        report.add("EMB-01", "la sonda de embeddings exige autenticación", "CONTRACT",
+                   PASS if probe_status == 401 else FAIL, f"HTTP {probe_status} sin credenciales")
+    report.add(
+        "EMB-01B", f"modelo local produce {EMBEDDING_DIMENSIONS} dims y se carga una vez por proceso", "CONTRACT", SKIP,
+        "requiere una sesión TI con technical_config.manage; el smoke no dispone de credenciales",
+    )
+
+    status, body = http_get(f"{backend}/health/embeddings")
     data: dict = {}
     if body:
         try:
             data = json.loads(body)
         except json.JSONDecodeError:
             data = {}
-
-    available = data.get("available") is True
-    dims = data.get("dimensions")
-    title = f"modelo local produce {EMBEDDING_DIMENSIONS} dims y se carga una vez por proceso"
-
-    if status is None:
-        report.add("EMB-01", title, "CONTRACT", SKIP, f"backend no alcanzable: {body[:160]}")
-    elif not available:
-        report.add(
-            "EMB-01", title, "CONTRACT", FAIL,
-            f"modelo no disponible: {data.get('error') or data.get('detail')}",
-        )
-    else:
-        ok = (
-            dims == EMBEDDING_DIMENSIONS
-            and data.get("load_count") == 1
-            and data.get("loaded_once_per_process") is True
-        )
-        report.add(
-            "EMB-01", title, "CONTRACT", PASS if ok else FAIL,
-            f"dimensions={dims} load_count={data.get('load_count')} "
-            f"once={data.get('loaded_once_per_process')}",
-        )
-
     is_mount = data.get("cache_dir_is_mount")
     report.add(
         "EMB-02", "caché del modelo en almacenamiento persistente", "ROBUSTNESS",

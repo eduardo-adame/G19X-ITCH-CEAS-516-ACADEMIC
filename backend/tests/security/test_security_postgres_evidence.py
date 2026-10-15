@@ -281,3 +281,30 @@ def test_initial_admin_can_use_normal_administration_api_after_login(security_da
         assert service.repository.has_active_ti_account(connection)
     with pytest.raises(BootstrapAlreadyCompletedError):
         service.bootstrap_first_ti(username="another-admin", password="contraseña válida 123")
+
+
+def test_duplicate_username_is_409_and_unknown_exception_subject_is_422_with_real_repository(security_database, monkeypatch) -> None:
+    """F-10 con PostgreSQL real: unicidad y FK se traducen sin 500 ni efectos parciales."""
+    from app.security.api import ACCOUNT_CONFLICT_DETAIL
+
+    _, conninfo = security_database
+    service = _service(conninfo)
+    service.bootstrap_first_ti(username="first-admin", password="contraseña válida 123")
+    monkeypatch.setattr(app.state, "security_service", service, raising=False)
+    monkeypatch.setattr(app.state, "security_settings",
+                        SimpleNamespace(security_refresh_cookie_name="test_refresh", refresh_cookie_secure=False), raising=False)
+    body = {"username": "cuenta-unica", "display_name": "Cuenta", "password": "contraseña válida 123", "roles": ["JURIDICO"]}
+    with TestClient(app) as client:
+        token = client.post("/api/auth/login", json={"username": "first-admin", "password": "contraseña válida 123"}).json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        first = client.post("/api/security/users", headers=headers, json=body)
+        duplicate = client.post("/api/security/users", headers=headers, json={**body, "display_name": "Otra"})
+        unknown_account = client.put("/api/security/document-exceptions/user/00000000-0000-4000-8000-0000000000ff/doc-1",
+                                     headers=headers, json={"decision": "DENY", "active": True})
+    assert first.status_code == 201
+    assert duplicate.status_code == 409 and duplicate.json() == {"detail": ACCOUNT_CONFLICT_DETAIL}
+    assert unknown_account.status_code == 422
+    with psycopg.connect(conninfo) as connection:
+        assert connection.execute("SELECT count(*) FROM app.user_account WHERE username = 'cuenta-unica'").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM audit.event WHERE action = 'ACCOUNT_CREATE' AND result = 'SUCCESS'").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM app.document_exception").fetchone()[0] == 0

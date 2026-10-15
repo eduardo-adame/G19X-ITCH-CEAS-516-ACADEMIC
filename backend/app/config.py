@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # --- Identidad del servicio -------------------------------------------
     app_name: str = "backend-riesgo-legal"
     environment: str = "development"
+    # La documentación interactiva (Swagger, ReDoc y el esquema OpenAPI) solo se publica con
+    # habilitación explícita; no se deriva de `environment`, que el runtime local usa como desarrollo.
+    api_docs_enabled: bool = False
 
     # --- Persistencia (PostgreSQL + pgvector) ------------------------------
     # Se usa para comprobar conectividad y disponibilidad de la extensión

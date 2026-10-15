@@ -15,7 +15,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -28,7 +28,8 @@ from app.db import check_database
 from app.embeddings import EmbeddingUnavailableError, get_embedding_service
 from app.ingestion.api import router as ingestion_router
 from app.rag.api import router as rag_router
-from app.security.api import router as security_router
+from app.security.api import require, router as security_router
+from app.security.models import AuthenticatedPrincipal
 from app.validation.api import router as validation_router
 
 logging.basicConfig(
@@ -59,6 +60,13 @@ async def lifespan(app: FastAPI):
     logger.info("Deteniendo %s", settings.app_name)
 
 
+def documentation_urls(api_docs_enabled: bool) -> dict[str, str | None]:
+    """Rutas de Swagger, ReDoc y OpenAPI; todas desactivadas salvo habilitación explícita."""
+    if api_docs_enabled:
+        return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
 app = FastAPI(
     title="Backend — Dashboard de Indicadores de Riesgo Legal",
     description=(
@@ -67,6 +75,7 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+    **documentation_urls(get_settings().api_docs_enabled),
 )
 
 # CORS conserva orígenes explícitos y habilita credenciales solo para la cookie
@@ -130,7 +139,9 @@ async def embeddings_status() -> dict[str, Any]:
 
 
 @app.post("/health/embeddings/probe", tags=["health"])
-async def embeddings_probe() -> JSONResponse:
+async def embeddings_probe(
+    _principal: AuthenticatedPrincipal = Depends(require("technical_config.manage")),
+) -> JSONResponse:
     """Verifica la capacidad del modelo de embeddings.
 
     Fuerza la carga perezosa del modelo y codifica un texto de prueba para
@@ -140,6 +151,9 @@ async def embeddings_probe() -> JSONResponse:
     Se expone como POST porque puede provocar la descarga del modelo en el
     volumen de caché: no debe dispararse como efecto colateral de un GET. No
     indexa, no recupera y no persiste embeddings.
+
+    Como fuerza una carga costosa del modelo, exige una sesión con
+    `technical_config.manage`; el estado sin carga sigue en GET /health/embeddings.
     """
     service = get_embedding_service()
     status = service.probe()

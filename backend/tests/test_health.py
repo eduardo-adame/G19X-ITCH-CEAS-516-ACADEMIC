@@ -17,6 +17,20 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture()
+def ti_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Sesión TI en memoria: la sonda exige technical_config.manage."""
+    from tests.security.test_security_functional_flows import MemorySecurityRepository, make_service
+
+    repository = MemorySecurityRepository()
+    service = make_service(repository)
+    account_id = repository.add_account("ti-sonda")
+    repository.accounts[account_id]["password_hash"] = service.passwords.hash("contraseña válida 123")
+    access, _refresh = service.login("ti-sonda", "contraseña válida 123")
+    monkeypatch.setattr(app.state, "security_service", service, raising=False)
+    return {"Authorization": f"Bearer {access}"}
+
+
 @pytest.mark.robustness
 def test_health_returns_200(client: TestClient) -> None:
     """El endpoint de liveness responde 200 con cuerpo JSON de estado."""
@@ -95,7 +109,7 @@ def test_embeddings_status_does_not_force_load(client: TestClient) -> None:
 
 @pytest.mark.robustness
 def test_embeddings_probe_reports_unavailability_honestly(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ti_headers: dict[str, str]
 ) -> None:
     """Si el modelo no está disponible se reporta la indisponibilidad.
 
@@ -118,7 +132,7 @@ def test_embeddings_probe_reports_unavailability_honestly(
 
     monkeypatch.setattr(bge_m3.BgeM3EmbeddingService, "probe", _unavailable_probe)
 
-    response = client.post("/health/embeddings/probe")
+    response = client.post("/health/embeddings/probe", headers=ti_headers)
     assert response.status_code == 503
 
     body = response.json()

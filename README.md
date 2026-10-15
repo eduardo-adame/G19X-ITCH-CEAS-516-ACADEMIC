@@ -207,11 +207,15 @@ El modelo **no** se hornea en la imagen: se descarga en el volumen en el primer 
 Por eso el backend arranca aunque el modelo aún no esté disponible, y en ese caso lo
 reporta como indisponibilidad explícita en lugar de simular un resultado correcto.
 
-Comprobación de capacidad:
+Comprobación de capacidad (fuerza la carga del modelo; exige una sesión con el
+permiso `technical_config.manage`, es decir, una cuenta TI):
 
 ```bash
-curl -X POST http://localhost:8000/health/embeddings/probe
+curl -X POST http://localhost:8000/health/embeddings/probe      -H "Authorization: Bearer <token de acceso de una cuenta TI>"
 ```
+
+Sin credenciales responde 401 y, con una cuenta sin ese permiso, 403 (auditado).
+El estado del modelo sin forzar su carga sigue disponible en `GET /health/embeddings`.
 
 > **Coste de la primera descarga.** El modelo se descarga en el volumen persistente
 > la primera vez que se invoca la comprobación. Conviene distinguir tres magnitudes
@@ -261,10 +265,14 @@ curl -X POST http://localhost:8000/health/embeddings/probe
 | `GET` | `/health` | Liveness del backend. No depende de servicios externos. |
 | `GET` | `/health/ready` | Readiness: conectividad con PostgreSQL y disponibilidad de pgvector. |
 | `GET` | `/health/embeddings` | Estado del modelo **sin** forzar su carga. |
-| `POST` | `/health/embeddings/probe` | Fuerza la carga y verifica 1.024 dimensiones. |
+| `POST` | `/health/embeddings/probe` | Fuerza la carga y verifica 1.024 dimensiones. Requiere `technical_config.manage` (TI). |
 | `GET` | `/health` (frontend) | Liveness de nginx, independiente del backend. |
 
 Estas rutas son una decisión de diseño del servicio.
+
+La documentación interactiva (`/docs`, `/redoc`, `/openapi.json`) está desactivada por
+defecto. Solo se publica con `API_DOCS_ENABLED=true`, habilitación explícita de desarrollo
+que no depende de `ENVIRONMENT`.
 
 ---
 

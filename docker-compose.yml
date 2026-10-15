@@ -126,6 +126,8 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-backend-riesgo-legal}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Swagger/ReDoc/OpenAPI solo con habilitación explícita de desarrollo.
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en producto/.env}

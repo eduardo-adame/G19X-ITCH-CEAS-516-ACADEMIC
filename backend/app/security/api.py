@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -9,13 +10,21 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.security.models import AuthenticatedPrincipal, AuthenticationError, AuthorizationError, SecurityError, ValidationError
+from app.security.models import (
+    AccountConflictError,
+    AuthenticatedPrincipal,
+    AuthenticationError,
+    AuthorizationError,
+    SecurityError,
+    ValidationError,
+)
 from app.security.repository import SecurityRepository
 from app.security.service import SecurityService
 from app.security.tokens import JwtService
 
 
 router = APIRouter(prefix="/api", tags=["security"])
+ACCOUNT_CONFLICT_DETAIL = "No fue posible crear el usuario porque los datos entran en conflicto con un registro existente."
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -46,7 +55,7 @@ class ScopeGrantRequest(BaseModel):
 
 
 class ExceptionRequest(BaseModel):
-    decision: str
+    decision: Literal["ALLOW", "DENY"]
     active: bool
 
 
@@ -162,6 +171,9 @@ def create_user(payload: AccountCreateRequest, principal: AuthenticatedPrincipal
         account_id = service.create_account(principal, username=payload.username, display_name=payload.display_name, password=payload.password, roles=frozenset(payload.roles))
     except AuthorizationError:
         raise unauthorized() from None
+    except AccountConflictError:
+        # Conflicto de identidad única: mensaje genérico que no confirma qué dato existe.
+        raise HTTPException(status_code=409, detail=ACCOUNT_CONFLICT_DETAIL) from None
     except ValidationError:
         raise HTTPException(status_code=422, detail="Datos de cuenta no válidos") from None
     return {"id": str(account_id)}
