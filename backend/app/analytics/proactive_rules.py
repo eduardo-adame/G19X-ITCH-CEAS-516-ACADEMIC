@@ -30,6 +30,26 @@ RULE_IDS = {
     "KPI-CN-03": "CN03_STRICT_THREE_MONTH_INCREASE",
 }
 
+# Presentación de la narrativa dirigida al usuario (RF-045/RF-047). Los identificadores técnicos
+# siguen persistidos en columnas estructuradas (kpi_code, triggered_rule, recurrent_pattern).
+_KPI_NARRATIVE = {
+    "KPI-RC-03": ("Contratos próximos a vencimiento sin revisión", "contratos"),
+    "KPI-LI-01": ("Exposición total por litigios activos", "importe"),
+    "KPI-LI-05": ("Nuevos litigios por periodo", "litigios"),
+    "KPI-CN-02": ("Obligaciones regulatorias vencidas sin atender", "obligaciones"),
+    "KPI-CN-03": ("Incidentes de incumplimiento por periodo", "incidentes"),
+}
+_RULE_NARRATIVE = {
+    "RC03_APPEARANCE_OR_INCREASE": "aparición o incremento de contratos sin revisión",
+    "CN02_APPEARANCE_OR_INCREASE": "aparición o incremento de obligaciones vencidas",
+    "LI01_STRICT_THREE_MONTH_INCREASE": "incremento durante tres meses consecutivos de exposición litigiosa",
+    "LI05_STRICT_THREE_MONTH_INCREASE": "incremento durante tres meses consecutivos de nuevos litigios",
+    "CN03_STRICT_THREE_MONTH_INCREASE": "incremento durante tres meses consecutivos de incidentes",
+}
+_DIMENSION_NARRATIVE = {"area": "área", "nivel_severidad": "nivel de severidad"}
+_MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+           "septiembre", "octubre", "noviembre", "diciembre")
+
 RUN_OPERATION_NAMESPACE = UUID("c0c18a66-ff77-5ea5-a98d-3dcce36c07cf")
 RUN_ENTITY_NAMESPACE = UUID("649e7cd9-470c-55ee-93ba-79d26005fe2c")
 EVALUATION_NAMESPACE = UUID("fc14e9c4-79aa-527b-ad8d-fde3d7a2dc63")
@@ -188,13 +208,7 @@ def build_finding(run_operation_id: UUID, evaluation: ProactiveEvaluationResult,
     rule = RULE_IDS[evaluation.kpi_code]
     finding_id = derive_finding_id(evaluation.id, rule)
     recurrent = f"{evaluation.recurrence_month_count}_OF_4" if (evaluation.recurrence_month_count or 0) >= 3 else None
-    dimensions_text = canonical_dimensions_json(evaluation.canonical_dimensions_key)
-    recurrence_text = f"recurrencia {evaluation.recurrence_month_count}/4" if recurrent else "sin patrón recurrente"
-    description = (
-        f"{evaluation.kpi_code} registró una señal en {evaluation.evaluation_period:%Y-%m} "
-        f"para {dimensions_text}: valor actual {evaluation.current_value}, referencia {evaluation.reference_value}, "
-        f"variación absoluta {evaluation.absolute_variation}, regla {rule}, {recurrence_text}."
-    )
+    description = _finding_narrative(evaluation, rule, recurrent is not None)
     reference_start = _shift_month(
         evaluation.evaluation_period,
         -2 if evaluation.kpi_code in THREE_MONTH_KPIS else -1,
@@ -214,6 +228,34 @@ def build_finding(run_operation_id: UUID, evaluation: ProactiveEvaluationResult,
         recurrent,
         description,
     )
+
+
+def _finding_narrative(evaluation: ProactiveEvaluationResult, rule: str, recurrent: bool) -> str:
+    """Mismos hechos del hallazgo (KPI, periodo, dimensiones, valores, variación, regla y recurrencia)
+    redactados sin identificadores técnicos; determinista para la misma evaluación."""
+    name, unit = _KPI_NARRATIVE[evaluation.kpi_code]
+    period = evaluation.evaluation_period
+    dimensions = canonical_dimensions(evaluation.canonical_dimensions_key)
+    scope = (f" ({'; '.join(f'{_DIMENSION_NARRATIVE.get(key, key.replace('_', ' '))}: {value}' for key, value in dimensions.items())})"
+             if dimensions else "")
+    recurrence = (f"La señal se presentó en {evaluation.recurrence_month_count} de los últimos 4 meses."
+                  if recurrent else "Sin patrón recurrente.")
+    return (
+        f"{name}{scope} registró una señal en {_MONTHS[period.month - 1]} de {period.year}: "
+        f"valor actual {_narrative_value(evaluation.current_value, unit)}, "
+        f"referencia {_narrative_value(evaluation.reference_value, unit)}, "
+        f"variación absoluta {_narrative_value(evaluation.absolute_variation, unit)}. "
+        f"Regla aplicada: {_RULE_NARRATIVE[rule]}. {recurrence}"
+    )
+
+
+_SINGULAR_UNITS = {"contratos": "contrato", "litigios": "litigio", "obligaciones": "obligación", "incidentes": "incidente"}
+
+
+def _narrative_value(value: Decimal, unit: str) -> str:
+    if unit == "importe":
+        return f"${value:,} MXN"
+    return f"{value} {_SINGULAR_UNITS[unit] if abs(value) == 1 else unit}"
 
 
 def executive_summary(findings: Sequence[ProactiveFindingResult]) -> str:

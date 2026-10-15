@@ -34,7 +34,8 @@ describe('SRS_REQUIRED: catálogos estructurales por dominio y estados compartid
   it('all-data conserva RC03 real y exposición completa/LI05 real sin inventar KPI', () => {
     const items = [observation('KPI-RC-03', { value: '3' }), ...exposure(), observation('KPI-LI-05')]
     expect(resolve('contracts', items)[0]).toMatchObject({ state: 'VALUE', rawValue: '3' })
-    expect(resolve('litigation', items).map(({ displayValue }) => displayValue)).toEqual(['$315,000 MXN', '1'])
+    expect(resolve('litigation', items).map(({ displayValue }) => displayValue)).toEqual(['$315,000', '1'])
+    expect(resolve('litigation', items)[0].shortContext).toBe('MXN')
   })
   it('partial mantiene LI05 cero y LI01 ausente, sin eliminar un slot', () => {
     expect(resolve('litigation', [observation('KPI-LI-05', { value: '0' })]).map(({ state }) => state)).toEqual(['NO_OBSERVATION', 'ZERO'])

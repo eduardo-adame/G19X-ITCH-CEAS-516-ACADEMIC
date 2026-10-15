@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adaptAnalysis, adaptKpis, chartSeries, KPI_CATALOG, latestSeries } from '../src/features/analytics/adapters.js'
+import { adaptAnalysis, adaptKpis, alertCountLabel, chartSeries, dimensionsLabel, KPI_CATALOG, latestSeries, recurrenceLabel } from '../src/features/analytics/adapters.js'
 import { exposureEvolutionViewModel, litigationExposureViewModel, severityCompositionViewModel } from '../src/features/analytics/viewModels.js'
 
 const runId = '11111111-1111-4111-8111-111111111111'
@@ -168,5 +168,24 @@ describe('SRS_REQUIRED: certificación LI-01 y periodo de composición', () => {
   })
   it('sin observaciones no selecciona ni inventa periodo de composición', () => {
     expect(severityCompositionViewModel([])).toEqual({ period: null, total: null, rows: [] })
+  })
+})
+
+describe('F-12: presentación humana de valores estructurados del análisis', () => {
+  it('concuerda el número de alertas', () => {
+    expect(alertCountLabel(0)).toBe('0 alertas')
+    expect(alertCountLabel(1)).toBe('1 alerta')
+    expect(alertCountLabel(2)).toBe('2 alertas')
+    expect(alertCountLabel(12)).toBe('12 alertas')
+  })
+  it('traduce el patrón estructurado de recurrencia y conserva otros valores tal como llegan', () => {
+    expect(recurrenceLabel('3_OF_4')).toBe('3 de los últimos 4 meses')
+    expect(recurrenceLabel('4_OF_4')).toBe('4 de los últimos 4 meses')
+    expect(recurrenceLabel('3/4')).toBe('3/4')
+  })
+  it('rotula las claves de dimensión sin identificadores técnicos', () => {
+    expect(dimensionsLabel({ nivel_severidad: 'alto', area: 'Legal' })).toBe('Área: Legal · Nivel de severidad: alto')
+    expect(dimensionsLabel({})).toBe('Sin dimensiones')
+    expect(dimensionsLabel({ tipo_contractual: 'servicios' })).toBe('tipo contractual: servicios')
   })
 })

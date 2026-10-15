@@ -1,11 +1,12 @@
 import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
 import { ApiError } from '../src/api/errors.js'
 import { IngestionPage } from '../src/features/operations/IngestionPage.jsx'
+import { dispatchStateLabel } from '../src/features/operations/adapters.js'
 import { refreshId, refreshUpload, refreshDispatch, refreshOcrItem, refreshOcrFinal, refreshReprocess, refreshKpi } from './fixtures/operationsRefresh.js'
 
 function mount({ role = 'TI', dispatch = refreshDispatch, reprocess = refreshReprocess, dispatchWait, reprocessWait } = {}) {
@@ -99,7 +100,7 @@ describe('ROBUSTNESS: invalidación acotada por lifecycle sin disponibilidad sup
     await upload()
     await waitFor(() => expect(state.request).toHaveBeenCalledTimes(2))
     if (dispatch instanceof Error) await screen.findByRole('alert')
-    else await screen.findByText(dispatch.state)
+    else await within(screen.getByRole('table', { name: 'Recepción y despacho actuales' })).findByText(dispatchStateLabel(dispatch.state).label)
     expect(state.count('/documents/ocr')).toBe(1); expect(state.count('/technical/kpis')).toBe(1)
     expect(screen.getByText('50 %')).toBeVisible()
   })

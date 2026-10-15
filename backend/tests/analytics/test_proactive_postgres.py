@@ -361,6 +361,32 @@ def test_signal_persists_one_evaluation_finding_reference_and_process_audit(data
     assert audit == {"actor_type": "PROCESS", "actor_identifier": "daily-proactive-analysis", "action": "PROACTIVE_ANALYSIS", "result": "SUCCESS", "correlation_id": job["correlation_id"]}
 
 
+
+@pytest.mark.requires_db
+def test_new_runs_persist_readable_narrative_and_historical_text_is_not_rewritten(database) -> None:
+    """F-12: ejecución controlada en BD de prueba; el histórico persistido se conserva tal cual."""
+    engine, conninfo = database
+    _observation(engine, "KPI-RC-03", 1, "0")
+    _observation(engine, "KPI-RC-03", 2, "5")
+    first_job = _job(engine, process="daily-proactive-analysis")
+    first = _service(conninfo).execute(_context(first_job))
+    legacy = "KPI-RC-03 registró una señal en 2026-02 para {}: regla RC03_APPEARANCE_OR_INCREASE, recurrencia 3/4."
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE app.finding SET description = :text WHERE analytic_run_id = :run"),
+                           {"text": legacy, "run": first.analytic_run_id})
+    # Reintentar el mismo job devuelve lo persistido y no reescribe el texto histórico.
+    _service(conninfo).execute(_context(first_job))
+    _observation(engine, "KPI-RC-03", 3, "6")
+    second = _service(conninfo).execute(_context(_job(engine, process="daily-proactive-analysis")))
+    rows = {row["analytic_run_id"]: row for row in _rows(engine, "SELECT analytic_run_id, description, triggered_rule FROM app.finding")}
+    assert rows[first.analytic_run_id]["description"] == legacy
+    narrative = rows[second.analytic_run_id]["description"]
+    for technical in ("KPI-", "RC03_APPEARANCE_OR_INCREASE", "_OF_4", "{}"):
+        assert technical not in narrative and technical not in second.executive_summary
+    assert narrative.startswith("Contratos próximos a vencimiento sin revisión registró una señal en marzo de 2026")
+    assert rows[second.analytic_run_id]["triggered_rule"] == "RC03_APPEARANCE_OR_INCREASE"
+
+
 @pytest.mark.requires_db
 def test_context_mismatch_creates_no_effects_or_audit(database) -> None:
     engine, conninfo = database

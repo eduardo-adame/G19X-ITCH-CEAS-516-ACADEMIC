@@ -76,7 +76,7 @@ test.describe('ROBUSTNESS: refresh acotado y conservación de interacción — B
     const response = page.waitForResponse((r) => r.url().endsWith('/api/coordination/dispatch'))
     await upload(page); await response
     if (dispatch === 503) await expect(page.getByRole('alert')).toContainText('El servicio no está disponible temporalmente')
-    else await expect(page.getByRole('table', { name: 'Recepción y despacho actuales' }).getByRole('cell', { name: dispatch.state, exact: true })).toHaveCount(1)
+    else await expect(page.getByRole('table', { name: 'Recepción y despacho actuales' }).getByText({ PENDING: 'Pendiente', COMPLETED: 'Procesamiento ejecutado' }[dispatch.state], { exact: true })).toHaveCount(1)
     expect(state.ocr()).toBe(1); expect(state.technical()).toBe(1)
     await expect(page.getByText('50 %', { exact: true })).toBeVisible()
     await assertSamePage(page)

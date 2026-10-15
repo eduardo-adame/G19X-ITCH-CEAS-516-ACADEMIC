@@ -66,7 +66,7 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
   })
   it('muestra backend alert_count y contexto RF048 sin seleccionar documentos', async () => {
     fixture({ analysis: analysisPage(true) })
-    expect(await screen.findByText('1 alertas')).toBeVisible()
+    expect(await screen.findByText('1 alerta')).toBeVisible()
     const link = screen.getByRole('link', { name: 'Verificar evidencia documental' })
     expect(link).toHaveAttribute('href', `/consulta?context_reference_id=${contextId}`)
     expect(screen.getByText('Resumen sintético persistido.')).toBeVisible()
@@ -84,12 +84,23 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     fixture({ view: 'trends', analysis: payload })
     expect(await screen.findByText('Alto')).toBeVisible()
     expect(screen.getByRole('article')).toHaveTextContent('Descripción sintética sustentada.')
-    expect(screen.getByRole('article')).toHaveTextContent('nivel severidad: alto')
+    expect(screen.getByRole('article')).toHaveTextContent('Nivel de severidad: alto')
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
+  })
+  it('F-12: recurrencia estructurada legible y narrativa histórica persistida sin reescribir', async () => {
+    const payload = analysisPage(true)
+    payload.items[0].findings[0].recurrent_pattern = '3_OF_4'
+    const legacy = 'KPI-RC-03 registró una señal en 2026-10 para {}: regla RC03_APPEARANCE_OR_INCREASE, recurrencia 3/4.'
+    payload.items[0].findings[0].description = legacy
+    fixture({ view: 'trends', analysis: payload })
+    expect(await screen.findByText('1 alerta')).toBeVisible()
+    expect(screen.getByText('Patrón recurrente: 3 de los últimos 4 meses')).toBeVisible()
+    expect(screen.getByRole('article')).toHaveTextContent(legacy)
+    expect(screen.queryByText(/3_OF_4/)).not.toBeInTheDocument()
   })
   it('no presenta link de contexto sin document.query', async () => {
     fixture({ analysis: analysisPage(true), roles: [] })
-    await screen.findByText('1 alertas'); expect(screen.queryByRole('link', { name: 'Verificar evidencia documental' })).not.toBeInTheDocument()
+    await screen.findByText('1 alerta'); expect(screen.queryByRole('link', { name: 'Verificar evidencia documental' })).not.toBeInTheDocument()
   })
   it('vigente no envía period al análisis y usa periodo actual para KPI', async () => {
     const client = fixture(); await screen.findByText('0 alertas')
@@ -313,7 +324,7 @@ describe('SRS_REQUIRED: cinco slots ejecutivos y frontera de datos', () => {
     ]) })
     await screen.findByLabelText('Indicadores principales')
     expect(mainSlots()).toHaveLength(5)
-    expect(mainSlots()[1]).toHaveTextContent('$315,000 MXN')
+    expect([...mainSlots()[1].querySelectorAll('.kpi-value-slot > span')].map((span) => span.textContent)).toEqual(['$315,000', 'MXN'])
     expect(mainSlots()[4]).toHaveTextContent('Desglose disponible')
     expect(mainSlots()[4].querySelector('.kpi-value-slot')).not.toHaveTextContent('3')
   })

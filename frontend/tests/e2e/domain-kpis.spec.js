@@ -30,7 +30,8 @@ test.describe('SRS_REQUIRED: catálogo y estados de contratos/litigios', () => {
       await assertCatalog(page, domain)
       if (domain === 'contratos') await expect(cards(page).first().locator('.kpi-value-slot > span').first()).toHaveText('3')
       else {
-        await expect(cards(page).first().locator('.kpi-value-slot > span').first()).toHaveText('$315,000 MXN')
+        await expect(cards(page).first().locator('.kpi-value-slot > span').first()).toHaveText('$315,000')
+        await expect(cards(page).first().locator('.kpi-value-slot > span').nth(1)).toHaveText('MXN')
         await expect(cards(page).nth(1).locator('.kpi-value-slot > span').first()).toHaveText('1')
       }
       expect(await cards(page).evaluateAll((elements) => elements.every((element) => element.dataset.state === 'VALUE'))).toBe(true)
@@ -49,7 +50,7 @@ test.describe('SRS_REQUIRED: catálogo y estados de contratos/litigios', () => {
       await page.goto(`/${domain}`)
       await assertCatalog(page, domain)
       expect(await cards(page).evaluateAll((elements) => elements.every((element) => element.dataset.state === 'ZERO'))).toBe(true)
-      await expect(cards(page).first().locator('.kpi-value-slot > span').first()).toHaveText(domain === 'contratos' ? '0' : '$0 MXN')
+      await expect(cards(page).first().locator('.kpi-value-slot > span').first()).toHaveText(domain === 'contratos' ? '0' : '$0')
     })
     test(`${domain}: ND explícito conserva estado compacto sin falso cero`, async ({ page }) => {
       const nd = { availability: 'NO_DISPONIBLE', value: null }

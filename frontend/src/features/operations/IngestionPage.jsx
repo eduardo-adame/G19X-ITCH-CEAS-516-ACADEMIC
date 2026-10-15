@@ -7,7 +7,7 @@ import { PageHeader } from '../../components/layout.jsx'
 import { Button, Input, Select } from '../../components/controls.jsx'
 import { DataTable, Badge, KpiMetric } from '../../components/data.jsx'
 import { ErrorState, ResourceState } from '../../components/feedback.jsx'
-import { isDocumentFile, locations, technicalResult } from './adapters.js'
+import { dispatchStateLabel, isDocumentFile, locations, technicalResult } from './adapters.js'
 import { newOperationId, useOperation, useOperationsRead } from './api.js'
 import { OcrPanel } from './OcrPanel.jsx'
 
@@ -15,6 +15,11 @@ function TechnicalMetric() {
   const resource = useOperationsRead('/technical/kpis/KPI-CD-03', technicalResult)
   return <section className="space-y-3"><h2 className="text-base font-semibold">Calidad técnica de OCR</h2><ResourceState resource={resource}>{(data) => <KpiMetric label="Tasa de éxito OCR" displayValue={data.displayValue} previousContext={`Calculado: ${data.calculatedLabel}`} />}</ResourceState></section>
 }
+function DispatchResult({ row, canQuarantine }) {
+  const { label, variant } = dispatchStateLabel(row.dispatch.state)
+  return <span className="inline-flex flex-wrap items-center gap-2"><Badge variant={variant}>{label}</Badge>{canQuarantine && row.dispatch.state === 'COMPLETED' && <Link className="text-xs font-medium underline" to={`/cuarentena?ingest_file_id=${encodeURIComponent(row.file_id)}`}>Ver resultado en cuarentena</Link>}</span>
+}
+
 export function IngestionPage() {
   const { principal, generation } = useSession()
   if (!can(principal, 'ingest.upload')) return <ErrorState error={new ApiError(403)} />
@@ -72,8 +77,8 @@ function IngestionWorkspace({ principal }) {
     </section>
     <section className="space-y-3"><h2 className="text-base font-semibold">Resultados de esta interacción</h2><DataTable caption="Recepción y despacho actuales" rows={rows} columns={[
       { key: 'file_id', label: 'Archivo recibido' }, { key: 'reception', label: 'Recepción' }, { key: 'family', label: 'Familia' }, { key: 'documentDateText', label: 'Fecha del documento' },
-      { key: 'dispatch', label: 'Procesamiento downstream', render: (row) => row.dispatch ? <Badge>{row.dispatch.state}</Badge> : <span>{row.state === 'COMPLETADO' && row.routing_target !== 'NONE' ? 'Sin confirmación de despacho' : 'No despachado'}</span> },
-    ]} /><p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
+      { key: 'dispatch', label: 'Procesamiento downstream', render: (row) => row.dispatch ? <DispatchResult row={row} canQuarantine={can(principal, 'quarantine.read')} /> : <span>{row.state === 'COMPLETADO' && row.routing_target !== 'NONE' ? 'Sin confirmación de despacho' : 'No despachado'}</span> },
+    ]} />{rows.some((row) => row.dispatch) && <p className="text-xs text-secondary">El procesamiento indica si el archivo se procesó, no el resultado de su validación: los registros aceptados o enviados a cuarentena se consultan en Zona de cuarentena y Auditoría.</p>}<p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
     {can(principal, 'document.manage') && <OcrPanel refreshKey={ocrRefreshKey} onProcessingCompleted={() => setTechnicalRefreshKey((value) => value + 1)} />}
     {principal.roles.includes('TI') && <TechnicalMetric key={technicalRefreshKey} />}
   </>

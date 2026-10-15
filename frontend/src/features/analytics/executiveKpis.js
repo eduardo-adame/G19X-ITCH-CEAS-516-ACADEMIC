@@ -1,5 +1,6 @@
 import { KPI_CATALOG } from './adapters.js'
-import { formatCurrencyMXN, hasCompleteExposurePartition, sumDecimals } from './viewModels.js'
+import { formatDecimal } from '../../shared/formatters.js'
+import { hasCompleteExposurePartition, sumDecimals } from './viewModels.js'
 
 export const EXECUTIVE_KPI_STATES = Object.freeze({
   VALUE: 'VALUE', ZERO: 'ZERO', NO_DISPONIBLE: 'NO_DISPONIBLE',
@@ -50,7 +51,9 @@ function resolveValue(entry, items) {
     if (!hasCompleteExposurePartition(rows)) return dimensionalValue(rows)
     // Suma exacta de presentación de una partición autorizada, sin crear observaciones.
     const total = sumDecimals(available.map((row) => row.value))
-    return { state: isZero(total) ? 'ZERO' : 'VALUE', displayValue: formatCurrencyMXN(total), accessibleValue: formatCurrencyMXN(total), rawValue: total, valueKind: 'number', shortContext: '', rows }
+    // La moneda ocupa el slot de unidad de la tarjeta (COMPONENT_SPEC) para que el importe no se recorte.
+    const amount = formatDecimal(String(total), { prefix: '$' })
+    return { state: isZero(total) ? 'ZERO' : 'VALUE', displayValue: amount, accessibleValue: amount, rawValue: total, valueKind: 'number', shortContext: 'MXN', rows }
   }
   if (available.length !== 1 || rows.length !== 1) return dimensionalValue(rows)
   const row = available[0]

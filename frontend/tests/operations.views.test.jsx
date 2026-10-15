@@ -9,6 +9,7 @@ import { IngestionPage } from '../src/features/operations/IngestionPage.jsx'
 import { QuarantinePage } from '../src/features/operations/QuarantinePage.jsx'
 import { AuditPage } from '../src/features/operations/AuditPage.jsx'
 import { OcrPanel } from '../src/features/operations/OcrPanel.jsx'
+import { dispatchStateLabel } from '../src/features/operations/adapters.js'
 
 const accountId = '11111111-1111-4111-8111-111111111111'
 const otherId = '22222222-2222-4222-8222-222222222222'
@@ -172,5 +173,25 @@ describe('ROBUSTNESS: contratos de estado', () => {
     mount(<AuditPage />, { reads: () => ({ items: [{ dato: 'inválido' }], next_cursor: null }) })
     expect(await screen.findByRole('alert')).toHaveTextContent('servicio no está disponible')
     expect(screen.queryByText('inválido')).not.toBeInTheDocument()
+  })
+})
+
+describe('F-27-A: resultado del procesamiento de ingesta sin implicar validación exitosa', () => {
+  it('rotula el despacho en español, no muestra el enum y enlaza a cuarentena filtrada por archivo', async () => {
+    mount(<IngestionPage />)
+    await userEvent.upload(screen.getByLabelText(/Archivo/), new File(['Dato\n1'], 'dato.csv', { type: 'text/csv' }))
+    fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
+    expect(await screen.findByText('Procesamiento ejecutado')).toBeVisible()
+    expect(screen.queryByText('COMPLETED')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ver resultado en cuarentena' })).toHaveAttribute('href', `/cuarentena?ingest_file_id=${accountId}`)
+    expect(screen.getByText(/no el resultado de su validación/)).toBeVisible()
+  })
+
+  it('cada estado tiene una etiqueta que no afirma éxito de validación; un estado desconocido es neutro', () => {
+    const states = ['COMPLETED', 'FAILED', 'PENDING', 'IN_PROGRESS', 'SKIPPED', 'NO_RELEVANT_WORK']
+    expect(states.map((state) => dispatchStateLabel(state).label)).toEqual(['Procesamiento ejecutado', 'Procesamiento fallido', 'Pendiente', 'En curso', 'Omitido', 'Sin trabajo aplicable'])
+    expect(states.every((state) => !/éxito|exitos|válid|correct/i.test(dispatchStateLabel(state).label))).toBe(true)
+    expect(states.every((state) => dispatchStateLabel(state).variant !== 'success')).toBe(true)
+    expect(dispatchStateLabel('ALGO_NUEVO')).toEqual({ label: 'Estado no reconocido', variant: 'neutral' })
   })
 })

@@ -98,3 +98,14 @@ export function technicalResult(data) {
   assert(object(data) && data.kpi_code === 'KPI-CD-03' && ['DISPONIBLE', 'NO_DISPONIBLE'].includes(data.availability) && nullable(data.value, (v) => text(v) && /^\d+(\.\d+)?$/.test(v)) && nullable(data.calculated_at, timestamp) && !(data.availability === 'DISPONIBLE' && data.value === null))
   return { ...data, displayValue: formatValue(roundDecimal(data.value), data.availability, { suffix: ' %' }), calculatedLabel: formatTimestamp(data.calculated_at) }
 }
+// Estado del procesamiento downstream (despacho). No informa el resultado de validación de registros,
+// así que ninguna etiqueta afirma éxito de validación; un estado desconocido usa un rótulo neutro.
+const DISPATCH_LABELS = Object.freeze({
+  COMPLETED: { label: 'Procesamiento ejecutado', variant: 'neutral' },
+  FAILED: { label: 'Procesamiento fallido', variant: 'critical' },
+  PENDING: { label: 'Pendiente', variant: 'neutral' },
+  IN_PROGRESS: { label: 'En curso', variant: 'information' },
+  SKIPPED: { label: 'Omitido', variant: 'neutral' },
+  NO_RELEVANT_WORK: { label: 'Sin trabajo aplicable', variant: 'neutral' },
+})
+export const dispatchStateLabel = (state) => DISPATCH_LABELS[state] || { label: 'Estado no reconocido', variant: 'neutral' }

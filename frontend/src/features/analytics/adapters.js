@@ -20,9 +20,17 @@ const timestamp = (value) => formatTimestamp(value) !== '—'
 const nullableString = (value) => value === null || typeof value === 'string'
 const code = (value) => Object.hasOwn(KPI_CATALOG, value)
 const core = (value) => code(value) && KPI_CATALOG[value].core
+// Rótulos de las claves estructuradas de dimensión; una clave no catalogada conserva su nombre legible.
+const DIMENSION_LABELS = Object.freeze({ area: 'Área', nivel_severidad: 'Nivel de severidad', entity: 'Entidad' })
 export function dimensionsLabel(dimensions) {
-  return Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key.replace(/_/g, ' ')}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ') || 'Sin dimensiones'
+  return Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${DIMENSION_LABELS[key] || key.replace(/_/g, ' ')}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ') || 'Sin dimensiones'
 }
+// recurrent_pattern es un valor estructurado (N_OF_4); otros valores se muestran tal como se recibieron.
+export function recurrenceLabel(pattern) {
+  const match = /^([0-4])_OF_4$/.exec(pattern ?? '')
+  return match ? `${match[1]} de los últimos 4 meses` : pattern
+}
+export const alertCountLabel = (count) => `${count} ${count === 1 ? 'alerta' : 'alertas'}`
 export function seriesIdentity(item) {
   const dimensions = item.dimensions || item.canonical_dimensions_key
   return `${item.kpi_code}:${JSON.stringify(Object.entries(dimensions).sort(([a], [b]) => a.localeCompare(b)))}`

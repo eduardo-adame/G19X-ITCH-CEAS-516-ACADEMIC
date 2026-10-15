@@ -2,6 +2,8 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from app.analytics.models import ProactiveObservation
 from app.analytics.proactive_rules import (
     build_finding,
@@ -222,3 +224,39 @@ def test_cd03_is_excluded_from_snapshot_and_evaluation() -> None:
     cd03 = _row("KPI-CD-03", 1, "80")
     assert select_snapshot_closure((cd03,)) == ()
     assert evaluate_snapshot(uuid4(), (cd03,)) == ()
+
+
+TECHNICAL_TOKENS = ("KPI-", "_APPEARANCE_OR_INCREASE", "_STRICT_THREE_MONTH_INCREASE", "_OF_4", "{}", "nivel_severidad")
+
+
+@pytest.mark.parametrize(("code", "values", "dimensions", "expected"), [
+    ("KPI-RC-03", ["0", "1", "2", "3", "7"], None,
+     "Contratos próximos a vencimiento sin revisión registró una señal en mayo de 2026: valor actual 7 contratos, "
+     "referencia 3 contratos, variación absoluta 4 contratos. Regla aplicada: aparición o incremento de contratos "
+     "sin revisión. La señal se presentó en 4 de los últimos 4 meses."),
+    ("KPI-LI-01", ["100000", "300000", "1665000"], {"nivel_severidad": "alto"},
+     "Exposición total por litigios activos (nivel de severidad: alto) registró una señal en marzo de 2026: valor "
+     "actual $1,665,000 MXN, referencia $300,000 MXN, variación absoluta $1,365,000 MXN. Regla aplicada: incremento "
+     "durante tres meses consecutivos de exposición litigiosa. Sin patrón recurrente."),
+    ("KPI-CN-03", ["4", "5", "6"], {"area": "Legal", "nivel_severidad": "alto"},
+     "Incidentes de incumplimiento por periodo (área: Legal; nivel de severidad: alto) registró una señal en marzo de "
+     "2026: valor actual 6 incidentes, referencia 5 incidentes, variación absoluta 1 incidente. Regla aplicada: "
+     "incremento durante tres meses consecutivos de incidentes. Sin patrón recurrente."),
+])
+def test_finding_narrative_states_the_same_facts_without_technical_identifiers(code, values, dimensions, expected) -> None:
+    evaluation, rows = _evaluate(code, values, dimensions=dimensions)
+    finding = build_finding(uuid4(), evaluation, rows[-1].period_end)
+    assert finding is not None and finding.description == expected
+    assert not any(token in finding.description for token in TECHNICAL_TOKENS)
+    # Los identificadores técnicos siguen en los campos estructurados para la trazabilidad.
+    assert finding.kpi_code == code and finding.triggered_rule.startswith(code.replace("KPI-", "").replace("-", ""))
+
+
+def test_narrative_and_summary_are_deterministic_and_keep_structured_recurrence() -> None:
+    evaluation, rows = _evaluate("KPI-RC-03", ["0", "1", "2", "3", "4"])
+    first = build_finding(uuid4(), evaluation, rows[-1].period_end)
+    second = build_finding(uuid4(), evaluation, rows[-1].period_end)
+    assert first.description == second.description
+    assert first.recurrent_pattern == "4_OF_4"
+    summary = executive_summary((first,))
+    assert summary == first.description and not any(token in summary for token in TECHNICAL_TOKENS)

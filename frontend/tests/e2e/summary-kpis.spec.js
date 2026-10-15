@@ -29,7 +29,8 @@ test.describe('SRS_REQUIRED: estructura ejecutiva y estados', () => {
     await responseRoutes(page, [item('KPI-RC-03', { value: '3' }), ...exposure(), item('KPI-LI-05', { value: '1' }), item('KPI-CN-02', { value: '3' }), item('KPI-CN-03', { value: '7', dimensions: { area: 'Legal', nivel_severidad: 'alto' } })])
     await page.goto('/?period=current_month&risk_type=all')
     await expect(cards(page)).toHaveCount(5)
-    await expect(cards(page).nth(1)).toContainText('$315,000 MXN')
+    await expect(cards(page).nth(1).locator('.kpi-value-slot > span').first()).toHaveText('$315,000')
+    await expect(cards(page).nth(1).locator('.kpi-value-slot > span').nth(1)).toHaveText('MXN')
     await expect(cards(page).nth(4)).toContainText('Desglose disponible')
     expect(await cards(page).evaluateAll((elements) => elements.map((element) => element.getAttribute('aria-label')))).toEqual(['KPI-RC-03', 'KPI-LI-01', 'KPI-LI-05', 'KPI-CN-02', 'KPI-CN-03'].map((code) => KPI_CATALOG[code].name))
     await expect(cards(page).nth(4).locator('.kpi-value-slot')).not.toContainText('7')
@@ -101,6 +102,23 @@ test.describe('SRS_REQUIRED: estructura ejecutiva y estados', () => {
       await expect(page.locator('.kpi-metric')).toHaveCount(0)
     })
   }
+})
+
+test.describe('F-13: exposición LI-01 completa en la cabecera ejecutiva', () => {
+  test('el importe de siete dígitos no se recorta y la moneda ocupa el slot de unidad', async ({ page }) => {
+    const partition = exposure(['alto', 'medio', 'bajo']).map((row) => ({ ...row, value: { alto: '1200000', medio: '400000', bajo: '65000' }[row.dimensions.nivel_severidad] }))
+    await responseRoutes(page, [item('KPI-RC-03', { value: '7' }), ...partition, item('KPI-LI-05', { value: '2' }), item('KPI-CN-02', { value: '3' }), item('KPI-CN-03', { value: '7', dimensions: { area: 'Legal', nivel_severidad: 'alto' } })])
+    await page.goto('/?period=current_month&risk_type=all')
+    const slot = cards(page).nth(1).locator('.kpi-value-slot > span')
+    await expect(slot.first()).toHaveText('$1,665,000')
+    await expect(slot.nth(1)).toHaveText('MXN')
+    const fit = await slot.first().evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }))
+    expect(fit.scroll).toBeLessThanOrEqual(fit.client)
+    await expect(cards(page).nth(1)).not.toContainText('…')
+    // La geometría compartida de las cinco tarjetas no cambia.
+    const heights = await cards(page).evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().height)))
+    expect(new Set(heights).size).toBe(1)
+  })
 })
 
 test.describe('SRS_REQUIRED: geometría compartida loading/final', () => {

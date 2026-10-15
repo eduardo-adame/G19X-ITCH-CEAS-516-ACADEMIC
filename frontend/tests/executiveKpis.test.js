@@ -30,7 +30,8 @@ describe('SRS_REQUIRED: catálogo y estados ejecutivos sin imputación', () => {
   })
   it('all-data conserva las cinco tarjetas y valores persistidos o representación autorizada', () => {
     const slots = resolve([observation('KPI-RC-03', { value: '3' }), ...exposure(), observation('KPI-LI-05', { value: '1' }), observation('KPI-CN-02', { value: '3' }), observation('KPI-CN-03', { value: '2', dimensions: { area: 'Legal', nivel_severidad: 'alto' } })])
-    expect(slots.map(({ displayValue }) => displayValue)).toEqual(['3', '$315,000 MXN', '1', '3', 'Desglose disponible'])
+    expect(slots.map(({ displayValue }) => displayValue)).toEqual(['3', '$315,000', '1', '3', 'Desglose disponible'])
+    expect(slots[1].shortContext).toBe('MXN')
   })
   it('partial-data conserva cero real de LI05 y cuatro ausencias distintas de ND', () => {
     const slots = resolve([observation('KPI-LI-05')])
@@ -61,7 +62,7 @@ describe('SRS_REQUIRED: catálogo y estados ejecutivos sin imputación', () => {
 describe('SRS_REQUIRED: representación dimensional ejecutiva', () => {
   it('LI01 suma la partición completa del mismo periodo y contexto sin mutar las fuentes', () => {
     const items = exposure(); const before = JSON.stringify(items)
-    expect(li(items)).toMatchObject({ state: 'VALUE', rawValue: '315000', displayValue: '$315,000 MXN' })
+    expect(li(items)).toMatchObject({ state: 'VALUE', rawValue: '315000', displayValue: '$315,000', accessibleValue: '$315,000', shortContext: 'MXN' })
     expect(JSON.stringify(items)).toBe(before)
   })
   it('LI01 incompleto conserva desglose, nunca muestra 290000 como total', () => {
@@ -93,7 +94,7 @@ describe('SRS_REQUIRED: representación dimensional ejecutiva', () => {
     expect(li(dates).rawValue).toBeUndefined()
   })
   it('partición cero completa conserva cero visual legítimo', () => {
-    expect(li(exposure(undefined, { value: '0' }))).toMatchObject({ state: 'ZERO', rawValue: '0', displayValue: '$0 MXN' })
+    expect(li(exposure(undefined, { value: '0' }))).toMatchObject({ state: 'ZERO', rawValue: '0', displayValue: '$0', shortContext: 'MXN' })
   })
   it.each([1, 3])('CN03 con %i grupos nunca fabrica escalar global', (count) => {
     const items = Array.from({ length: count }, (_, index) => observation('KPI-CN-03', { dimensions: { area: `Área ${index}`, nivel_severidad: 'medio' }, value: '0' }))
