@@ -7,6 +7,8 @@ const fail = () => { throw new ApiError(503) }
 const text = (value) => typeof value === 'string'
 const nullableText = (value) => value === null || text(value)
 const page = (value) => value === null || Number.isInteger(value) && value > 0
+// Segundos sugeridos para reintentar un fallo técnico; ausente o nulo cuando no aplica.
+const retryAfter = (value) => value === undefined || value === null ? null : Number.isInteger(value) && value >= 1 && value <= 3600 ? value : fail()
 function metadata(item) {
   if (!item || !isUuid(item.fragment_id) || !text(item.document_id) || !item.document_id || !text(item.document_name) || !text(item.document_type) || !(item.document_date === null || validDate(item.document_date)) || !page(item.page_start) || !page(item.page_end) || !nullableText(item.section) || !nullableText(item.clause) || item.page_start !== null && item.page_end !== null && item.page_end < item.page_start) fail()
   return Object.freeze({ fragmentId: item.fragment_id, documentId: item.document_id, documentName: item.document_name, documentType: item.document_type, documentDate: item.document_date, pageStart: item.page_start, pageEnd: item.page_end, section: item.section, clause: item.clause })
@@ -39,8 +41,10 @@ export function adaptRagResponse(dto) {
   if (new Set(citations.map((item) => item.handle)).size !== citations.length || new Set(citations.map((item) => item.fragmentId)).size !== citations.length || dto.state === 'SIN_EVIDENCIA' && (fragments.length || citations.length)) fail()
   if (dto.state !== 'EVIDENCIA_SUFICIENTE' && (dto.generated_response !== null || citations.length || fragments.some((item) => item.usage !== 'REFERENCE'))) fail()
   const technicalFailure = dto.operation_status === 'FAILED' || dto.generation_status === 'FAILED'
+  const retryAfterSeconds = retryAfter(dto.retry_after_seconds)
+  if (retryAfterSeconds !== null && !technicalFailure) fail()
   if (!technicalFailure && dto.state === 'EVIDENCIA_SUFICIENTE' && (dto.generation_status !== 'SUCCEEDED' || !dto.generated_response || !citations.length)) fail()
-  return Object.freeze({ state: dto.state, stateLabel: dto.state === null ? null : RAG_STATES[dto.state], operationId: dto.operation_id, correlationId: dto.correlation_id, operationStatus: dto.operation_status, generationStatus: dto.generation_status, policyResult: null, response: technicalFailure ? null : dto.generated_response, message: dto.safe_result_message, contextReferenceId: dto.context_reference_id, fragments: Object.freeze(fragments), citations: Object.freeze(citations), technicalFailure })
+  return Object.freeze({ state: dto.state, stateLabel: dto.state === null ? null : RAG_STATES[dto.state], operationId: dto.operation_id, correlationId: dto.correlation_id, operationStatus: dto.operation_status, generationStatus: dto.generation_status, policyResult: null, response: technicalFailure ? null : dto.generated_response, message: dto.safe_result_message, contextReferenceId: dto.context_reference_id, fragments: Object.freeze(fragments), citations: Object.freeze(citations), technicalFailure, retryAfterSeconds })
 }
 
 export function citationLocation(item) {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import psycopg
@@ -11,7 +12,8 @@ from app.rag.gates import is_decision_request
 from app.rag.grounded_generation import SUPPORTED, build_messages, parse_grounded_output, response_format, split_citable_evidence
 from app.rag.models import EvidenceState, ProcessingOutcome, RankedFragment, RetrievalContext, RetrievalError
 from app.rag.operation_repository import RagOperationRepository
-from app.rag.provider import GroqFailure, GroqProvider
+from app.rag.provider import PROVIDER_CONTRACT_FAILURE, GroqFailure, GroqProvider, ProviderTelemetry
+from app.rag.provider_capacity import LOCAL_CAPACITY_EXHAUSTED
 from app.rag.retrieval import RetrievalService
 from app.rag.retrieval_repository import RetrievalRepository
 from app.security.models import AuthenticatedPrincipal, AuthenticationError, AuthorizationError, SecurityError
@@ -26,6 +28,11 @@ _MESSAGES = {
     "SIN_AUTORIZACION": "Acceso no autorizado.",
 }
 _FAILURE_MESSAGE = "La generación no pudo completarse; se conservan los fragmentos autorizados disponibles."
+_CAPACITY_MESSAGE = (
+    "El servicio de generación alcanzó su límite de uso. Puede revisar los fragmentos autorizados recuperados "
+    "o reintentar en unos segundos."
+)
+_CAPACITY_CAUSES = frozenset({LOCAL_CAPACITY_EXHAUSTED, "PROVIDER_RATE_LIMITED"})
 # Gate 1: restricción de aplicación, distinta de los estados de evidencia y del Estado 4.
 SCOPE_RESTRICTION = "RESTRICCION_ALCANCE"
 _RESTRICTION_MESSAGE = (
@@ -86,6 +93,17 @@ class RagApplicationService:
         except SecurityError:
             return None
         return candidate if self.repository.valid_context_reference(connection, candidate) else None
+
+    def _retry_reference(
+        self, connection: psycopg.Connection, principal: AuthenticatedPrincipal, candidate: UUID | None
+    ) -> UUID | None:
+        """El reintento técnico solo puede referir una operación fallida del mismo usuario."""
+        if candidate is None:
+            return None
+        row = self.repository.find(connection, candidate)
+        if row is None or row["user_id"] != principal.account_id or row["operation_status"] != "FAILED":
+            return None
+        return candidate
 
     def _audit_denied_retry(self, principal: AuthenticatedPrincipal) -> None:
         try:
@@ -151,6 +169,7 @@ class RagApplicationService:
                     "context_reference_id": row["context_reference_id"],
                     "fragments": [],
                     "citations": [],
+                    "retry_after_seconds": None,
                 },
             )
         if row["state"] == "SIN_AUTORIZACION":
@@ -170,6 +189,7 @@ class RagApplicationService:
                     "context_reference_id": None,
                     "fragments": [],
                     "citations": [],
+                    "retry_after_seconds": None,
                 },
             )
         public_fragments = [
@@ -220,6 +240,7 @@ class RagApplicationService:
                 "context_reference_id": row["context_reference_id"],
                 "fragments": public_fragments,
                 "citations": citations,
+                "retry_after_seconds": None,
             },
         )
 
@@ -268,6 +289,8 @@ class RagApplicationService:
         policy_result: str | None = None,
         generation_attempted: bool = False,
         abstained: bool = False,
+        telemetry: ProviderTelemetry | None = None,
+        retry_of_operation_id: UUID | None = None,
     ) -> RagApplicationResult:
         created = False
         try:
@@ -298,7 +321,8 @@ class RagApplicationService:
                             # Fallo técnico o contractual del proveedor: sin estado final de evidencia,
                             # se conservan los fragmentos autorizados como referencia (RF-060).
                             operation_status, generation_status = "FAILED", "FAILED"
-                            message, action, audit_result = _FAILURE_MESSAGE, "RAG_QUERY", "FAILURE"
+                            message = _CAPACITY_MESSAGE if failure_cause in _CAPACITY_CAUSES else _FAILURE_MESSAGE
+                            action, audit_result = "RAG_QUERY", "FAILURE"
                         elif state is None:
                             fragments = ()
                             operation_status, generation_status = "FAILED", "NOT_REQUESTED"
@@ -328,6 +352,8 @@ class RagApplicationService:
                             generated_response=generated_response,
                             safe_result_message=message,
                             policy_result=policy_result,
+                            telemetry=telemetry if telemetry is not None and telemetry.started else None,
+                            retry_of_operation_id=retry_of_operation_id,
                         )
                         resources = self.repository.insert_fragments(
                             connection, row_id, fragments, evidence_ids, state=state
@@ -345,6 +371,10 @@ class RagApplicationService:
             )
             if result is None:
                 raise RagApplicationError("La operación no pudo completarse")
+            retry_after = telemetry.retry_after_seconds if telemetry is not None else None
+            if created and failure_cause in _CAPACITY_CAUSES and retry_after is not None and result.status_code == 503:
+                # Solo la respuesta inmediata lleva Retry-After; una reproducción idempotente posterior no.
+                result.payload["retry_after_seconds"] = max(1, math.ceil(retry_after))
             return result
         except RagApplicationError:
             raise
@@ -358,6 +388,7 @@ class RagApplicationService:
         query: str,
         idempotency_key: UUID | None = None,
         context_reference_id: UUID | None = None,
+        retry_of_operation_id: UUID | None = None,
     ) -> RagApplicationResult:
         if not isinstance(query, str) or not query.strip() or len(query) > 4096:
             raise RagApplicationError("Consulta no válida", 422)
@@ -367,6 +398,15 @@ class RagApplicationService:
         try:
             with self._connection() as connection:
                 reference = self._context_reference(connection, principal, context_reference_id)
+                retry_of = self._retry_reference(connection, principal, retry_of_operation_id)
+
+                def finish(**outcome) -> RagApplicationResult:
+                    return self._finalize(
+                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
+                        query_hash=query_hash, context_reference_id=reference, retry_of_operation_id=retry_of,
+                        **outcome,
+                    )
+
                 if idempotency_key is not None:
                     existing = self._existing_result(principal, operation_id, query_hash, reference)
                     if existing is not None:
@@ -376,26 +416,20 @@ class RagApplicationService:
                 except AuthenticationError:
                     raise RagApplicationError("Credenciales o sesión no válidas", 401) from None
                 except AuthorizationError:
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state="SIN_AUTORIZACION",
+                    return finish(
+                    state="SIN_AUTORIZACION",
                     )
                 # Gate 1 (política): antes de recuperar documentos y sin consultar el corpus.
                 try:
                     query_vector = tuple(float(value) for value in self.retrieval.encoder.encode_query(query))
                     restricted = is_decision_request(query, query_vector)
                 except Exception:
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state=None, failure_cause="EMBEDDING_UNAVAILABLE",
+                    return finish(
+                    state=None, failure_cause="EMBEDDING_UNAVAILABLE",
                     )
                 if restricted:
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state=None, policy_result=SCOPE_RESTRICTION,
+                    return finish(
+                    state=None, policy_result=SCOPE_RESTRICTION,
                     )
                 try:
                     result = self.retrieval.retrieve(
@@ -405,16 +439,12 @@ class RagApplicationService:
                 except AuthenticationError:
                     raise RagApplicationError("Credenciales o sesión no válidas", 401) from None
                 except AuthorizationError:
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state="SIN_AUTORIZACION",
+                    return finish(
+                    state="SIN_AUTORIZACION",
                     )
                 except RetrievalError:
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state=None, failure_cause="RETRIEVAL_FAILED",
+                    return finish(
+                    state=None, failure_cause="RETRIEVAL_FAILED",
                     )
             # El schema terminal no conserva rangos; estos handles permanecen
             # estables entre la primera respuesta y los reintentos persistidos.
@@ -422,14 +452,10 @@ class RagApplicationService:
             if result.state is not ProcessingOutcome.GENERATION_CANDIDATE:
                 if result.state not in (EvidenceState.EVIDENCIA_INSUFICIENTE, EvidenceState.SIN_EVIDENCIA):
                     # Los controles locales solo descartan; nunca declaran Estado 1 por sí solos.
-                    return self._finalize(
-                        principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                        query_hash=query_hash, context_reference_id=reference,
-                        state=None, failure_cause="INTERNAL_FAILURE",
+                    return finish(
+                    state=None, failure_cause="INTERNAL_FAILURE",
                     )
-                return self._finalize(
-                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                    query_hash=query_hash, context_reference_id=reference,
+                return finish(
                     state=str(result.state), fragments=fragments,
                 )
 
@@ -437,9 +463,7 @@ class RagApplicationService:
             # La incompleta sigue disponible como referencia parcial, pero no puede sustentar el Estado 1.
             citable, _reference_only = split_citable_evidence(fragments)
             if not citable:
-                return self._finalize(
-                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                    query_hash=query_hash, context_reference_id=reference,
+                return finish(
                     state="EVIDENCIA_INSUFICIENTE", fragments=fragments,
                 )
 
@@ -449,37 +473,36 @@ class RagApplicationService:
                         raise AuthorizationError("Acceso no autorizado")
 
             # Una sola llamada: verifica el soporte, se abstiene o responde con handles entregados.
+            telemetry = ProviderTelemetry()
             try:
                 raw = self.provider.generate(
                     build_messages(query, citable), before_send=before_send, response_format=response_format(citable),
+                    owner=principal.account_id, telemetry=telemetry,
                 )
-                outcome = parse_grounded_output(raw, citable)
+                try:
+                    outcome = parse_grounded_output(raw, citable)
+                except GroqFailure:
+                    telemetry.failure_cause = PROVIDER_CONTRACT_FAILURE
+                    raise
             except AuthorizationError:
-                return self._finalize(
-                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                    query_hash=query_hash, context_reference_id=reference,
-                    state="SIN_AUTORIZACION",
+                return finish(
+                    state="SIN_AUTORIZACION", telemetry=telemetry,
                 )
             except GroqFailure as exc:
-                # Error técnico o salida que incumple el contrato: nunca Estado 1, 2 ni 3.
-                return self._finalize(
-                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                    query_hash=query_hash, context_reference_id=reference,
+                # Error técnico, de capacidad o salida que incumple el contrato: nunca Estado 1, 2, 3 ni 4.
+                return finish(
                     state=None, fragments=fragments, failure_cause=exc.cause_code, generation_attempted=True,
+                    telemetry=telemetry,
                 )
             if outcome.status == SUPPORTED:
                 # El Estado 1 conserva exactamente la evidencia enviada: sus handles públicos coinciden
                 # con los que vio el proveedor (mismo orden por fragment_id).
-                return self._finalize(
-                    principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                    query_hash=query_hash, context_reference_id=reference,
+                return finish(
                     state="EVIDENCIA_SUFICIENTE", fragments=citable,
-                    generated_response=outcome.answer, evidence_ids=outcome.evidence_ids,
+                    generated_response=outcome.answer, evidence_ids=outcome.evidence_ids, telemetry=telemetry,
                 )
-            return self._finalize(
-                principal=principal, operation_id=operation_id, correlation_id=correlation_id,
-                query_hash=query_hash, context_reference_id=reference,
-                state="EVIDENCIA_INSUFICIENTE", fragments=fragments, abstained=True,
+            return finish(
+                    state="EVIDENCIA_INSUFICIENTE", fragments=fragments, abstained=True, telemetry=telemetry,
             )
         except RagApplicationError:
             raise

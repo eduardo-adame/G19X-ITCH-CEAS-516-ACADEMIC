@@ -45,3 +45,40 @@ describe('ROBUSTNESS: forma segura y accesibilidad', () => {
   it('denegación durante revalidación no abre visor ni dispara POST automático', async () => { const manager = mount({ path: '/documentos', revalidate: async () => false }); expect(await screen.findByRole('alert')).toHaveTextContent('Sin autorización'); expect(manager.client.request).not.toHaveBeenCalled() })
   it('rechaza ID de visor desconocido sin devolver otros fragmentos', async () => { const manager = mount({ path: '/documentos?fragment_id=invalido' }); expect(await screen.findByText('No hay un fragmento disponible')).toBeVisible(); expect(manager.client.request).not.toHaveBeenCalled() })
 })
+
+
+describe('F-14: reintento de fallos técnicos como operación nueva', () => {
+  function technicalFailure(retryAfter = null) {
+    const dto = dtoFixture('EVIDENCIA_INSUFICIENTE')
+    return { ...dto, operation_id: '55555555-5555-4555-8555-555555555555', state: null, operation_status: 'FAILED', generation_status: 'FAILED', safe_result_message: 'El servicio de generación alcanzó su límite de uso.', retry_after_seconds: retryAfter }
+  }
+  it('L: tras un fallo técnico el reintento usa una clave nueva y vincula la operación fallida', async () => {
+    const request = vi.fn().mockResolvedValueOnce(technicalFailure()).mockResolvedValueOnce(dtoFixture())
+    mount({ request }); await query()
+    await userEvent.click(await screen.findByRole('button', { name: 'Reintentar con una nueva operación' }))
+    await screen.findByText('Respuesta sintética [E1].')
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(request.mock.calls[1][1].headers['Idempotency-Key']).not.toBe(request.mock.calls[0][1].headers['Idempotency-Key'])
+    expect(request.mock.calls[1][1].body).toEqual({ query: 'Consulta sintética', retry_of_operation_id: '55555555-5555-4555-8555-555555555555' })
+    expect(request.mock.calls[0][1].body.retry_of_operation_id).toBeUndefined()
+  })
+  it('respeta el Retry-After: el botón queda deshabilitado con cuenta atrás y no envía nada', async () => {
+    const request = vi.fn().mockResolvedValueOnce(technicalFailure(30)).mockResolvedValue(dtoFixture())
+    mount({ request }); await query()
+    const button = await screen.findByRole('button', { name: 'Reintentar en 30 s' })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+  it.each(['EVIDENCIA_SUFICIENTE', 'EVIDENCIA_INSUFICIENTE', 'SIN_EVIDENCIA'])('N: el estado %s no ofrece reintento técnico', async (state) => {
+    mount({ dto: dtoFixture(state) }); await query()
+    await screen.findByText({ EVIDENCIA_SUFICIENTE: 'Evidencia suficiente', EVIDENCIA_INSUFICIENTE: 'Evidencia insuficiente', SIN_EVIDENCIA: 'Sin evidencia' }[state])
+    expect(screen.queryByRole('button', { name: /Reintentar/ })).not.toBeInTheDocument()
+  })
+  it('N: una restricción de alcance no ofrece reintento técnico', async () => {
+    const dto = { operation_id: '11111111-1111-4111-8111-111111111111', correlation_id: '22222222-2222-4222-8222-222222222222', state: null, policy_result: 'RESTRICCION_ALCANCE', operation_status: 'COMPLETED', generation_status: 'NOT_REQUESTED', generated_response: null, safe_result_message: 'El sistema puede aportar evidencia documental, pero no toma decisiones jurídicas por usted.', context_reference_id: null, fragments: [], citations: [] }
+    mount({ dto }); await query()
+    await screen.findByText('Fuera del alcance del asistente')
+    expect(screen.queryByRole('button', { name: /Reintentar/ })).not.toBeInTheDocument()
+  })
+})

@@ -6,9 +6,10 @@ secretos: las credenciales reales viven en el archivo `.env`, excluido de Git.
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,6 +87,118 @@ class Settings(BaseSettings):
         if value <= 0 or value > 60_000:
             raise ValueError("Límite de solicitud Groq no válido")
         return value
+
+    # --- Capacidad del proveedor (F-14) -----------------------------------
+    # Presupuesto local compartido por todas las operaciones del proceso. Los
+    # valores por defecto parten de las referencias de §5.1 para gpt-oss-120b
+    # (30 RPM, 8,000 TPM) con margen: ~90 % de RPM y ~80 % de TPM, porque la
+    # estimación de tokens antes del envío no es exacta. Son configurables por
+    # cuenta y modelo; una configuración inválida impide el arranque.
+    groq_max_concurrency: int = 1
+    groq_max_queue: int = 8
+    groq_rpm_limit: int = 27
+    groq_tpm_limit: int = 6_400
+    groq_max_in_flight_per_user: int = 1
+    groq_max_retries: int = 2
+    groq_backoff_base_seconds: float = 1.0
+    groq_backoff_max_seconds: float = 8.0
+    groq_retry_after_max_seconds: float = 60.0
+    groq_operation_deadline_seconds: float = 45.0
+    groq_prompt_bytes_per_token: float = 3.0
+    groq_completion_token_reserve: int = 512
+    # El limitador vive en memoria del proceso: solo es correcto con un único
+    # worker. Cualquier otro valor se rechaza al arrancar.
+    backend_workers: int = 1
+
+    @field_validator("groq_max_concurrency", "groq_max_in_flight_per_user")
+    @classmethod
+    def validate_groq_concurrency(cls, value: int) -> int:
+        if not 1 <= value <= 8:
+            raise ValueError("Concurrencia Groq no válida")
+        return value
+
+    @field_validator("groq_max_queue")
+    @classmethod
+    def validate_groq_queue(cls, value: int) -> int:
+        if not 0 <= value <= 64:
+            raise ValueError("Cola Groq no válida")
+        return value
+
+    @field_validator("groq_rpm_limit")
+    @classmethod
+    def validate_groq_rpm(cls, value: int) -> int:
+        if not 1 <= value <= 10_000:
+            raise ValueError("Límite RPM de Groq no válido")
+        return value
+
+    @field_validator("groq_tpm_limit")
+    @classmethod
+    def validate_groq_tpm(cls, value: int) -> int:
+        if not 500 <= value <= 10_000_000:
+            raise ValueError("Límite TPM de Groq no válido")
+        return value
+
+    @field_validator("groq_max_retries")
+    @classmethod
+    def validate_groq_retries(cls, value: int) -> int:
+        # RF-059: como máximo dos reintentos adicionales ante HTTP 429.
+        if not 0 <= value <= 2:
+            raise ValueError("Reintentos Groq no válidos")
+        return value
+
+    @field_validator("groq_backoff_base_seconds")
+    @classmethod
+    def validate_groq_backoff_base(cls, value: float) -> float:
+        if not 0.1 <= value <= 10:
+            raise ValueError("Backoff base de Groq no válido")
+        return value
+
+    @field_validator("groq_retry_after_max_seconds")
+    @classmethod
+    def validate_groq_retry_after(cls, value: float) -> float:
+        if not 1 <= value <= 300:
+            raise ValueError("Retry-After máximo de Groq no válido")
+        return value
+
+    @field_validator("groq_operation_deadline_seconds")
+    @classmethod
+    def validate_groq_deadline(cls, value: float) -> float:
+        if not 5 <= value <= 120:
+            raise ValueError("Plazo de operación Groq no válido")
+        return value
+
+    @field_validator("groq_prompt_bytes_per_token")
+    @classmethod
+    def validate_groq_bytes_per_token(cls, value: float) -> float:
+        if not 1.5 <= value <= 6.0:
+            raise ValueError("Estimación de tokens de Groq no válida")
+        return value
+
+    @field_validator("groq_completion_token_reserve")
+    @classmethod
+    def validate_groq_completion_reserve(cls, value: int) -> int:
+        if not 64 <= value <= 4096:
+            raise ValueError("Reserva de salida de Groq no válida")
+        return value
+
+    @field_validator("backend_workers")
+    @classmethod
+    def validate_backend_workers(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("El backend debe ejecutarse con un único worker (limitador local al proceso)")
+        return value
+
+    @model_validator(mode="after")
+    def validate_provider_capacity(self) -> "Settings":
+        if not self.groq_backoff_base_seconds <= self.groq_backoff_max_seconds <= 60:
+            raise ValueError("Backoff máximo de Groq no válido")
+        if self.groq_completion_token_reserve >= self.groq_tpm_limit:
+            raise ValueError("La reserva de salida de Groq debe ser menor que el límite TPM")
+        # uvicorn toma WEB_CONCURRENCY como número de workers: con el limitador local solo se admite uno.
+        workers = os.environ.get("WEB_CONCURRENCY", "").strip()
+        if workers not in ("", "1"):
+            raise ValueError("WEB_CONCURRENCY debe ser 1 mientras el limitador del proveedor sea local al proceso")
+        return self
 
     # --- CORS ---------------------------------------------------------------
     # Orígenes permitidos explícitos. No se usa "*" por defecto: permitir

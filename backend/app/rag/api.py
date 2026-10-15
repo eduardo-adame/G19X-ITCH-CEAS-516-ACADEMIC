@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.rag.provider import GroqProvider
+from app.rag.provider import GroqProvider, ProviderPolicy
+from app.rag.provider_capacity import ProviderCapacityManager, capacity_limits_from_settings
 from app.rag.retrieval import RetrievalService
 from app.rag.service import RagApplicationError, RagApplicationService
 from app.security.api import configured_security_service, current_principal, service_for
@@ -22,6 +23,8 @@ router = APIRouter(prefix="/api/rag", tags=["rag"])
 class RagQueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4096)
     context_reference_id: UUID | None = None
+    # Reintento de un fallo técnico terminal: nueva operación vinculada a la fallida (se valida en el servidor).
+    retry_of_operation_id: UUID | None = None
 
 
 class RagFragmentResponse(BaseModel):
@@ -64,6 +67,29 @@ class RagQueryResponse(BaseModel):
     context_reference_id: UUID | None
     fragments: list[RagFragmentResponse]
     citations: list[RagCitationResponse]
+    # Segundos sugeridos antes de reintentar un fallo técnico de capacidad o del proveedor.
+    retry_after_seconds: int | None = None
+
+
+@lru_cache(maxsize=1)
+def configured_provider() -> GroqProvider:
+    """Un único cliente y un único gestor de capacidad por proceso, compartidos por todas las consultas."""
+    settings = get_settings()
+    return GroqProvider(
+        api_key=settings.groq_api_key.get_secret_value() if settings.groq_api_key else None,
+        timeout_seconds=settings.groq_timeout_seconds,
+        max_request_bytes=settings.groq_max_request_bytes,
+        capacity=ProviderCapacityManager(capacity_limits_from_settings(settings)),
+        policy=ProviderPolicy(
+            max_retries=settings.groq_max_retries,
+            backoff_base_seconds=settings.groq_backoff_base_seconds,
+            backoff_max_seconds=settings.groq_backoff_max_seconds,
+            retry_after_max_seconds=settings.groq_retry_after_max_seconds,
+            operation_deadline_seconds=settings.groq_operation_deadline_seconds,
+            prompt_bytes_per_token=settings.groq_prompt_bytes_per_token,
+            completion_token_reserve=settings.groq_completion_token_reserve,
+        ),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -74,11 +100,7 @@ def _configured_service() -> RagApplicationService:
         conninfo=settings.psycopg_conninfo,
         security=security,
         retrieval=RetrievalService(security),
-        provider=GroqProvider(
-            api_key=settings.groq_api_key.get_secret_value() if settings.groq_api_key else None,
-            timeout_seconds=settings.groq_timeout_seconds,
-            max_request_bytes=settings.groq_max_request_bytes,
-        ),
+        provider=configured_provider(),
     )
 
 
@@ -95,11 +117,7 @@ def application_service_for(request: Request) -> RagApplicationService:
         conninfo=settings.psycopg_conninfo,
         security=service_for(request),
         retrieval=RetrievalService(security),
-        provider=GroqProvider(
-            api_key=settings.groq_api_key.get_secret_value() if settings.groq_api_key else None,
-            timeout_seconds=settings.groq_timeout_seconds,
-            max_request_bytes=settings.groq_max_request_bytes,
-        ),
+        provider=configured_provider(),
     )
 
 
@@ -117,8 +135,11 @@ def query_rag(
             query=payload.query,
             idempotency_key=idempotency_key,
             context_reference_id=payload.context_reference_id,
+            retry_of_operation_id=payload.retry_of_operation_id,
         )
     except RagApplicationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
     response.status_code = result.status_code
+    if result.payload.get("retry_after_seconds"):
+        response.headers["Retry-After"] = str(result.payload["retry_after_seconds"])
     return RagQueryResponse.model_validate(result.payload)

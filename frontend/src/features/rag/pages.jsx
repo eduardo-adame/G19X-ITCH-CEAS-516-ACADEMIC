@@ -19,6 +19,19 @@ const resultExplanations = Object.freeze({
   SIN_AUTORIZACION: 'No puedo proporcionar información para esta consulta con tu nivel de acceso actual.',
 })
 
+// Tras un fallo técnico el reintento crea una operación nueva y espera el Retry-After indicado por el servidor.
+function RetryButton({ rag, technical }) {
+  const [now, setNow] = useState(() => Date.now())
+  const remaining = Math.max(0, Math.ceil(((rag.retryNotBefore || 0) - now) / 1000))
+  useEffect(() => {
+    if (!remaining) return undefined
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [remaining])
+  const label = remaining ? `Reintentar en ${remaining} s` : technical ? 'Reintentar con una nueva operación' : 'Reintentar la misma operación'
+  return <Button variant="secondary" onClick={rag.retry} disabled={remaining > 0}>{label}</Button>
+}
+
 export function RagQueryPage() {
   const rag = useRag()
   const session = useSession()
@@ -48,7 +61,7 @@ export function RagQueryPage() {
     <form className="space-y-3" onSubmit={submit}>
       <label htmlFor="rag-query" className="block text-xs font-medium text-secondary">Consulta en lenguaje natural</label>
       <textarea id="rag-query" required minLength={1} rows={4} value={query} onChange={(event) => { setQuery(event.target.value); setValidationError(null) }} className="w-full resize-y rounded-control border border-border bg-surface p-3 text-[13px]" disabled={rag.busy || rag.accessPending} />
-      <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <Button variant="secondary" onClick={rag.retry}>Reintentar la misma operación</Button>}{(rag.hasInteraction || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
+      <div className="flex flex-wrap gap-3"><Button type="submit" busy={rag.busy} disabled={rag.accessPending}><Icon name="search" />Consultar</Button>{rag.submission && !rag.busy && (rag.error || result?.technicalFailure) && <RetryButton rag={rag} technical={Boolean(result?.technicalFailure)} />}{(rag.hasInteraction || rag.busy) && <Button variant="ghost" onClick={() => { rag.clear(); setQuery(''); setValidationError(null) }}>Limpiar consulta</Button>}</div>
     </form>
     {validationError && <ErrorState error={validationError} />}
     {submittedQuery && <section aria-label="Tu consulta enviada" className="space-y-3"><h2 className="text-base font-semibold">Tú</h2><p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{submittedQuery}</p></section>}

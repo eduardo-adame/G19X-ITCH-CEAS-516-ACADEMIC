@@ -127,6 +127,13 @@ lo que permite comprobar que el recuento de servicios lógicos sigue siendo cuat
 El sistema **no** requiere Redis, RabbitMQ, Elasticsearch, nginx como servicio
 independiente, un segundo PostgreSQL ni un servicio de embeddings.
 
+**Un único worker del backend.** El control de capacidad del proveedor
+generativo vive en memoria del proceso: concurrencia, RPM, TPM y enfriamiento
+ante 429 se comparten entre todas las consultas. Por eso el backend se ejecuta
+con un solo proceso uvicorn. `BACKEND_WORKERS` y `WEB_CONCURRENCY` están fijados
+a 1 en `docker-compose.yml`, y el backend se niega a arrancar con otro valor. Los
+límites se ajustan con las variables `GROQ_*` documentadas en `.env.example`.
+
 ### Volúmenes persistentes (independientes entre sí)
 
 | Volumen | Montaje | Contenido |

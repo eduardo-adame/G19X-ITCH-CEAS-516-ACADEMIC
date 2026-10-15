@@ -65,7 +65,7 @@ class _Provider:
         self.output = output if output is not None else _contract()
         self._lock = Lock()
 
-    def generate(self, messages, *, before_send, response_format=None):
+    def generate(self, messages, *, before_send, response_format=None, owner=None, telemetry=None):
         before_send()
         assert len(messages) == 2 and response_format is not None
         with self._lock:
@@ -98,14 +98,14 @@ def database():
         previous = os.environ.get("POSTGRES_DB")
         try:
             os.environ["POSTGRES_DB"] = name
-            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0018_rag_policy_result")
+            command.upgrade(Config(str(BACKEND_ROOT / "alembic.ini")), "0019_rag_provider_telemetry")
         finally:
             if previous is None:
                 os.environ.pop("POSTGRES_DB", None)
             else:
                 os.environ["POSTGRES_DB"] = previous
         with psycopg.connect(owner_dsn, autocommit=True) as connection:
-            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0018_rag_policy_result"
+            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0019_rag_provider_telemetry"
         yield _Database(name=name, owner=owner_dsn, runtime=runtime_dsn)
     finally:
         if created:
@@ -585,7 +585,7 @@ def test_transport_failure_persists_failed_operation_and_single_audit(database) 
     principal = _principal(database)
 
     class FailedProvider:
-        def generate(self, _messages, *, before_send, response_format=None):
+        def generate(self, _messages, *, before_send, response_format=None, owner=None, telemetry=None):
             before_send()
             from app.rag.provider import GroqFailure
             raise GroqFailure("PROVIDER_UNAVAILABLE")
@@ -886,7 +886,7 @@ def test_grounded_technical_errors_keep_technical_semantics(database, cause) -> 
     principal = _principal(database)
 
     class Failing:
-        def generate(self, _messages, *, before_send, response_format=None):
+        def generate(self, _messages, *, before_send, response_format=None, owner=None, telemetry=None):
             before_send()
             from app.rag.provider import GroqFailure
             raise GroqFailure(cause)
@@ -922,7 +922,7 @@ def test_grounded_revocation_right_before_send_prevents_sending_and_leakage(data
     class RevokedBeforeSend:
         sent = 0
 
-        def generate(self, _messages, *, before_send, response_format=None):
+        def generate(self, _messages, *, before_send, response_format=None, owner=None, telemetry=None):
             _grant(database, active=False)
             before_send()
             self.sent += 1
@@ -1134,7 +1134,7 @@ def test_eligibility_case_f_revocation_before_send_with_mixed_set_sends_nothing(
     class RevokedBeforeSend:
         sent = 0
 
-        def generate(self, _messages, *, before_send, response_format=None):
+        def generate(self, _messages, *, before_send, response_format=None, owner=None, telemetry=None):
             _grant(eligibility, active=False)
             before_send()
             self.sent += 1
@@ -1159,3 +1159,214 @@ def test_eligibility_case_g_supported_citing_unsent_incomplete_handle_is_contrac
     assert _sent_handles(provider) == ["E1"]
     assert result.status_code == 503 and result.payload["state"] is None
     assert _operation(eligibility, result.payload["operation_id"])[:4] == (None, "FAILED", "FAILED", "INVALID_PROVIDER_OUTPUT")
+
+
+
+# --- F-14: capacidad del proveedor, telemetría persistida y reintento técnico ---------------------
+
+from app.rag.provider import ProviderPolicy  # noqa: E402
+from app.rag.provider_capacity import CapacityLimits, ProviderCapacityManager  # noqa: E402
+
+
+class _SimClock:
+    def __init__(self):
+        self.now = 1_000.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def wait(self, _condition, timeout):
+        self.now += timeout
+
+
+class _GroqResponse:
+    status = 200
+
+    def __init__(self, content):
+        self.content = content
+        self.headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def geturl(self):
+        return GROQ_CHAT_URL
+
+    def read(self, _size):
+        return json.dumps({"choices": [{"message": {"content": self.content}}], "usage": {"total_tokens": 900}}).encode()
+
+
+class _SequenceOpener:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.requests = []
+
+    def open(self, request, timeout):
+        self.requests.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def _rate_limited(seconds="1"):
+    return HTTPError(GROQ_CHAT_URL, 429, "rate", {"Retry-After": seconds}, None)
+
+
+def _groq(outcomes, *, rpm=27, deadline=45):
+    clock = _SimClock()
+    capacity = ProviderCapacityManager(CapacityLimits(1, rpm, 6_400, 8, 1), clock=clock, wait=clock.wait)
+    opener = _SequenceOpener(outcomes)
+    provider = GroqProvider(api_key="clave-sintetica", timeout_seconds=30, opener=opener, sleep=clock.sleep, capacity=capacity,
+                            policy=ProviderPolicy(operation_deadline_seconds=deadline), clock=clock)
+    return provider, opener, clock, capacity
+
+
+def _telemetry(database, operation_id):
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        return connection.execute(
+            "SELECT safe_cause_code, provider_http_attempts, provider_rate_limit_count, provider_wait_ms, provider_latency_ms, "
+            "provider_failure_cause, retry_of_operation_id FROM app.rag_operation WHERE operation_id=%s", (operation_id,),
+        ).fetchone()
+
+
+_PLAZO = "¿Cuál es el plazo del contrato sintético?"
+
+
+@pytest.mark.requires_db
+def test_f14_o_exact_telemetry_after_429_and_recovery(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, opener, _clock, _ = _groq([_rate_limited("2"), _GroqResponse(_contract())])
+    result = _service(database, provider).execute(principal=_principal(database), query=_PLAZO)
+    assert result.status_code == 200 and result.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert result.payload["retry_after_seconds"] is None
+    cause, attempts, rate_limited, wait_ms, latency_ms, provider_cause, retry_of = _telemetry(database, result.payload["operation_id"])
+    assert (cause, attempts, rate_limited, provider_cause, retry_of) == (None, 2, 1, None, None) == (None, len(opener.requests), 1, None, None)
+    assert wait_ms == 2_000 and latency_ms >= 2_000
+
+
+@pytest.mark.requires_db
+def test_f14_k_local_capacity_exhausted_is_technical_503_without_http_and_with_retry_after(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, opener, clock, capacity = _groq([_GroqResponse(_contract())], rpm=1, deadline=5)
+    capacity.release(capacity.acquire(100, deadline=clock.now + 45, operation=object()))        # presupuesto RPM agotado
+    key = uuid4()
+    principal = _principal(database)
+    service = _service(database, provider)
+    result = service.execute(principal=principal, query=_PLAZO, idempotency_key=key)
+    assert opener.requests == []
+    assert result.status_code == 503 and result.payload["state"] is None and result.payload["generated_response"] is None
+    assert result.payload["retry_after_seconds"] >= 6 and "límite de uso" in result.payload["safe_result_message"]
+    assert result.payload["fragments"] and all(item["usage"] == "REFERENCE" for item in result.payload["fragments"])
+    assert _operation(database, result.payload["operation_id"])[:4] == (None, "FAILED", "FAILED", "LOCAL_CAPACITY_EXHAUSTED")
+    assert _telemetry(database, result.payload["operation_id"])[1:6:4] == (0, "LOCAL_CAPACITY_EXHAUSTED")
+    # La reproducción idempotente de la misma operación no repite un Retry-After vencido.
+    replay = service.execute(principal=principal, query=_PLAZO, idempotency_key=key)
+    assert replay.payload["operation_id"] == result.payload["operation_id"] and replay.payload["retry_after_seconds"] is None
+
+
+@pytest.mark.requires_db
+def test_f14_persistent_429_is_provider_rate_limited_with_exact_counts(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, opener, _clock, _ = _groq([_rate_limited("1") for _ in range(3)])
+    result = _service(database, provider).execute(principal=_principal(database), query=_PLAZO)
+    assert result.status_code == 503 and result.payload["state"] is None and result.payload["retry_after_seconds"] == 1
+    assert len(opener.requests) == 3
+    assert _telemetry(database, result.payload["operation_id"])[:3] == ("PROVIDER_RATE_LIMITED", 3, 3)
+
+
+@pytest.mark.requires_db
+def test_f14_contract_failure_is_recorded_as_provider_contract_failure(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, _opener, _clock, _ = _groq([_GroqResponse("texto libre sin contrato")])
+    result = _service(database, provider).execute(principal=_principal(database), query=_PLAZO)
+    assert result.status_code == 503 and result.payload["state"] is None and result.payload["retry_after_seconds"] is None
+    cause, attempts, _rate, _wait, _latency, provider_cause, _retry = _telemetry(database, result.payload["operation_id"])
+    assert (cause, attempts, provider_cause) == ("INVALID_PROVIDER_OUTPUT", 1, "PROVIDER_CONTRACT_FAILURE")
+
+
+@pytest.mark.requires_db
+def test_f14_b_two_users_share_the_global_budget(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, opener, _clock, _ = _groq([_GroqResponse(_contract()), _GroqResponse(_contract())], rpm=1, deadline=5)
+    service = _service(database, provider)
+    first = service.execute(principal=_principal(database), query=_PLAZO)
+    second = service.execute(principal=_principal(database), query=_PLAZO)
+    assert first.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    assert second.status_code == 503 and _telemetry(database, second.payload["operation_id"])[:2] == ("LOCAL_CAPACITY_EXHAUSTED", 0)
+    assert len(opener.requests) == 1
+
+
+@pytest.mark.requires_db
+def test_f14_l_m_technical_retry_is_a_new_operation_that_reaches_provider_when_capacity_returns(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, opener, clock, capacity = _groq([_GroqResponse(_contract())], rpm=1, deadline=5)
+    capacity.release(capacity.acquire(100, deadline=clock.now + 45, operation=object()))
+    principal = _principal(database)
+    service = _service(database, provider)
+    failed = service.execute(principal=principal, query=_PLAZO, idempotency_key=uuid4())
+    assert failed.status_code == 503
+    before = _telemetry(database, failed.payload["operation_id"])
+    clock.now += failed.payload["retry_after_seconds"]                   # la UI espera el Retry-After indicado
+    retried = service.execute(principal=principal, query=_PLAZO, idempotency_key=uuid4(),
+                              retry_of_operation_id=failed.payload["operation_id"])
+    assert retried.payload["operation_id"] != failed.payload["operation_id"]
+    assert retried.payload["state"] == "EVIDENCIA_SUFICIENTE" and len(opener.requests) == 1
+    assert _telemetry(database, retried.payload["operation_id"])[6] == failed.payload["operation_id"]
+    assert _telemetry(database, failed.payload["operation_id"]) == before            # la operación fallida no cambia
+
+
+@pytest.mark.requires_db
+def test_f14_n_retry_reference_only_accepts_own_technical_failure(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, _opener, _clock, _ = _groq([_GroqResponse(_contract()) for _ in range(3)])
+    owner, other = _principal(database), _principal(database)
+    service = _service(database, provider)
+    succeeded = service.execute(principal=owner, query=_PLAZO)
+    assert succeeded.payload["state"] == "EVIDENCIA_SUFICIENTE"
+    not_failed = service.execute(principal=owner, query=_PLAZO, retry_of_operation_id=succeeded.payload["operation_id"])
+    foreign = service.execute(principal=other, query=_PLAZO, retry_of_operation_id=succeeded.payload["operation_id"])
+    unknown = service.execute(principal=owner, query=_PLAZO, retry_of_operation_id=uuid4())
+    for result in (not_failed, foreign, unknown):
+        assert _telemetry(database, result.payload["operation_id"])[6] is None
+
+
+@pytest.mark.requires_db
+def test_f14_p_telemetry_and_audit_store_no_query_prompt_fragments_or_secrets(database) -> None:
+    _grant(database)
+    _isolate(database)
+    _document(database)
+    provider, _opener, _clock, _ = _groq([_rate_limited("1"), _GroqResponse(_contract())])
+    query = "¿Cuál es el plazo del contrato sintético? marcador-privado-F14"
+    result = _service(database, provider).execute(principal=_principal(database), query=query)
+    with psycopg.connect(database["owner"], autocommit=True) as connection:
+        operation = connection.execute(
+            "SELECT row_to_json(t)::text FROM (SELECT provider_http_attempts, provider_rate_limit_count, provider_wait_ms, "
+            "provider_latency_ms, provider_failure_cause, retry_of_operation_id, safe_cause_code FROM app.rag_operation "
+            "WHERE operation_id=%s) t", (result.payload["operation_id"],),
+        ).fetchone()[0]
+        audit = connection.execute(
+            "SELECT string_agg(row_to_json(e)::text, ' ') FROM audit.event e WHERE operation_id=%s", (result.payload["operation_id"],),
+        ).fetchone()[0]
+    for sensitive in ("marcador-privado-F14", "plazo del contrato", "treinta días", "clave-sintetica", "Bearer", "Solo evidencia"):
+        assert sensitive not in operation and sensitive not in audit

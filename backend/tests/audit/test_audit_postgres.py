@@ -41,7 +41,7 @@ def database():
                 if connection_string == values["reader"]:
                     assert current == "riesgo_legal_audit_app"
         with psycopg.connect(values["owner"]) as connection:
-            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0018_rag_policy_result"
+            assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0] == "0019_rag_provider_telemetry"
     except psycopg.Error:
         pytest.fail("No se confirmó el acceso PostgreSQL de pruebas", pytrace=False)
     return values

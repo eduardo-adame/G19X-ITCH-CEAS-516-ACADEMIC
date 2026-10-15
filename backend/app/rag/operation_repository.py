@@ -87,19 +87,30 @@ class RagOperationRepository:
         generated_response: str | None,
         safe_result_message: str | None,
         policy_result: str | None = None,
+        telemetry=None,
+        retry_of_operation_id: UUID | None = None,
     ) -> UUID:
         row_id = uuid5(NAMESPACE_URL, f"riesgo-legal:rag-operation:{operation_id}")
+        # Telemetría del proveedor (F-14): solo conteos, tiempos y causa técnica; nunca contenido.
+        if telemetry is None:
+            attempts = rate_limited = wait_ms = latency_ms = provider_cause = None
+        else:
+            attempts, rate_limited = telemetry.http_attempts, telemetry.rate_limit_count
+            wait_ms, latency_ms, provider_cause = telemetry.wait_ms, telemetry.latency_ms, telemetry.failure_cause
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO app.rag_operation "
                 "(id, user_id, session_id, query_sha256, state, generated_response, "
                 "safe_result_message, context_reference_id, operation_id, correlation_id, "
-                "operation_status, generation_status, safe_cause_code, policy_result) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "operation_status, generation_status, safe_cause_code, policy_result, "
+                "provider_http_attempts, provider_rate_limit_count, provider_wait_ms, provider_latency_ms, "
+                "provider_failure_cause, retry_of_operation_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     row_id, user_id, session_id, query_sha256, state, generated_response,
                     safe_result_message, context_reference_id, operation_id, correlation_id,
                     operation_status, generation_status, safe_cause_code, policy_result,
+                    attempts, rate_limited, wait_ms, latency_ms, provider_cause, retry_of_operation_id,
                 ),
             )
         return row_id

@@ -165,7 +165,8 @@ describe('SRS_REQUIRED: estados canónicos, referencias y límites de exposició
     expect(screen.getByRole('region', { name: 'Fuentes autorizadas' })).toBeVisible()
     expect(screen.queryByText(explanations.EVIDENCIA_INSUFICIENTE)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Respuesta generada' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reintentar la misma operación' })).toBeVisible()
+    // F-14: tras un fallo técnico el reintento crea una operación nueva (la fallida no se reutiliza).
+    expect(screen.getByRole('button', { name: 'Reintentar con una nueva operación' })).toBeVisible()
   })
 
   it.each(['local', 'RAG'])('gate de foco oculta pregunta enviada y respuesta de %s sin borrar borrador', async (kind) => {

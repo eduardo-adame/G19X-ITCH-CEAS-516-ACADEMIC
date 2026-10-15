@@ -173,12 +173,13 @@ def test_revision_chain_has_single_0016_head(database):
     engine, config = database
     script = ScriptDirectory.from_config(config)
     # 0017 solo agrega la fecha declarada del documento sobre 0016.
-    assert script.get_heads() == ["0018_rag_policy_result"]
+    assert script.get_heads() == ["0019_rag_provider_telemetry"]
+    assert script.get_revision("0019_rag_provider_telemetry").down_revision == "0018_rag_policy_result"
     assert script.get_revision("0018_rag_policy_result").down_revision == "0017_declared_document_date"
     assert script.get_revision("0017_declared_document_date").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PREVIOUS_REVISION
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == "0018_rag_policy_result"
+        assert conn.execute(sa.text("SELECT version_num FROM public.alembic_version")).scalar_one() == "0019_rag_provider_telemetry"
 
 
 @pytest.mark.requires_db
@@ -472,3 +473,88 @@ def test_audit_schema_roles_and_runtime_grants_remain_unchanged():
         assert after_resource == before_resource
         assert after_roles == before_roles
         assert after_privileges == before_privileges
+
+
+# --- 0019: telemetría del proveedor y vínculo de reintento técnico (F-14) ---
+
+_TELEMETRY_COLUMNS = ("provider_http_attempts", "provider_rate_limit_count", "provider_wait_ms", "provider_latency_ms",
+                      "provider_failure_cause", "retry_of_operation_id")
+
+
+def _insert_with_telemetry(conn, user_id, session_id, telemetry, **overrides):
+    values = _operation_values(**overrides)
+    values.update(user_id=user_id, session_id=session_id, **{name: telemetry.get(name) for name in _TELEMETRY_COLUMNS})
+    conn.execute(
+        sa.text(
+            "INSERT INTO app.rag_operation "
+            "(id, user_id, session_id, query_sha256, state, generated_response, safe_result_message, context_reference_id, "
+            "operation_id, correlation_id, operation_status, generation_status, safe_cause_code, "
+            + ", ".join(_TELEMETRY_COLUMNS) + ") VALUES (:id, :user_id, :session_id, :query, :state, :response, :message, "
+            ":context, :operation, :correlation, :operation_status, :generation_status, :cause, "
+            + ", ".join(f":{name}" for name in _TELEMETRY_COLUMNS) + ")"
+        ),
+        values,
+    )
+    return values
+
+
+_FAILED = {"state": None, "operation_status": "FAILED", "generation_status": "FAILED", "response": None, "message": "Límite de uso"}
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+@pytest.mark.parametrize(("telemetry", "overrides"), [
+    ({"provider_http_attempts": 2, "provider_rate_limit_count": 1, "provider_wait_ms": 2000, "provider_latency_ms": 3100}, {}),
+    ({"provider_http_attempts": 0, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 5,
+      "provider_failure_cause": "LOCAL_CAPACITY_EXHAUSTED"}, {**_FAILED, "cause": "LOCAL_CAPACITY_EXHAUSTED"}),
+    ({"provider_http_attempts": 3, "provider_rate_limit_count": 3, "provider_wait_ms": 3000, "provider_latency_ms": 4000,
+      "provider_failure_cause": "PROVIDER_RATE_LIMITED"}, {**_FAILED, "cause": "PROVIDER_RATE_LIMITED"}),
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 900,
+      "provider_failure_cause": "PROVIDER_CONTRACT_FAILURE"}, {**_FAILED, "cause": "INVALID_PROVIDER_OUTPUT"}),
+    ({}, {}),
+])
+def test_0019_accepts_valid_provider_telemetry(connection, telemetry, overrides):
+    user_id, session_id = _seed_principal(connection)
+    _insert_with_telemetry(connection, user_id, session_id, telemetry, **overrides)
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+@pytest.mark.parametrize(("telemetry", "overrides"), [
+    ({"provider_http_attempts": 4, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 0}, {}),
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 2, "provider_wait_ms": 0, "provider_latency_ms": 0}, {}),
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 0, "provider_wait_ms": -1, "provider_latency_ms": 0}, {}),
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 0,
+      "provider_failure_cause": "PROVIDER_TIMEOUT"}, {}),                                    # causa con generación correcta
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 0},
+     {**_FAILED, "cause": "PROVIDER_TIMEOUT"}),                                               # fallo sin causa del proveedor
+    ({"provider_http_attempts": 1, "provider_rate_limit_count": 0, "provider_wait_ms": 0, "provider_latency_ms": 0,
+      "provider_failure_cause": "DESCONOCIDA"}, {**_FAILED, "cause": "PROVIDER_TIMEOUT"}),
+    ({"provider_http_attempts": 1}, {}),                                                      # telemetría parcial
+])
+def test_0019_rejects_incoherent_provider_telemetry(connection, telemetry, overrides):
+    user_id, session_id = _seed_principal(connection)
+    savepoint = connection.begin_nested()
+    try:
+        with pytest.raises(IntegrityError):
+            _insert_with_telemetry(connection, user_id, session_id, telemetry, **overrides)
+    finally:
+        savepoint.rollback()
+
+
+@pytest.mark.requires_db
+@pytest.mark.data_schema
+def test_0019_retry_reference_must_point_to_an_existing_other_operation(connection):
+    user_id, session_id = _seed_principal(connection)
+    failed = _insert_with_telemetry(connection, user_id, session_id, {}, **{**_FAILED, "cause": "PROVIDER_TIMEOUT",
+                                                                              "generation_status": "NOT_REQUESTED"})
+    _insert_with_telemetry(connection, user_id, session_id, {"retry_of_operation_id": failed["operation"]})
+    for reference in (uuid.uuid4(), "self"):
+        savepoint = connection.begin_nested()
+        try:
+            with pytest.raises(IntegrityError):
+                own = uuid.uuid4()
+                _insert_with_telemetry(connection, user_id, session_id,
+                                       {"retry_of_operation_id": own if reference == "self" else reference}, operation=own)
+        finally:
+            savepoint.rollback()

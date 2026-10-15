@@ -67,3 +67,18 @@ describe('generación sustentada (F-04)', () => {
     expect(() => adaptRagResponse(withText)).toThrow()
   })
 })
+
+
+describe('F-14: Retry-After en la respuesta', () => {
+  function failure(retry) { const dto = dtoFixture('EVIDENCIA_INSUFICIENTE'); return { ...dto, state: null, operation_status: 'FAILED', generation_status: 'FAILED', retry_after_seconds: retry } }
+  it('acepta retry_after_seconds solo en fallos técnicos', () => {
+    expect(adaptRagResponse(failure(7)).retryAfterSeconds).toBe(7)
+    expect(adaptRagResponse(failure(null)).retryAfterSeconds).toBeNull()
+    expect(adaptRagResponse(dtoFixture()).retryAfterSeconds).toBeNull()
+    const ok = dtoFixture(); ok.retry_after_seconds = 5
+    expect(() => adaptRagResponse(ok)).toThrow()
+  })
+  it.each([0, -1, 3601, 1.5, '7'])('rechaza retry_after_seconds inválido %s', (value) => {
+    expect(() => adaptRagResponse(failure(value))).toThrow()
+  })
+})

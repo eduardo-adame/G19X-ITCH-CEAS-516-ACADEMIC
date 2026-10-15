@@ -12,6 +12,7 @@ export function RagLayout() {
   const location = useLocation()
   const owner = `${session.principal?.id || ''}:${session.generation}`
   const [snapshot, setSnapshot] = useState({ result: null, error: null, busy: false, submission: null, owner })
+  const [retryNotBefore, setRetryNotBefore] = useState(0)
   const [localSnapshot, setLocalSnapshot] = useState(null)
   const [verified, setVerified] = useState(null)
   const [accessPending, setAccessPending] = useState(true)
@@ -59,7 +60,10 @@ export function RagLayout() {
     setSnapshot({ result: null, error: null, busy: true, submission, owner: startedOwner })
     try {
       const result = await requestRag(session.client, submission, controller.current.signal)
-      if (expected === epoch.current && startedOwner === currentOwner.current) setSnapshot({ result, error: null, busy: false, submission, owner: startedOwner })
+      if (expected === epoch.current && startedOwner === currentOwner.current) {
+        setRetryNotBefore(result.technicalFailure && result.retryAfterSeconds ? Date.now() + result.retryAfterSeconds * 1000 : 0)
+        setSnapshot({ result, error: null, busy: false, submission, owner: startedOwner })
+      }
     } catch (cause) {
       if (expected !== epoch.current || startedOwner !== currentOwner.current) return
       const error = cause instanceof ApiError ? cause : new ApiError(503)
@@ -79,7 +83,19 @@ export function RagLayout() {
   }
   const visible = snapshot.owner === owner && session.status === 'authenticated' ? snapshot : { result: null, error: null, busy: false, submission: null }
   const local = localSnapshot?.owner === owner && session.status === 'authenticated' ? localSnapshot : null
-  const value = { ...visible, result: accessPending ? null : visible.result, error: accessPending ? null : visible.error, local: accessPending ? null : local, hasInteraction: Boolean(local || visible.submission || visible.result || visible.error), accessPending, clear, submit, retry: () => !accessPending && visible.submission && execute(visible.submission) }
+  // Reintento: un fallo técnico terminal ya persistido se reintenta como operación nueva (clave nueva y vínculo
+  // a la fallida, que no cambia); un error de red sin resultado reutiliza la misma operación idempotente.
+  // Los estados 1 a 4 y la restricción de alcance no se reintentan por este mecanismo.
+  function retry() {
+    if (accessPending || !visible.submission) return
+    const failed = visible.result
+    if (failed) {
+      if (!failed.technicalFailure || !failed.operationId || Date.now() < retryNotBefore) return
+      return execute(createRagSubmission(visible.submission.payload.query, visible.submission.payload.context_reference_id ?? null, undefined, failed.operationId))
+    }
+    return execute(visible.submission)
+  }
+  const value = { ...visible, result: accessPending ? null : visible.result, error: accessPending ? null : visible.error, local: accessPending ? null : local, hasInteraction: Boolean(local || visible.submission || visible.result || visible.error), accessPending, clear, submit, retry, retryNotBefore }
   return <RagContext.Provider value={value}>{verified === location.key ? <Outlet /> : <Loading label="Comprobando acceso a la consulta…" />}</RagContext.Provider>
 }
 export function useRag() {
