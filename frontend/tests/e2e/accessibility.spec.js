@@ -69,7 +69,9 @@ test.describe('Accesibilidad — Labels y nombres accesibles', () => {
 
   test('los controles de filtro en analítica tienen label', async ({ page }) => {
     await page.goto('/')
-    // Selector de análisis debe tener label accesible
+    await expect(page.getByRole('combobox', { name: 'Periodo', exact: true })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('combobox', { name: 'Tipo de riesgo', exact: true })).toBeVisible()
+    await page.goto('/tendencias')
     await expect(page.getByRole('combobox', { name: /análisis/i })).toBeVisible({ timeout: 8000 })
   })
 

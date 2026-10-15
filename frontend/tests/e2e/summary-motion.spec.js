@@ -103,7 +103,6 @@ test.describe('ROBUSTNESS: motion ejecutivo aprobado', () => {
     await analyticsRoutes(page)
     await page.goto('/')
     await waitForFinal(page)
-    await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
     await page.getByLabel('Periodo', { exact: true }).selectOption('custom')
     await page.getByLabel('Desde', { exact: true }).fill('2026-01-01')
     expect(await page.evaluate(() => window.__kpiMotionBatches.length)).toBe(1)

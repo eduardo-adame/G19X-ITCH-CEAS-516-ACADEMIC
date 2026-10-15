@@ -1,12 +1,14 @@
 import React from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DataTable, KpiRow, KpiSkeleton, TechnicalDetails } from '../../components/data.jsx'
+import { Button } from '../../components/controls.jsx'
 import { formatAuditTimestamp, formatDocumentDate } from '../../shared/presentation.js'
 import {
   exposureEvolutionViewModel,
   formatCompactCurrencyMXN,
   formatCount,
   formatDays,
+  incidentsByAreaViewModel,
   SEVERITIES,
   litigationExposureViewModel,
   severityCompositionViewModel,
@@ -94,15 +96,26 @@ export function EmptyChartState({ chartTitle = '', title = 'Sin datos disponible
   return <div role="region" aria-label={ariaLabel} className={`flex h-[260px] min-w-0 flex-col items-center justify-center rounded-panel border border-dashed border-border bg-secondary/30 p-6 text-center ${className}`}><p className="text-sm font-medium text-secondary">{title}</p>{message && <p className="mt-1 max-w-sm text-xs text-muted">{message}</p>}</div>
 }
 
+// Con un solo periodo con valor no se dibuja una «evolución»: se informa el periodo disponible y, si la
+// selección lo permite, se ofrece ampliarla. La tabla de datos de la gráfica se conserva.
+export function InsufficientHistoryState({ chartTitle, periodText, detail, action }) {
+  return <div role="region" aria-label={`${chartTitle}: historia insuficiente`} className="flex min-w-0 flex-col items-start gap-2 rounded-panel border border-dashed border-border bg-secondary/30 p-5">
+    <p className="text-sm font-medium text-secondary">Historia insuficiente para mostrar una evolución</p>
+    <p className="text-xs text-muted">Solo hay datos de {periodText}{detail ? `: ${detail}` : ''}.</p>
+    {action ? <Button variant="secondary" onClick={action.onClick}>{action.label}</Button> : <p className="text-xs text-muted">No hay más meses con datos dentro de la selección.</p>}
+  </div>
+}
+
 export function ChartLoadingState({ label = 'Cargando…', charts = 1, showKpis = false, kpiSlots = Array.from({ length: 5 }, (_, index) => ({ code: index })) }) {
   return <section role="status" aria-live="polite" aria-label={label}><span className={showKpis ? 'sr-only' : 'text-xs text-secondary'}>{label}</span>{showKpis && <KpiRow>{kpiSlots.map((slot) => <KpiSkeleton key={slot.code} label={slot.name} />)}</KpiRow>}<div className="space-y-6">{Array.from({ length: charts }, (_, index) => <div key={index} aria-hidden="true" className="h-[360px] rounded-panel border border-border bg-secondary" />)}</div></section>
 }
 
-export function ExposureEvolutionChart({ items = [] }) {
+export function ExposureEvolutionChart({ items = [], historyAction = null }) {
   const model = exposureEvolutionViewModel(items)
   const title = 'Evolución de exposición acumulada'
   if (!model.rows.length) return <ChartContainer title={title} subtitle="Importes por severidad y periodo; no se imputan meses ni valores."><EmptyChartState chartTitle={title} /></ChartContainer>
   const columns = [{ key: 'periodText', label: 'Periodo' }, ...model.series.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true }))]
+  if (model.rows.length === 1) return <ChartContainer title={title} subtitle="Importes por severidad y periodo; no se imputan meses ni valores." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}><InsufficientHistoryState chartTitle={title} periodText={model.rows[0].periodText} action={historyAction} /></ChartContainer>
   return <ChartContainer title={title} subtitle="Importes por severidad y periodo; no se imputan meses ni valores." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}>
     <ChartLegend items={model.series} />
     <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><BarChart data={model.rows} margin={{ left: 10, right: 8 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} tickFormatter={formatCompactCurrencyMXN} width={62} /><Tooltip content={<SeriesTooltip series={model.series} />} />{model.series.map((series) => <Bar key={series.key} dataKey={series.key} name={series.label} stackId="exposure" fill={series.color} barSize={32} isAnimationActive={false} />)}</BarChart></ResponsiveContainer></div>
@@ -119,21 +132,25 @@ export function SeverityChart({ items = [] }) {
   </ChartContainer>
 }
 
-export function TemporalChart({ items = [], kpiCode, title, subtitle, unit, emptyMessage }) {
+export function TemporalChart({ items = [], kpiCode, title, subtitle, unit, emptyMessage, historyAction = null }) {
   const rows = temporalSeriesViewModel(items, kpiCode)
   if (!rows.length) return <ChartContainer title={title} subtitle={subtitle}><EmptyChartState chartTitle={title} message={emptyMessage} /></ChartContainer>
+  const table = <DataTable caption={`Datos de ${title}`} columns={[{ key: 'periodText', label: 'Periodo' }, { key: 'valueText', label: 'Valor', numeric: true }]} rows={rows} />
+  const withValue = rows.filter((row) => row.availability === 'DISPONIBLE' && row.value !== null)
+  if (!withValue.length) return <ChartContainer title={title} subtitle={subtitle} footer={table}><EmptyChartState chartTitle={title} title={rows.some((row) => row.availability === 'NO_DISPONIBLE') ? 'No disponible' : 'Sin datos disponibles'} message="Ningún periodo de la selección tiene un valor que representar." /></ChartContainer>
+  if (withValue.length === 1) return <ChartContainer title={title} subtitle={subtitle} footer={table}><InsufficientHistoryState chartTitle={title} periodText={withValue[0].periodText} detail={withValue[0].valueText} action={historyAction} /></ChartContainer>
   const { data, keys } = segmentedLines(rows, 'value')
   const count = kpiCode === 'KPI-LI-05'
   const Graph = count ? BarChart : LineChart
   const axis = chartAxisConfig(count ? AXIS_UNITS.COUNT : AXIS_UNITS.DAYS, rows.map((row) => row.value))
   const gaps = rows.filter((row) => row.availability === 'NO_OBSERVATION')
-  return <ChartContainer title={title} subtitle={subtitle} footer={<DataTable caption={`Datos de ${title}`} columns={[{ key: 'periodText', label: 'Periodo' }, { key: 'valueText', label: 'Valor', numeric: true }]} rows={rows} />}>
+  return <ChartContainer title={title} subtitle={subtitle} footer={table}>
     {gaps.length > 0 && <p className="text-xs text-secondary">Periodos sin observación: {gaps.map((row) => row.periodText).join('; ')}. {count ? 'Estos periodos no generan una barra.' : 'La línea se interrumpe en estos periodos.'}</p>}
     <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><Graph data={count ? rows : data} margin={{ left: 4, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} {...axis} width={48} /><Tooltip filterNull={false} content={<TemporalTooltip rows={rows} unit={unit} />} />{count ? <Bar dataKey="value" name="Nuevos litigios" fill="var(--chart-bar-1)" barSize={32} isAnimationActive={false} /> : keys.map((key) => <Line key={key} type="linear" dataKey={key} stroke="var(--text-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />)}</Graph></ResponsiveContainer></div>
   </ChartContainer>
 }
 
-export function LitigationExposureChart({ items = [] }) {
+export function LitigationExposureChart({ items = [], historyAction = null }) {
   const model = litigationExposureViewModel(items)
   const title = 'Evolución de exposición litigiosa'
   if (!model.rows.length) return <ChartContainer title={title} subtitle="Total litigioso derivado únicamente con la partición completa; severidad alta cuando está disponible."><EmptyChartState chartTitle={title} /></ChartContainer>
@@ -143,6 +160,8 @@ export function LitigationExposureChart({ items = [] }) {
   ]
   const showContext = new Set(model.rows.map((row) => row.contextKey)).size > 1 || model.rows.some((row) => row.contextKey !== '[]')
   const columns = [{ key: 'periodText', label: 'Periodo' }, ...(showContext ? [{ key: 'contextText', label: 'Contexto' }] : []), ...SEVERITIES.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true })), ...(model.hasTotal ? [{ key: 'totalText', label: 'Total', numeric: true, render: (row) => row.complete ? row.totalText : 'Partición incompleta' }] : [])]
+  const plotted = model.rows.filter((row) => Number.isFinite(row.total) || Number.isFinite(row.high))
+  if (plotted.length === 1 && model.traces.length === 1) return <ChartContainer title={title} subtitle="Total disponible solo con alto, medio y bajo del mismo periodo y contexto; no se completan observaciones ausentes." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}><InsufficientHistoryState chartTitle={title} periodText={plotted[0].periodText} detail={plotted[0].complete ? `total ${plotted[0].totalText}` : null} action={historyAction} /></ChartContainer>
   return <ChartContainer title={title} subtitle="Total disponible solo con alto, medio y bajo del mismo periodo y contexto; no se completan observaciones ausentes." footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}>
     <ChartLegend items={series} />
     <div className="space-y-5">{model.traces.map((trace) => {
@@ -151,6 +170,29 @@ export function LitigationExposureChart({ items = [] }) {
       const hasCoordinates = values.some((value) => typeof value === 'number' && Number.isFinite(value))
       return <div key={trace.id} className="min-w-0 space-y-2">{(model.traces.length > 1 || trace.rows[0].contextKey !== '[]') && <p className="text-xs text-secondary">{trace.label}</p>}{hasCoordinates ? <div className="h-[260px] min-w-0" aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><LineChart data={data} margin={{ left: 10, right: 12 }}><CartesianGrid vertical={false} stroke="var(--border-subtle)" /><XAxis dataKey="month" {...axisProps} tickFormatter={monthTick} /><YAxis {...axisProps} {...chartAxisConfig(AXIS_UNITS.MXN, values)} width={62} /><Tooltip filterNull={false} content={<ExposureTooltip />} />{series.flatMap((seriesItem) => keys[seriesItem.key].map((key) => <Line key={key} type="linear" dataKey={key} name={seriesItem.label} stroke={seriesItem.color} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />))}</LineChart></ResponsiveContainer></div> : <EmptyChartState chartTitle={title} title={trace.rows.every((row) => row.sources?.every((item) => item.availability === 'NO_DISPONIBLE')) ? 'No disponible' : 'Sin datos disponibles'} message="Las observaciones recibidas se conservan en la tabla; no hay una serie representable de total o severidad alta." />}</div>
     })}</div>
+  </ChartContainer>
+}
+
+function IncidentsTooltip({ active, payload, series }) {
+  const row = payload?.find((item) => item.payload)?.payload
+  if (!active || !row) return null
+  return <TooltipSurface title={row.area} rows={series.map(({ key, label }) => ({ label, value: row[`${key}Text`] }))} />
+}
+
+// Incidentes de incumplimiento por área (DESIGN §16.4): barras horizontales apiladas por severidad explícita,
+// periodo más reciente de la selección, sin total derivado y con tabla equivalente.
+export function IncidentsByAreaChart({ items = [] }) {
+  const model = incidentsByAreaViewModel(items)
+  const title = 'Incidentes por área'
+  const subtitle = model.periodText ? `Incidentes de incumplimiento por área y severidad · ${model.periodText}.` : 'Incidentes de incumplimiento por área y severidad.'
+  if (!model.series.length) return <ChartContainer title={title} subtitle={subtitle}><EmptyChartState chartTitle={title} title={model.unavailable ? 'No disponible' : 'Sin datos disponibles'} message={model.unavailable ? 'Las observaciones de incidentes del periodo no tienen valor disponible.' : 'Sin observaciones de incidentes para los filtros activos.'} /></ChartContainer>
+  const columns = [{ key: 'area', label: 'Área' }, ...SEVERITIES.map(({ key, label }) => ({ key: `${key}Text`, label, numeric: true }))]
+  // Largo de cada barra apilada, solo para escalar el eje: no se presenta como total (D-UX-7).
+  const values = model.rows.map((row) => model.series.reduce((sum, { key }) => sum + (row[key] || 0), 0))
+  const axis = chartAxisConfig(AXIS_UNITS.COUNT, values)
+  return <ChartContainer title={title} subtitle={subtitle} footer={<DataTable caption={`Datos de ${title}`} columns={columns} rows={model.rows} />}>
+    <ChartLegend items={model.series} />
+    <div className="min-w-0" style={{ height: Math.max(160, model.rows.length * 40 + 40) }} aria-hidden="true"><ResponsiveContainer width="100%" height="100%" minWidth={0}><BarChart layout="vertical" data={model.rows} margin={{ left: 4, right: 12 }}><CartesianGrid horizontal={false} stroke="var(--border-subtle)" /><XAxis type="number" {...axisProps} {...axis} /><YAxis type="category" dataKey="area" {...axisProps} width={112} /><Tooltip content={<IncidentsTooltip series={model.series} />} />{model.series.map((series) => <Bar key={series.key} dataKey={series.key} name={series.label} stackId="incidents" fill={series.color} barSize={18} isAnimationActive={false} />)}</BarChart></ResponsiveContainer></div>
   </ChartContainer>
 }
 

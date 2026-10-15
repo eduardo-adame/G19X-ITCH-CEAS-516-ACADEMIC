@@ -115,6 +115,35 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(screen.queryByText(/no produjo señales/)).not.toBeInTheDocument()
     expect(screen.getByText(payload.items[0].executive_summary)).not.toBeVisible()
   })
+  it('el Resumen ignora parámetros antiguos de análisis histórico y muestra las alertas vigentes bajo los KPI', async () => {
+    const client = fixture({ search: `?period=last_6_months&analysis_mode=historical&analytic_run_id=${runId}`, analysis: analysisPage(true) })
+    await screen.findByText('1 alerta')
+    expect(client.acquireRead.mock.calls.filter(([path]) => path.startsWith('/dashboard/analysis')).every(([path]) => path === '/dashboard/analysis?risk_type=all')).toBe(true)
+    const kpis = screen.getByLabelText('Indicadores principales'); const alerts = screen.getByRole('heading', { name: 'Requiere atención' })
+    const concentration = screen.getByRole('heading', { name: 'Dónde se concentra' })
+    expect(kpis.compareDocumentPosition(alerts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alerts.compareDocumentPosition(concentration) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+  it('una gráfica temporal con un solo periodo muestra historia insuficiente y amplía la selección', async () => {
+    const client = fixture({ view: 'contracts', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    expect(await screen.findByText('Historia insuficiente para mostrar una evolución')).toBeVisible()
+    expect(screen.getByText('Solo hay datos de enero 2030: 13.6 días.')).toBeVisible()
+    expect(screen.queryAllByTestId('chart')).toHaveLength(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Ver últimos 6 meses' }))
+    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_6_months&risk_type=contractual')).toBe(true))
+  })
+  it('con 12 meses y un solo periodo no ofrece ampliar la selección', async () => {
+    fixture({ view: 'contracts', search: '?period=last_12_months', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    expect(await screen.findByText('No hay más meses con datos dentro de la selección.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Ver últimos/ })).not.toBeInTheDocument()
+  })
+  it('Litigios muestra solo el contexto de asuntos litigiosos y Contratos el contractual', async () => {
+    const items = [observation('KPI-RC-01', { value: '5' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Litigio', estado: 'Abierto' }, value: '2' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Contrato', estado: 'Vigente' }, value: '3' })]
+    fixture({ view: 'litigation', kpis: kpiPage(items) })
+    expect(await screen.findByText(/^Contexto operativo \(1\)$/)).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).toHaveTextContent('Tipo de asunto: Litigio')
+    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).not.toHaveTextContent('Tiempo de ciclo')
+  })
   it('no presenta link de contexto sin document.query', async () => {
     fixture({ analysis: analysisPage(true), roles: [] })
     await screen.findByText('1 alerta'); expect(screen.queryByRole('link', { name: 'Verificar evidencia documental' })).not.toBeInTheDocument()
@@ -127,8 +156,8 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(screen.queryAllByRole('columnheader', { name: 'Fecha de cálculo' })).toHaveLength(0)
     expect(screen.getByText(/Actualizado el \d{1,2} (ene|feb) 2030, \d{2}:\d{2}$/)).toBeVisible()
   })
-  it('aplica filtros históricos y back/forward restaura selección', async () => {
-    const client = fixture(); await screen.findByText('0 alertas')
+  it('Tendencias aplica filtros históricos y back/forward restaura selección', async () => {
+    const client = fixture({ view: 'trends' }); await screen.findByText('0 alertas')
     await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'last_3_months')
     await userEvent.selectOptions(screen.getByLabelText('Tipo de riesgo'), 'compliance')
@@ -147,9 +176,9 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     const client = fixture({ search: '?period=last_6_months&analysis_mode=current' }); await screen.findByText('0 alertas')
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'current_month')
     await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=all')).toBe(true))
-    expect(screen.getByLabelText('Análisis')).toHaveValue('current')
+    expect(screen.queryByLabelText('Análisis')).not.toBeInTheDocument()
     expect(client.acquireRead.mock.calls.filter(([path]) => path.startsWith('/dashboard/analysis')).every(([path]) => path === '/dashboard/analysis?risk_type=all')).toBe(true)
-    expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('analysis_mode=current')
+    expect(screen.getByLabelText('Dirección actual')).not.toHaveTextContent('analysis_mode=historical')
   })
   it('ofrece mes actual explícito y conserva la selección al navegar atrás', async () => {
     const client = fixture({ search: '?period=last_6_months&analysis_mode=current' }); await screen.findByText('0 alertas')
@@ -166,9 +195,7 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(within(screen.getByLabelText('Periodo')).getByRole('option', { name: 'Últimos 6 meses' })).toBeInTheDocument()
   })
   it('fechas custom inválidas no disparan lectura histórica', async () => {
-    const client = fixture(); await screen.findByText('0 alertas')
-    await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
-    await screen.findByText('0 alertas'); const before = client.acquireRead.mock.calls.length
+    const client = fixture(); await screen.findByText('0 alertas'); const before = client.acquireRead.mock.calls.length
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'custom')
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar rango' }))
@@ -214,7 +241,8 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(within(screen.getByLabelText('Indicadores principales')).getAllByText('Sin observación')).toHaveLength(5)
     expect(screen.getByText('Evolución de exposición acumulada')).toBeVisible()
     expect(screen.getByText('Composición por severidad')).toBeVisible()
-    expect(screen.getAllByText('Sin datos disponibles')).toHaveLength(2)
+    expect(screen.getAllByText('Sin datos disponibles')).toHaveLength(3)
+    expect(screen.getByLabelText('Incidentes por área: sin datos disponibles')).toBeInTheDocument()
     expect(screen.getByLabelText('Evolución de exposición acumulada: sin datos disponibles')).toBeInTheDocument()
     expect(screen.getByLabelText('Composición por severidad: sin datos disponibles')).toBeInTheDocument()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
@@ -245,7 +273,8 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
   })
   it('contratos con dataset vacío preserva ChartContainer para tiempo de ciclo y muestra EmptyChartState contextual', async () => {
     fixture({ view: 'contracts', kpis: kpiPage([]) })
-    expect(await screen.findByText('Tiempo de ciclo del contrato')).toBeVisible()
+    expect(await screen.findByText('Tiempo de ciclo del contrato', { selector: 'figcaption' })).toBeVisible()
+    expect(screen.getByLabelText('Cómo se calculan los indicadores contractuales')).toHaveTextContent('vencen entre hoy y los próximos 60 días')
     expect(screen.getByText('No existen observaciones contractuales para los filtros seleccionados.')).toBeVisible()
     expect(screen.getByLabelText('Tiempo de ciclo del contrato: sin datos disponibles')).toBeInTheDocument()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
@@ -274,9 +303,10 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
 })
 
 describe('SRS_REQUIRED: certificación visual de partición y hallazgos', () => {
-  const exposureItems = (levels) => adaptKpis(kpiPage(levels.map((nivel_severidad) => observation('KPI-LI-01', {
+  const exposureItems = (levels) => adaptKpis(kpiPage(['2030-01-01', '2030-02-01'].flatMap((period_start) => levels.map((nivel_severidad) => observation('KPI-LI-01', {
+    period_start, period_end: period_start === '2030-01-01' ? '2030-01-31' : '2030-02-28',
     dimensions: { nivel_severidad }, value: { alto: '200000', medio: '90000', bajo: '25000' }[nivel_severidad],
-  })))).items
+  }))))).items
 
   it('la partición completa muestra la leyenda y el total visual de 315000', () => {
     render(<LitigationExposureChart items={exposureItems(['alto', 'medio', 'bajo'])} />)

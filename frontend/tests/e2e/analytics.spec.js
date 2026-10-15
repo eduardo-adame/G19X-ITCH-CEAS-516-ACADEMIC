@@ -57,11 +57,19 @@ test.describe('Analítica — Resumen ejecutivo', () => {
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'current_month')).toBe(true)
       await page.getByLabel('Periodo', { exact: true }).selectOption('last_6_months')
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
-      await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('current')
-      await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
-      await expect.poll(() => requests.some((url) => url.pathname.endsWith('/analysis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
+      await expect(page.getByLabel('Análisis', { exact: true })).toHaveCount(0)
+      expect(requests.filter((url) => url.pathname.endsWith('/analysis')).every((url) => !url.searchParams.has('period'))).toBe(true)
     })
   }
+  test('Tendencias conserva el análisis histórico por periodo', async ({ page }) => {
+    mockAnalytics(page, [])
+    const requests = []
+    page.on('request', (request) => { if (request.url().includes('/api/dashboard/')) requests.push(new URL(request.url())) })
+    await page.goto('/tendencias')
+    await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('current')
+    await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
+    await expect.poll(() => requests.some((url) => url.pathname.endsWith('/analysis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
+  })
   test('carga la página con título correcto', async ({ page }) => {
     mockAnalytics(page, [])
     await page.goto('/')
@@ -111,18 +119,18 @@ test.describe('Analítica — Riesgo contractual', () => {
   test('preserva contenedor de gráfica con empty state contextual cuando no hay datos', async ({ page }) => {
     mockAnalytics(page, [])
     await page.goto('/contratos')
-    await expect(page.getByText(/tiempo de ciclo del contrato/i)).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('figcaption').getByText(/tiempo de ciclo del contrato/i)).toBeVisible({ timeout: 8000 })
     await expect(page.getByText(/no existen observaciones contractuales para los filtros seleccionados/i)).toBeVisible({ timeout: 8000 })
   })
 
   test('filtros de periodo no cambian semántica de datos', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-CC-01', '7')])
     await page.goto('/contratos')
-    // Cambiar a histórico no inventa datos
-    const modeSelect = page.getByRole('combobox', { name: /análisis/i })
-    await modeSelect.selectOption('historical')
-    await expect(modeSelect).toHaveValue('historical')
-    await expect(page.getByText(/análisis completados dentro del periodo seleccionado/i)).toBeVisible()
+    // Cambiar el periodo no convierte las alertas en históricas ni inventa datos
+    await page.getByLabel('Periodo', { exact: true }).selectOption('last_6_months')
+    await expect(page.getByLabel('Periodo', { exact: true })).toHaveValue('last_6_months')
+    await expect(page.getByRole('heading', { name: 'Requiere atención', exact: true })).toBeVisible()
+    await expect(page.getByText(/las alertas corresponden al último análisis completado/i)).toBeVisible()
   })
 })
 

@@ -229,3 +229,35 @@ export function findingSeverity(dimensions) {
   const value = dimensions?.nivel_severidad
   return SEVERITIES.some(({ key }) => key === value) ? value : null
 }
+
+// Incidentes de incumplimiento (KPI-CN-03) por área y severidad del último periodo con observaciones dentro
+// de la selección (DESIGN §16.4). No se suman periodos ni se calcula un total: cada celda es la observación
+// recibida para esa área y severidad; la ausencia y «No disponible» se conservan como tales.
+export function incidentsByAreaViewModel(items) {
+  const eligible = items.filter((item) => item.kpi_code === 'KPI-CN-03' && typeof item.dimensions?.area === 'string' && item.severity)
+  if (!eligible.length) return { period: null, rows: [], series: [], unavailable: false }
+  const period = eligible.reduce((latest, item) => item.period_start > latest ? item.period_start : latest, eligible[0].period_start)
+  const current = eligible.filter((item) => item.period_start === period)
+  const areas = [...new Set(current.map((item) => item.dimensions.area))].sort((a, b) => a.localeCompare(b, 'es'))
+  const present = new Set()
+  const rows = areas.map((area) => {
+    const row = { id: area, area }
+    for (const { key } of SEVERITIES) {
+      const matches = current.filter((item) => item.dimensions.area === area && item.severity === key)
+      if (matches.length !== 1) { row[`${key}Text`] = matches.length ? 'Observaciones no comparables' : 'Sin observación'; continue }
+      const value = chartNumber(matches[0])
+      if (value === null) { row[`${key}Text`] = 'No disponible'; continue }
+      row[key] = value
+      row[`${key}Text`] = formatDecimal(matches[0].value)
+      present.add(key)
+    }
+    return row
+  })
+  return {
+    period,
+    periodText: current[0].periodText,
+    rows,
+    series: SEVERITIES.filter(({ key }) => present.has(key)),
+    unavailable: !present.size && current.some((item) => item.availability === 'NO_DISPONIBLE'),
+  }
+}
