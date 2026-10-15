@@ -6,22 +6,34 @@ eficiencia operativa y calidad documental.
 
 ---
 
-## 1. Estado actual: entorno de desarrollo
+## 1. Estado actual
 
-Este repositorio contiene la **estructura mínima de arranque** del sistema.
+Este repositorio contiene el MVP implementado. Módulos funcionales:
 
-**No hay funcionalidad de negocio implementada.** En concreto, todavía no existen:
-ingesta de datos, validación y cuarentena, procesamiento documental y OCR, cálculo
-de indicadores, análisis de tendencias, búsqueda semántica, control de acceso ni
-auditoría. Tampoco existe el modelo de datos de la aplicación.
+- **Ingesta:** CSV, XLSX, PDF y DOCX, con detección de formato por contenido, validación
+  estructural y cuarentena unificada.
+- **Procesamiento documental:** OCR (Tesseract) y fecha del documento declarada en la carga
+  manual de PDF/DOCX.
+- **Indicadores y análisis:** cálculo de KPI y análisis proactivo determinista, coordinados
+  por el DAG diario `controlled_ingestion` de Airflow con una cuenta de proceso autorizada.
+- **Búsqueda semántica y RAG:**
+  - recuperación híbrida con BGE-M3 local (vectorial) y BM25, fusión RRF y security
+    trimming previo;
+  - generación sustentada con Groq en una sola llamada;
+  - control de capacidad del proveedor.
+- **Visor documental independiente:** catálogo y apertura de documentos autorizados sin
+  consulta RAG previa.
+- **Seguridad:** autenticación JWT propia, RBAC por roles (Jurídico, Analista y TI) y
+  autorización documental con precedencia DENY > ALLOW > familia > denegación por defecto.
+- **Auditoría:** append-only.
 
-Del mismo modo, el backend no crea tablas, esquemas ni migraciones: la definición
-del modelo de datos se incorporará en una etapa posterior.
+El esquema se administra con Alembic (`backend/migrations`, revisión head
+`0019_rag_provider_telemetry`). El backend no ejecuta migraciones al arrancar: el operador
+las aplica de forma explícita y el runtime verifica la revisión esperada
+(`python -m app.security.runtime_check`).
 
-Las rutas HTTP expuestas por el backend (`/health`, `/health/ready`,
-`/health/embeddings`) son una decisión de diseño de este servicio, cuya finalidad
-es permitir comprobar el estado del proceso, de sus dependencias y del modelo de
-embeddings.
+La especificación vigente es el SRS del workspace. Las rutas HTTP de salud se describen
+en §8.
 
 ---
 
@@ -126,6 +138,10 @@ lo que permite comprobar que el recuento de servicios lógicos sigue siendo cuat
 
 El sistema **no** requiere Redis, RabbitMQ, Elasticsearch, nginx como servicio
 independiente, un segundo PostgreSQL ni un servicio de embeddings.
+
+**Base de datos del backend.** `RUNTIME_POSTGRES_DB` (opcional) selecciona una base existente
+para el backend, independiente de la base inicial `POSTGRES_DB` del contenedor PostgreSQL.
+Vacía conserva `POSTGRES_DB`. No crea, copia ni migra datos.
 
 **Un único worker del backend.** El control de capacidad del proveedor
 generativo vive en memoria del proceso: concurrencia, RPM, TPM y enfriamiento
@@ -282,12 +298,22 @@ que no depende de `ENVIRONMENT`.
 - `.env.example` solo contiene placeholders identificables como `CHANGE_ME_...`.
 - Sin credenciales por defecto: Compose exige definirlas.
 - El backend se ejecuta con un usuario **sin privilegios de root** (`appuser`, UID 10001).
-- CORS restringido a orígenes explícitos; sin comodín y sin credenciales.
+- CORS restringido a orígenes explícitos y sin comodín. Las credenciales del navegador solo
+  se usan para la cookie de refresh (HttpOnly, SameSite=Strict, ruta `/api/auth`); el token
+  de acceso viaja en `Authorization: Bearer`.
 - Los mensajes de error no filtran la contraseña de la base de datos.
 - nginx no expone archivos ocultos y aplica cabeceras básicas de endurecimiento.
 
-La autenticación y el control de acceso forman parte de una etapa posterior y
-**no** están presentes todavía.
+- Autenticación JWT propia con sesiones invalidables. Autorización funcional por RBAC
+  y autorización documental independiente. Auditoría append-only, garantizada por los
+  privilegios de la base de datos.
+- La documentación interactiva de la API está desactivada por defecto
+  (`API_DOCS_ENABLED=false`), y la sonda de embeddings exige `technical_config.manage`.
+- Groq: el modelo (`openai/gpt-oss-120b`) y el endpoint (`https://api.groq.com/openai/v1`)
+  son una decisión técnica fijada por el MVP, con un cliente de origen HTTPS fijo. No se
+  configuran por entorno. Las variables Groq funcionales son `GROQ_API_KEY`,
+  `GROQ_TIMEOUT_SECONDS`, `GROQ_MAX_REQUEST_BYTES` y las de capacidad y límites de tasa
+  (`GROQ_MAX_CONCURRENCY`, `GROQ_RPM_LIMIT`, `GROQ_TPM_LIMIT`, etc.).
 
 ---
 
