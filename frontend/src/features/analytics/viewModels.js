@@ -261,3 +261,24 @@ export function incidentsByAreaViewModel(items) {
     unavailable: !present.size && current.some((item) => item.availability === 'NO_DISPONIBLE'),
   }
 }
+
+// Volumen de asuntos (KPI-EO-01) como tabla Tipo de asunto × Estado del último periodo de la selección.
+// Solo reordena valores recibidos: no suma celdas ni calcula totales. Si una celda tuviera más de una
+// observación (otra dimensión no prevista), no se arma la tabla y se conserva el listado plano.
+export function matterVolumePivot(items) {
+  const rows = items.filter((row) => row.kpi_code === 'KPI-EO-01' && typeof row.dimensions?.tipo_asunto === 'string' && typeof row.dimensions?.estado === 'string')
+  if (!rows.length) return null
+  const latest = rows.reduce((max, row) => row.period_start > max ? row.period_start : max, rows[0].period_start)
+  const current = rows.filter((row) => row.period_start === latest)
+  if (current.some((row) => Object.keys(row.dimensions).some((key) => !['tipo_asunto', 'estado'].includes(key)))) return null
+  const cells = new Map()
+  for (const row of current) {
+    const key = JSON.stringify([row.dimensions.tipo_asunto, row.dimensions.estado])
+    if (cells.has(key)) return null
+    cells.set(key, row.valueText)
+  }
+  const collator = new Intl.Collator('es-MX')
+  const types = [...new Set(current.map((row) => row.dimensions.tipo_asunto))].sort(collator.compare)
+  const states = [...new Set(current.map((row) => row.dimensions.estado))].sort(collator.compare)
+  return { periodStart: latest, periodText: current[0].periodText, states, rows: types.map((type) => ({ id: type, type, values: Object.fromEntries(states.map((state) => [state, cells.get(JSON.stringify([type, state])) ?? null])) })) }
+}

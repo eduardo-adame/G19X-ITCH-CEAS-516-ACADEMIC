@@ -1,30 +1,65 @@
 import React, { useState } from 'react'
-import { Button } from '../../components/controls.jsx'
+import { Button, Input } from '../../components/controls.jsx'
 import { Modal } from '../../components/layout.jsx'
+import { Badge } from '../../components/data.jsx'
 import { ErrorState } from '../../components/feedback.jsx'
 import { ApiError } from '../../api/errors.js'
 import { object } from './adapters.js'
 import { newOperationId, useOperation } from './api.js'
 
+// El formulario solo se ofrece cuando todos los valores son texto o nulos: así reproduce exactamente
+// el mismo payload que su JSON equivalente. Cualquier otra forma se corrige en modo JSON.
+export function formFields(payload) {
+  if (!object(payload) || !Object.keys(payload).length || !Object.values(payload).every((value) => value === null || typeof value === 'string')) return null
+  return Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value ?? '']))
+}
+// Un campo originalmente nulo que se deja vacío vuelve a ser nulo; el resto conserva el texto escrito.
+export function payloadFromFields(fields, source) {
+  return Object.fromEntries(Object.keys(fields).map((key) => [key, fields[key] === '' && source[key] === null ? null : fields[key]]))
+}
+const shown = (value) => value === null ? 'Sin valor' : value === '' ? 'Vacío' : typeof value === 'string' ? value : JSON.stringify(value)
+
 export function QuarantineEditor({ item, onClose, onConfirmed }) {
-  const [candidate, setCandidate] = useState(() => JSON.stringify(item.candidate_payload ?? item.original_payload, null, 2))
+  const source = item.candidate_payload ?? item.original_payload
+  const initialFields = formFields(source)
+  const [mode, setMode] = useState(initialFields ? 'form' : 'json')
+  const [fields, setFields] = useState(initialFields)
+  const [base, setBase] = useState(source)
+  const [candidate, setCandidate] = useState(() => JSON.stringify(source, null, 2))
   const [inputError, setInputError] = useState(null)
+  const [modeError, setModeError] = useState(null)
   const [identity] = useState(newOperationId)
   const mutation = useOperation()
   const locked = mutation.busy || Boolean(mutation.result) || Boolean(mutation.error && ![403, 409, 422].includes(mutation.error.status))
+  function toJson() { setCandidate(JSON.stringify(payloadFromFields(fields, base), null, 2)); setMode('json'); setModeError(null) }
+  function toForm() {
+    let parsed = null
+    try { parsed = JSON.parse(candidate) } catch { /* Se informa abajo sin perder el texto escrito. */ }
+    const next = formFields(parsed)
+    if (!next) { setModeError('El JSON debe ser un objeto con valores de texto o vacíos para editarlo como formulario.'); return }
+    setFields(next); setBase(parsed); setMode('form'); setModeError(null)
+  }
   async function submit(event) {
     event.preventDefault(); if (locked || !item.canCorrect) return
     let corrected
-    try { corrected = JSON.parse(candidate); if (!object(corrected) || !Object.keys(corrected).length) throw new Error() } catch { setInputError(new ApiError(422)); return }
+    if (mode === 'form') corrected = payloadFromFields(fields, base)
+    else {
+      try { corrected = JSON.parse(candidate); if (!object(corrected) || !Object.keys(corrected).length) throw new Error() } catch { setInputError(new ApiError(422)); return }
+    }
     setInputError(null)
     const result = await mutation.execute('quarantine.reinject', (api) => api.reinject(item.id, corrected, identity))
     if (result) { setCandidate(''); onConfirmed(result) }
   }
   return <Modal open title="Corregir registro pendiente" onClose={onClose}><form onSubmit={submit} className="space-y-4">
-    <div><h3 className="text-sm font-semibold">Original rechazado — solo lectura</h3><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-control bg-secondary p-3 text-xs">{JSON.stringify(item.original_payload, null, 2)}</pre></div>
-    <div className="space-y-1"><label htmlFor="corrected-candidate" className="block text-xs font-medium text-secondary">Candidato corregido (JSON)</label><textarea id="corrected-candidate" className="control min-h-48 resize-y font-mono text-xs" required disabled={locked} value={candidate} onChange={(e) => setCandidate(e.target.value)} /></div>
+    <div className="space-y-1 rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] p-3"><Badge variant="warning">Causa</Badge><p className="text-[13px]">{item.cause_description}</p>{item.row_number !== null && item.row_number !== undefined && <p className="text-xs text-secondary">Fila {item.row_number} del archivo de origen.</p>}</div>
+    <details className="technical-details"><summary>Original rechazado — solo lectura</summary><div className="technical-details-body">{object(item.original_payload) ? <dl>{Object.entries(item.original_payload).map(([key, value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{shown(value)}</dd></React.Fragment>)}</dl> : <p>Sin registro original disponible.</p>}</div></details>
+    {mode === 'form' ? <fieldset className="space-y-3" disabled={locked}><legend className="text-xs font-medium text-secondary">Valores corregidos</legend>{Object.keys(fields).map((key) => <Input key={key} label={key} value={fields[key]} placeholder={base[key] === null ? 'Sin valor' : undefined} onChange={(event) => setFields({ ...fields, [key]: event.target.value })} />)}</fieldset>
+      : <div className="space-y-1"><label htmlFor="corrected-candidate" className="block text-xs font-medium text-secondary">Candidato corregido (JSON)</label><textarea id="corrected-candidate" className="control min-h-48 resize-y py-2 font-mono text-xs" required disabled={locked} value={candidate} onChange={(e) => setCandidate(e.target.value)} /></div>}
+    <div className="flex flex-wrap items-center gap-3 text-xs">{mode === 'form' ? <Button variant="ghost" disabled={locked} onClick={toJson}>Editar como JSON</Button> : <Button variant="ghost" disabled={locked} onClick={toForm}>Editar como formulario</Button>}{!initialFields && mode === 'json' && <span className="text-muted">Este registro contiene valores que solo pueden corregirse en JSON.</span>}</div>
+    {modeError && <p role="alert" className="text-xs text-[var(--critical)]">{modeError}</p>}
     <p className="text-xs text-muted">La validación del dominio corresponde al servidor; el original no se modifica.</p>
-    {(inputError || mutation.error) && <ErrorState error={inputError || mutation.error} />}
+    {inputError && <ErrorState error={inputError} title="El JSON no es válido" />}
+    {mutation.error && <ErrorState error={mutation.error} title={mutation.error.status === 403 ? undefined : 'No se pudo reinyectar el registro'} />}
     {mutation.result && <p role="status">{mutation.result.message}</p>}
     {mutation.error && locked && <p className="text-sm">Consulta el estado antes de repetir. No se creó otro intento.</p>}
     <div className="flex flex-wrap gap-3"><Button type="submit" busy={mutation.busy} disabled={locked || !item.canCorrect}>Validar y reinyectar</Button><Button variant="secondary" onClick={onClose}>Cerrar</Button></div>

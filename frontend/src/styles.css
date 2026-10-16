@@ -35,7 +35,9 @@
   .kpi-metric { height: var(--kpi-card-height); }
   .kpi-entry { animation: kpi-entry var(--kpi-entry-duration) ease-out both; animation-delay: calc(var(--kpi-entry-index, 0) * var(--kpi-entry-stagger)); }
   /* Scroll horizontal controlado en tablas para evitar overflow no intencional */
-  .table-scroll { overflow-x: auto; border: 1px solid var(--border-default); border-radius: var(--radius-medium); background: var(--background-primary); -webkit-overflow-scrolling: touch; }
+  /* position: relative contiene el caption accesible (sr-only, absoluto): sin ello alarga el documento
+     fuera del área principal y aparece un espacio en blanco al final del desplazamiento. */
+  .table-scroll { position: relative; overflow-x: auto; border: 1px solid var(--border-default); border-radius: var(--radius-medium); background: var(--background-primary); -webkit-overflow-scrolling: touch; }
   .data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
   .data-table th { background: var(--background-secondary); padding: var(--table-header-padding-y) var(--table-cell-padding-x); font-size: 12px; font-weight: 500; color: var(--text-secondary); }
   .data-table td { height: var(--table-row-height); padding: 8px var(--table-cell-padding-x); border-top: 1px solid var(--border-subtle); }

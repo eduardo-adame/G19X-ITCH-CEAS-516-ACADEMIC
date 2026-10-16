@@ -66,7 +66,7 @@ describe('ROBUSTNESS: entrada KPI aprobada, acotada y estable', () => {
     await f.resolveReads()
     expect(metrics()).toHaveLength(5)
     expect(document.querySelectorAll('.kpi-entry')).toHaveLength(0)
-    expect(f.client.acquireRead.mock.calls.slice(-2).map(([path]) => path)).toEqual(initialPaths)
+    expect(f.client.acquireRead.mock.calls.slice(-initialPaths.length).map(([path]) => path).sort()).toEqual([...initialPaths].sort())
   })
   it('cambio material de periodo inicia una entrada para la nueva selección', async () => {
     const f = fixture(); await f.resolveReads()

@@ -212,7 +212,7 @@ test.describe('Analítica — Tabla alternativa a gráfica', () => {
   test('la tabla de observaciones contiene los datos del KPI sintético', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '42')])
     await page.goto('/')
-    await page.getByText(/^Datos de los indicadores \(\d+\)$/).click()
+    // Los datos se muestran sin desplegar ninguna sección.
     const table = page.getByRole('table', { name: 'Datos de los indicadores' })
     await expect(table).toBeVisible({ timeout: 8000 })
     await expect(table).toContainText('42 contratos')

@@ -14,7 +14,8 @@ import { formatAuditTimestamp, formatMonth, formatPeriodRange, formatQuantity, f
 import { writeQuery } from '../../shared/query.js'
 import { analyticsFilters, analyticsPaths, FILTER_VALIDATORS, PERIODS, RISKS } from './api.js'
 import { adaptAnalysis, adaptKpis, alertCountLabel, KPI_CATALOG, ruleLabel } from './adapters.js'
-import { ChartLoadingState, ExposureEvolutionChart, IncidentsByAreaChart, LitigationExposureChart, ObservationTable, SeverityChart, TemporalChart } from './charts.jsx'
+import { AlertsSkeleton, ChartLoadingState, ExposureEvolutionChart, IncidentsByAreaChart, LitigationExposureChart, MatterVolumeTable, ObservationTable, SeverityChart, TemporalChart } from './charts.jsx'
+import { matterVolumePivot } from './viewModels.js'
 import { resolveDomainKpis, resolveExecutiveKpis } from './executiveKpis.js'
 import { describeFinding, evaluatedMonth } from './findingNarrative.js'
 
@@ -130,7 +131,30 @@ function evaluationResult(row) {
   return 'Sin alerta'
 }
 
-function AnalysisContent({ data, mode, principal, selectRun, riskType, heading }) {
+// Detalle del análisis visible: ejecución, ventana y evaluaciones por indicador. El texto registrado por el
+// análisis se conserva sin modificar solo en «Detalle técnico» (D-UX-1): puede venir en formato antiguo.
+function AnalysisRunDetail({ run }) {
+  return <div className="space-y-4 rounded-panel border border-border bg-surface p-5">
+    <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3"><div><dt className="text-muted">Ejecución</dt><dd className="mt-0.5">{formatUserTimestamp(run.completed_at)}</dd></div><div><dt className="text-muted">Ventana de datos</dt><dd className="mt-0.5">{formatPeriodRange(run.window_start.slice(0, 10), run.window_end.slice(0, 10))}</dd></div></dl>
+    <DataTable caption="Evaluaciones del análisis" rows={run.evaluations} columns={[
+      { key: 'name', label: 'Indicador' },
+      ...(run.evaluations.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', render: (row) => row.dimensionsText || '—' }] : []),
+      { key: 'evaluation_period', label: 'Mes', render: (row) => formatMonth(row.evaluation_period) },
+      { key: 'currentText', label: 'Actual', numeric: true, render: (row) => formatQuantity(row.current_value, row.unit) },
+      { key: 'referenceText', label: 'Referencia', numeric: true, render: (row) => formatQuantity(row.reference_value, row.unit) },
+      { key: 'absoluteText', label: 'Variación', numeric: true, render: (row) => formatQuantity(row.absolute_variation, row.unit, { signed: true }) },
+      { key: 'result', label: 'Resultado', render: evaluationResult },
+      { key: 'rules_applied', label: 'Reglas', render: (row) => row.rules_applied.map(ruleLabel).join(' · ') },
+    ]} />
+    <TechnicalDetails><dl><dt>Ejecución</dt><dd className="mono">{formatAuditTimestamp(run.completed_at)}</dd><dt>Ventana de datos</dt><dd className="mono">{formatAuditTimestamp(run.window_start)} – {formatAuditTimestamp(run.window_end)}</dd><dt>Texto registrado</dt><dd className="whitespace-pre-wrap">{run.executive_summary}</dd></dl></TechnicalDetails>
+  </div>
+}
+function AnalysisEvaluations({ data }) {
+  if (!data.items.length) return null
+  return <section className="space-y-3" aria-label="Evaluaciones del análisis"><SectionTitle>Evaluaciones del análisis</SectionTitle><p className="text-xs text-secondary">Comparación de cada indicador con meses anteriores en el último análisis completado.</p>{data.items.map((run) => <AnalysisRunDetail key={run.analytic_run_id} run={run} />)}</section>
+}
+
+function AnalysisContent({ data, mode, principal, selectRun, riskType, heading, showDetail = true }) {
   return <section className="space-y-5" aria-label="Análisis persistido">
     <div className="flex flex-wrap items-center gap-3"><h2 className="text-base font-semibold">{heading || (mode === 'current' ? 'Análisis vigente' : 'Análisis histórico')}</h2><Badge variant={data.alert_count ? 'warning' : 'neutral'}>{alertCountLabel(data.alert_count)}</Badge></div>
     <p className="text-xs text-secondary">Las alertas se generan automáticamente al comparar cada indicador con meses anteriores. No son predicciones ni asesoría jurídica.</p>
@@ -138,24 +162,12 @@ function AnalysisContent({ data, mode, principal, selectRun, riskType, heading }
     {data.items.map((run) => <section key={run.analytic_run_id} className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary"><p>Análisis del {formatUserTimestamp(run.completed_at)} · {alertCountLabel(run.findings.length)}</p>{mode === 'historical' && <Button variant="ghost" onClick={() => selectRun(run.analytic_run_id)}>Seleccionar ejecución</Button>}</div>
       {run.findings.length ? <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">{run.findings.map((finding) => <HumanizedFinding key={finding.id} finding={finding} evaluations={run.evaluations} principal={principal} />)}</div> : <NoFindings riskType={riskType} />}
-      <TechnicalDetails summary="Ver detalle del análisis" className="rounded-panel border border-border bg-surface p-5"><div className="space-y-4">
-        <dl><dt>Ejecución</dt><dd className="mono">{formatAuditTimestamp(run.completed_at)}</dd><dt>Ventana de datos</dt><dd className="mono">{formatAuditTimestamp(run.window_start)} – {formatAuditTimestamp(run.window_end)}</dd><dt>Resumen registrado</dt><dd className="whitespace-pre-wrap">{run.executive_summary}</dd></dl>
-        <DataTable caption="Evaluaciones del análisis" rows={run.evaluations} columns={[
-          { key: 'name', label: 'Indicador' },
-          ...(run.evaluations.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', render: (row) => row.dimensionsText || '—' }] : []),
-          { key: 'evaluation_period', label: 'Mes', render: (row) => formatMonth(row.evaluation_period) },
-          { key: 'currentText', label: 'Actual', numeric: true, render: (row) => formatQuantity(row.current_value, row.unit) },
-          { key: 'referenceText', label: 'Referencia', numeric: true, render: (row) => formatQuantity(row.reference_value, row.unit) },
-          { key: 'absoluteText', label: 'Variación', numeric: true, render: (row) => formatQuantity(row.absolute_variation, row.unit, { signed: true }) },
-          { key: 'result', label: 'Resultado', render: evaluationResult },
-          { key: 'rules_applied', label: 'Reglas', render: (row) => row.rules_applied.map(ruleLabel).join(' · ') },
-        ]} />
-      </div></TechnicalDetails>
+      {showDetail && <AnalysisRunDetail run={run} />}
     </section>)}
   </section>
 }
 
-// Datos plegados por defecto (DESIGN §16.3): la página no se convierte en una tabla de miles de píxeles.
+// Datos visibles sin desplegables (DESIGN §16.9); el contexto se filtra por dominio.
 const DOMAIN_CONTEXT = Object.freeze({
   contracts: (row) => row.kpi_code === 'KPI-RC-01' || (row.kpi_code === 'KPI-EO-01' && row.dimensions.tipo_asunto === 'Contrato'),
   litigation: (row) => row.kpi_code === 'KPI-EO-01' && row.dimensions.tipo_asunto === 'Litigio',
@@ -163,9 +175,12 @@ const DOMAIN_CONTEXT = Object.freeze({
 function ObservationSections({ data, view }) {
   const core = data.items.filter((row) => KPI_CATALOG[row.kpi_code].core)
   const context = data.items.filter((row) => !KPI_CATALOG[row.kpi_code].core && (DOMAIN_CONTEXT[view] ? DOMAIN_CONTEXT[view](row) : true))
+  // La tabla Tipo × Estado sustituye a las filas de volumen de su mismo periodo; el resto se lista debajo.
+  const pivot = matterVolumePivot(context)
+  const rest = pivot ? context.filter((row) => !(row.kpi_code === 'KPI-EO-01' && row.period_start === pivot.periodStart)) : context
   return <>
-    <details className="data-section space-y-3 rounded-panel border border-border bg-surface p-5"><summary className="text-base font-semibold">Datos de los indicadores ({core.length})</summary><div className="mt-4"><ObservationTable items={core} /></div></details>
-    <details className="data-section space-y-3 rounded-panel border border-border bg-surface p-5"><summary className="text-base font-semibold">Contexto operativo ({context.length})</summary><p className="mt-2 text-xs text-secondary">Indicadores complementarios: dan contexto y no generan alertas.</p><div className="mt-4"><ObservationTable items={context} caption="Datos del contexto operativo" /></div></details>
+    <section className="space-y-3" aria-label="Datos de los indicadores"><SectionTitle>Datos de los indicadores ({core.length})</SectionTitle><ObservationTable items={core} /></section>
+    {context.length > 0 && <section className="space-y-3" aria-label="Contexto operativo"><SectionTitle>Contexto operativo</SectionTitle><p className="text-xs text-secondary">Indicadores complementarios: dan contexto y no generan alertas.</p><MatterVolumeTable model={pivot} />{rest.length > 0 && <ObservationTable items={rest} caption="Datos del contexto operativo" />}</section>}
   </>
 }
 
@@ -179,25 +194,45 @@ function ContractDefinitions() {
 
 function SectionTitle({ children }) { return <h2 className="text-base font-semibold">{children}</h2> }
 
-function KpiVisuals({ data, view, riskType, entryIdentity, entryLedger, attention, alerts, historyAction }) {
+// Ventana propia de la sección Evolución (DESIGN §16.9): la consulta la calcula el backend con los mismos
+// filtros de riesgo y entidad; el selector «Periodo» solo gobierna los indicadores.
+export const EVOLUTION_WINDOWS = Object.freeze([{ value: 'last_6_months', label: '6 meses' }, { value: 'last_12_months', label: '12 meses' }])
+function EvolutionSection({ resource, window, onWindow, children }) {
+  let range = null
+  if (resource.state === 'success' && validDate(resource.data?.period_start) && validDate(resource.data?.period_end)) range = formatPeriodRange(resource.data.period_start, resource.data.period_end)
+  return <section className="space-y-4" aria-label="Evolución">
+    <div className="flex flex-wrap items-end justify-between gap-3"><div className="space-y-1"><SectionTitle>Evolución</SectionTitle><p className="h-4 text-xs text-secondary">{range ? `Meses cerrados: ${range}` : resource.state === 'loading' ? 'Cargando la evolución…' : ''}</p></div>
+      <div role="group" aria-label="Ventana de la evolución" className="inline-flex rounded-control border border-border bg-surface p-0.5">{EVOLUTION_WINDOWS.map((item) => <button key={item.value} type="button" aria-pressed={window === item.value} onClick={() => onWindow(item.value)} className={`rounded-[calc(var(--radius-small)-2px)] px-3 py-1.5 text-xs ${window === item.value ? 'bg-[var(--background-selected)] font-medium text-primary' : 'text-secondary hover:text-primary'}`}>Últimos {item.label}</button>)}</div></div>
+    <ValidatedResource resource={resource} adapt={adaptKpis} context="la evolución" loading={<div aria-hidden="true" className="h-[360px] rounded-panel border border-border bg-surface p-5"><div className="skeleton h-3 w-1/3" /><div className="skeleton mt-6 h-[260px] w-full opacity-60" /></div>}>{children}</ValidatedResource>
+  </section>
+}
+
+function KpiVisuals({ data, view, riskType, entryIdentity, entryLedger, attention, alerts, evolution }) {
   if (view === 'summary') return <>
     <ExecutiveMetricGroup key={entryIdentity} data={data} riskType={riskType} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} />
     {alerts}
     <section className="space-y-4" aria-label="Dónde se concentra"><SectionTitle>Dónde se concentra</SectionTitle><div className="grid grid-cols-1 gap-8 xl:grid-cols-2"><div className="min-w-0"><SeverityChart items={data.items} /></div><div className="min-w-0"><IncidentsByAreaChart items={data.items} /></div></div></section>
-    <section className="space-y-4" aria-label="Evolución"><SectionTitle>Evolución</SectionTitle><ExposureEvolutionChart items={data.items} historyAction={historyAction} /></section>
+    {evolution}
   </>
   if (view === 'contracts') return <>
     <DomainMetricGroup data={data} view={view} riskType={riskType} attention={attention} />
     <ContractDefinitions />
     {alerts}
-    <TemporalChart items={data.items} kpiCode="KPI-RC-01" title="Tiempo de ciclo del contrato" subtitle="Días promedio entre la solicitud y la firma, por mes. No se completan meses sin datos." unit="días" emptyMessage="No existen observaciones contractuales para los filtros seleccionados." historyAction={historyAction} />
+    {evolution}
   </>
   if (view === 'litigation') return <>
     <DomainMetricGroup data={data} view={view} riskType={riskType} attention={attention} />
     {alerts}
-    <div className="space-y-8"><SeverityChart items={data.items} /><LitigationExposureChart items={data.items} historyAction={historyAction} /><TemporalChart items={data.items} kpiCode="KPI-LI-05" title="Nuevos litigios por periodo" subtitle="Litigios abiertos en cada mes. No se completan meses sin datos." unit="litigios" emptyMessage="Aún no existen observaciones para los filtros seleccionados." historyAction={historyAction} /></div>
+    <SeverityChart items={data.items} />
+    {evolution}
   </>
   return null
+}
+// Gráficas de evolución por vista sobre la ventana propia de la sección.
+function evolutionCharts(view, items, historyAction) {
+  if (view === 'summary') return <ExposureEvolutionChart items={items} historyAction={historyAction} />
+  if (view === 'contracts') return <TemporalChart items={items} kpiCode="KPI-RC-01" title="Tiempo de ciclo del contrato" subtitle="Días promedio entre la solicitud y la firma, por mes. No se completan meses sin datos." unit="días" emptyMessage="No existen observaciones contractuales para los filtros seleccionados." historyAction={historyAction} />
+  return <div className="space-y-8"><LitigationExposureChart items={items} historyAction={historyAction} /><TemporalChart items={items} kpiCode="KPI-LI-05" title="Nuevos litigios por periodo" subtitle="Litigios abiertos en cada mes. No se completan meses sin datos." unit="litigios" emptyMessage="Aún no existen observaciones para los filtros seleccionados." historyAction={historyAction} /></div>
 }
 
 // Alertas del análisis por indicador y mes evaluado, para señalar la tarjeta del mismo mes.
@@ -214,12 +249,6 @@ function latestCalculation(kpisData) {
   try { return adaptKpis(kpisData).items.reduce((latest, row) => !latest || row.calculated_at > latest ? row.calculated_at : latest, null) } catch { return null }
 }
 
-// Ampliación de la selección cuando una gráfica temporal solo tiene un periodo con valor (DESIGN §16.7).
-function historyActionFor(period, request) {
-  if (period === 'last_12_months') return null
-  const next = period === 'last_6_months' ? ['last_12_months', 'Ver últimos 12 meses'] : ['last_6_months', 'Ver últimos 6 meses']
-  return { label: next[1], onClick: () => request(next[0]) }
-}
 
 export function AnalyticsPage({ view = 'summary' }) {
   const config = configs[view]
@@ -233,6 +262,12 @@ export function AnalyticsPage({ view = 'summary' }) {
   const entryIdentity = `${view}:${paths.kpis}`
   useEffect(() => { if (view !== 'summary') entryLedger.current = null }, [view])
   const kpis = useResource(trends ? null : paths.kpis); const analysis = useResource(paths.analysis)
+  const [evolutionWindow, setEvolutionWindow] = useState('last_6_months')
+  const evolutionPath = analyticsPaths({ ...filters, period: evolutionWindow }).kpis
+  // Si la selección coincide con la ventana de evolución se reutiliza la misma lectura.
+  const sameEvolution = evolutionPath === paths.kpis
+  const evolutionRead = useResource(trends || sameEvolution ? null : evolutionPath)
+  const evolutionResource = sameEvolution ? kpis : evolutionRead
   const [corrected, setCorrected] = useState(false)
   useEffect(() => { if (parsed.corrected) { setCorrected(true); setParams(parsed.canonical, { replace: true }) } }, [parsed.canonical, parsed.corrected, setParams])
   let entities = []
@@ -241,17 +276,22 @@ export function AnalyticsPage({ view = 'summary' }) {
   const attention = attentionSet(analysis.data)
   const changeRun = (id) => setParams(writeQuery({ ...filters.raw, analytic_run_id: id }, FILTER_VALIDATORS))
   const requestPeriod = (period) => setParams(writeQuery({ ...filters.raw, period, period_start: undefined, period_end: undefined, analytic_run_id: undefined, analysis_mode: undefined }, FILTER_VALIDATORS))
-  const historyAction = historyActionFor(filters.period, requestPeriod)
+  // Con historia insuficiente en 6 meses, la propia gráfica ofrece ampliar la ventana a 12.
+  const historyAction = evolutionWindow === 'last_6_months' ? { label: 'Ver últimos 12 meses', onClick: () => setEvolutionWindow('last_12_months') } : null
+  // Evaluaciones visibles al final de las vistas de dominio; en Tendencias van dentro de cada ejecución.
+  const evaluationsBlock = trends || analysis.state !== 'success' ? null : <ValidatedResource resource={analysis} adapt={adaptAnalysis} context="el análisis">{(data) => <AnalysisEvaluations data={data} />}</ValidatedResource>
+  const evolutionBlock = trends ? null : <EvolutionSection resource={evolutionResource} window={evolutionWindow} onWindow={setEvolutionWindow}>{(data) => evolutionCharts(view, data.items, historyAction)}</EvolutionSection>
   const filterBlock = <div className="space-y-3"><Filters filters={filters} entities={entities} setParams={setParams} showAnalysis={trends} /><p className="text-xs text-secondary">{!trends ? 'Las alertas corresponden al último análisis completado; el periodo solo cambia los indicadores.' : filters.analysisMode === 'current' ? 'Se muestran las alertas del último análisis completado.' : 'Se muestran los análisis completados dentro del periodo seleccionado.'}</p>{filters.period !== 'current_month' && !trends && <div className="flex flex-wrap items-center gap-3"><p className="text-xs text-secondary">Este rango incluye solo meses cerrados.</p><Button variant="secondary" onClick={() => requestPeriod('current_month')}>Ver periodo en curso</Button></div>}</div>
-  const analysisBlock = <ValidatedResource resource={analysis} adapt={adaptAnalysis} context="el análisis" loading={<ChartLoadingState label="Cargando…" charts={1} />}>{(data) => <AnalysisContent data={data} mode={filters.analysisMode} principal={principal} selectRun={changeRun} riskType={filters.risk_type} heading={trends ? null : 'Requiere atención'} />}</ValidatedResource>
+  const analysisBlock = <ValidatedResource resource={analysis} adapt={adaptAnalysis} context="el análisis" loading={<AlertsSkeleton />}>{(data) => <AnalysisContent data={data} mode={filters.analysisMode} principal={principal} selectRun={changeRun} riskType={filters.risk_type} heading={trends ? null : 'Requiere atención'} showDetail={trends} />}</ValidatedResource>
   const loadingSlots = trends ? undefined : (view === 'summary' ? resolveExecutiveKpis : resolveDomainKpis)({ view, riskType: filters.risk_type, resourceState: 'LOADING' }).filter((slot) => slot.state !== 'NOT_APPLICABLE')
   const updated = kpis.data ? latestCalculation(kpis.data) : null
   const periodLabel = kpis.state === 'loading' ? 'Cargando periodo de indicadores…' : kpis.error ? 'Periodo de indicadores no disponible.' : validDate(kpis.data?.period_start) && validDate(kpis.data?.period_end) ? `Periodo de los indicadores: ${formatPeriodRange(kpis.data.period_start, kpis.data.period_end)}${updated ? ` · Actualizado el ${formatUserTimestamp(updated)}` : ''}` : 'Sin periodo completo disponible para esta selección.'
   // Las alertas se insertan bajo los KPI cuando los indicadores son legibles; si no, siguen al bloque de lectura.
-  const alertsInside = can(principal, 'dashboard.read') && kpisValid
+  // Mientras cargan los KPI, el bloque de alertas ya ocupa su posición final (sin saltos al llegar los datos).
+  const alertsInside = can(principal, 'dashboard.read') && (kpisValid || kpis.state === 'loading')
   // El rango tiene el mismo espacio al cargar y al recibir la API para que
   // las métricas no se desplacen al sustituir los skeletons por resultados.
-  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8"><p className="h-9 text-xs leading-[18px] text-secondary">{periodLabel}</p><ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} historyAction={historyAction} /><ObservationSections data={data} view={view} /></div>}</ValidatedResource></div>
+  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8"><p className="h-9 text-xs leading-[18px] text-secondary">{periodLabel}</p><ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} beforeAlerts={view === 'contracts' ? <ContractDefinitions /> : null} alerts={alertsInside ? analysisBlock : null} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} evolution={evolutionBlock} /><ObservationSections data={data} view={view} />{evaluationsBlock}</div>}</ValidatedResource></div>
   return <div className="space-y-8"><PageHeader title={config.title} description={config.description} />{corrected && <p role="status" className="text-xs text-secondary">Se retiraron filtros no válidos de la dirección.</p>}{filterBlock}{trends ? analysisBlock : <>{kpiBlock}{!alertsInside && analysisBlock}</>}</div>
 }
 

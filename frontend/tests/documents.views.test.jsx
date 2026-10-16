@@ -39,8 +39,10 @@ describe('SRS_REQUIRED: catálogo y documento completo autorizados', () => {
   })
   it('aplica búsqueda literal, filtros y reinicia paginación sin filtros en URL', async () => {
     const { request } = mount(); await screen.findByRole('link', { name: 'Abrir Documento sintético' })
-    await userEvent.type(screen.getByLabelText('Buscar por nombre'), 'nombre sintético'); await userEvent.selectOptions(screen.getByLabelText('Tipo documental'), 'PDF'); await userEvent.selectOptions(screen.getByLabelText('Familia documental'), 'LITIGIOS'); await userEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }))
-    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('q=nombre+sint%C3%A9tico'), expect.any(Object)))
+    await userEvent.type(screen.getByLabelText('Buscar por nombre'), 'nombre sintético'); await userEvent.selectOptions(screen.getByLabelText('Tipo documental'), 'PDF'); await userEvent.selectOptions(screen.getByLabelText('Familia documental'), 'LITIGIOS')
+    // Sin botón «Aplicar»: los selectores aplican al cambiar y la búsqueda tras una pausa al escribir.
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('q=nombre+sint%C3%A9tico&source_family=LITIGIOS&document_type=PDF'), expect.any(Object)))
+    expect(screen.queryByRole('button', { name: 'Aplicar filtros' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('URL actual')).not.toHaveTextContent('nombre')
   })
   it('catálogo vacío no revela existencia o cantidades excluidas', async () => { mount({ request: vi.fn(async () => ({ items: [], next_cursor: null })) }); expect(await screen.findByText('Sin documentos disponibles')).toBeVisible() })

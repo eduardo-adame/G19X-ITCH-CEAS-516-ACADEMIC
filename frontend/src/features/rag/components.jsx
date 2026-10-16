@@ -70,7 +70,7 @@ export function AnswerText({ text, citations }) {
     const handle = /^\[(E[1-5])\]$/.exec(part)?.[1]
     const citation = handle && byHandle.get(handle)
     if (!citation) return <React.Fragment key={index}>{part}</React.Fragment>
-    return <button key={index} type="button" className="mx-0.5 inline-flex items-center rounded-control border border-border bg-secondary px-1 font-mono text-[11px] font-medium align-baseline hover:bg-[var(--background-selected)]" aria-label={`Ir a la fuente ${handle}: ${citation.documentName}`} onClick={() => focus(citation.fragmentId)}>{part}</button>
+    return <button key={index} type="button" className="mx-0.5 inline-flex items-center rounded-control border border-border bg-secondary px-1 font-mono text-xs font-medium align-baseline hover:bg-[var(--background-selected)]" aria-label={`Ir a la fuente ${handle}: ${citation.documentName}`} onClick={() => focus(citation.fragmentId)}>{part}</button>
   })}</p>
 }
 

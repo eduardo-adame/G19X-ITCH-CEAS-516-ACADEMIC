@@ -2,7 +2,7 @@ import React from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DataTable, KpiRow, KpiSkeleton, TechnicalDetails } from '../../components/data.jsx'
 import { Button } from '../../components/controls.jsx'
-import { formatAuditTimestamp, formatDocumentDate } from '../../shared/presentation.js'
+import { formatDocumentDate, formatUserTimestamp } from '../../shared/presentation.js'
 import {
   exposureEvolutionViewModel,
   formatCompactCurrencyMXN,
@@ -11,6 +11,7 @@ import {
   incidentsByAreaViewModel,
   SEVERITIES,
   litigationExposureViewModel,
+  matterVolumePivot,
   severityCompositionViewModel,
   temporalSeriesViewModel,
 } from './viewModels.js'
@@ -106,8 +107,13 @@ export function InsufficientHistoryState({ chartTitle, periodText, detail, actio
   </div>
 }
 
-export function ChartLoadingState({ label = 'Cargando…', charts = 1, showKpis = false, kpiSlots = Array.from({ length: 5 }, (_, index) => ({ code: index })) }) {
-  return <section role="status" aria-live="polite" aria-label={label}><span className={showKpis ? 'sr-only' : 'text-xs text-secondary'}>{label}</span>{showKpis && <KpiRow>{kpiSlots.map((slot) => <KpiSkeleton key={slot.code} label={slot.name} />)}</KpiRow>}<div className="space-y-6">{Array.from({ length: charts }, (_, index) => <div key={index} aria-hidden="true" className="h-[360px] rounded-panel border border-border bg-secondary" />)}</div></section>
+// alerts ocupa, durante la carga de los KPI, la misma posición que tendrá «Requiere atención» al recibirlos.
+export function ChartLoadingState({ label = 'Cargando…', charts = 1, showKpis = false, kpiSlots = Array.from({ length: 5 }, (_, index) => ({ code: index })), beforeAlerts = null, alerts = null }) {
+  return <section role="status" aria-live="polite" aria-label={label}><span className={showKpis ? 'sr-only' : 'text-xs text-secondary'}>{label}</span>{showKpis && <KpiRow>{kpiSlots.map((slot) => <KpiSkeleton key={slot.code} label={slot.name} />)}</KpiRow>}{(beforeAlerts || alerts) && <div className="mb-8 space-y-8">{beforeAlerts}{alerts}</div>}<div className="space-y-6">{Array.from({ length: charts }, (_, index) => <div key={index} aria-hidden="true" className="h-[360px] rounded-panel border border-border bg-surface p-5"><div className="skeleton h-3 w-1/3" /><div className="skeleton mt-6 h-[260px] w-full opacity-60" /></div>)}</div></section>
+}
+// Carga de alertas con la geometría de un bloque de hallazgos (encabezado + dos tarjetas).
+export function AlertsSkeleton({ label = 'Cargando…' }) {
+  return <section role="status" aria-live="polite" aria-label={label} className="space-y-5"><span className="sr-only">{label}</span><div aria-hidden="true" className="space-y-5"><div className="skeleton h-4 w-40" /><div className="skeleton h-2.5 w-2/3" /><div className="grid grid-cols-1 gap-4 xl:grid-cols-2">{[0, 1].map((index) => <div key={index} className="h-[132px] space-y-3 rounded-panel border border-border bg-surface p-5"><div className="skeleton h-2.5 w-1/4" /><div className="skeleton h-3.5 w-3/5" /><div className="skeleton h-2.5 w-11/12" /><div className="skeleton h-2.5 w-4/5" /></div>)}</div></div></section>
 }
 
 export function ExposureEvolutionChart({ items = [], historyAction = null }) {
@@ -203,6 +209,11 @@ const observationPeriod = (row) => row.as_of_date && row.as_of_date < row.period
 
 // Datos de los indicadores (DESIGN §16.3): columnas de decisión; Ámbito y Entidad solo cuando alguna fila
 // los tiene; fecha de cálculo, fecha de corte e identificador del indicador en el detalle de cada fila.
+// Celda sin observación: «Sin dato», nunca cero (no se imputan combinaciones ausentes).
+export function MatterVolumeTable({ items, model = matterVolumePivot(items) }) {
+  if (!model) return null
+  return <div className="space-y-2"><h3 className="text-sm font-semibold">Volumen de asuntos jurídicos gestionados · {model.periodText}</h3><DataTable caption="Volumen de asuntos por tipo y estado" columns={[{ key: 'type', label: 'Tipo de asunto' }, ...model.states.map((state) => ({ key: `estado-${state}`, label: state, numeric: true, render: (row) => row.values[state] ?? <span className="text-muted">Sin dato</span> }))]} rows={model.rows} /></div>
+}
 export function ObservationTable({ items, caption = 'Datos de los indicadores' }) {
   const rows = [...items].sort(observationOrder)
   const columns = [
@@ -211,7 +222,7 @@ export function ObservationTable({ items, caption = 'Datos de los indicadores' }
     { key: 'valueText', label: 'Valor', numeric: true },
     ...(rows.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', render: (row) => row.dimensionsText || '—' }] : []),
     ...(rows.some((row) => row.entity_filter_applicable) ? [{ key: 'entityText', label: 'Entidad' }] : []),
-    { key: 'detail', label: 'Detalle', render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Calculado</dt><dd className="mono">{formatAuditTimestamp(row.calculated_at)}</dd><dt>Datos al</dt><dd>{formatDocumentDate(row.as_of_date)}</dd></dl></TechnicalDetails> },
+    { key: 'calculated_at', label: 'Calculado', render: (row) => formatUserTimestamp(row.calculated_at) },
   ]
   return <DataTable caption={caption} columns={columns} rows={rows} />
 }

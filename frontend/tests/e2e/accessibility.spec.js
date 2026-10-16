@@ -209,7 +209,6 @@ test.describe('Accesibilidad — Tablas semánticas', () => {
       r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_ANALYSIS_RESPONSE) })
     )
     await page.goto('/')
-    await page.getByText(/^Datos de los indicadores \(\d+\)$/).click()
     const table = page.getByRole('table', { name: 'Datos de los indicadores' })
     await expect(table).toBeVisible({ timeout: 8000 })
     const headers = table.getByRole('columnheader')

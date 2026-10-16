@@ -55,7 +55,7 @@ function AuditWorkspace({ principal }) {
       <Input compact label="Correlación (identificador)" name="correlation_id" defaultValue={filters.correlation_id || ''} />
     </div></details></form>
     {error && <ErrorState error={error} />}
-    <ResourceState resource={resource} context="la auditoría">{(data) => <div className="space-y-4"><DataTable caption="Eventos de auditoría" rows={data.items} columns={[
+    <ResourceState resource={resource} context="la auditoría" skeleton="table" empty={{ title: 'Sin eventos para estos filtros', message: 'Prueba con otro rango de fechas o retira algún filtro.' }}>{(data) => <div className="space-y-4"><DataTable caption="Eventos de auditoría" rows={data.items} columns={[
       { key: 'occurredLabel', label: 'Fecha y hora', render: (row) => <span className="whitespace-nowrap font-mono text-xs">{row.occurredLabel}</span> },
       { key: 'actor_identifier', label: 'Actor', render: (row) => <span>{row.actor_identifier}{row.actor_type !== 'HUMAN' && <span className="block text-xs text-muted">{actorTypeLabel(row.actor_type)}</span>}</span> },
       { key: 'action', label: 'Evento', render: (row) => auditActionLabel(row.action) },

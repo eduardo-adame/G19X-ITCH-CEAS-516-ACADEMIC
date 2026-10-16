@@ -100,7 +100,7 @@ describe('ROBUSTNESS: invalidación acotada por lifecycle sin disponibilidad sup
     await upload()
     await waitFor(() => expect(state.request).toHaveBeenCalledTimes(2))
     if (dispatch instanceof Error) await screen.findByRole('alert')
-    else await within(screen.getByRole('table', { name: 'Recepción y despacho actuales' })).findByText(dispatchStateLabel(dispatch.state).label)
+    else await within(screen.getByRole('region', { name: 'Archivos recibidos en esta sesión' })).findByText(dispatchStateLabel(dispatch.state).label)
     expect(state.count('/documents/ocr')).toBe(1); expect(state.count('/technical/kpis')).toBe(1)
     expect(screen.getByText('50 %')).toBeVisible()
   })

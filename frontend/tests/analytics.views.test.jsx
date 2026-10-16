@@ -43,12 +43,15 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
   it.each([['summary', 'Resumen ejecutivo'], ['contracts', 'Riesgo contractual'], ['litigation', 'Gestión de litigios'], ['trends', 'Tendencias y riesgos']])('encabeza %s y usa API física', async (view, title) => {
     const client = fixture({ view }); expect(screen.getByRole('heading', { name: title })).toBeVisible()
     expect(await screen.findByText(/^Sin alertas (en el análisis|de riesgo)/)).toBeVisible()
-    expect(screen.getByText('Análisis completado sin hallazgos.')).not.toBeVisible()
+    // El texto registrado del análisis queda en «Detalle técnico», sin mostrarse como lectura principal (D-UX-1).
+    expect(await screen.findByText('Análisis completado sin hallazgos.')).not.toBeVisible()
+    expect(screen.getByRole('table', { name: 'Evaluaciones del análisis' })).toBeVisible()
     expect(client.acquireRead.mock.calls.every(([path]) => /^\/dashboard\/(kpis|analysis)\?/.test(path))).toBe(true)
   })
   it('muestra KPI/contextos, diferencia cero de no disponible y limita moneda a exposición', async () => {
     fixture({ kpis: kpiPage(Object.keys(KPI_CATALOG).map((code) => observation(code, code === 'KPI-RC-01' ? { availability: 'NO_DISPONIBLE', value: null } : code === 'KPI-LI-01' ? { dimensions: { nivel_severidad: 'alto' }, value: '17.50' } : {}))) })
-    expect(await screen.findByText(/^Contexto operativo \(\d+\)$/)).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Datos de los indicadores' })).toBeVisible()
     expect(screen.getAllByText('No disponible').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 contratos').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/MXN|\$/).length).toBeGreaterThan(0)
@@ -113,7 +116,7 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(await screen.findByText('Sin alertas de riesgo de litigio en el análisis')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Ver todas las alertas' })).toHaveAttribute('href', '/')
     expect(screen.queryByText(/no produjo señales/)).not.toBeInTheDocument()
-    expect(screen.getByText(payload.items[0].executive_summary)).not.toBeVisible()
+    expect(await screen.findByText(payload.items[0].executive_summary)).not.toBeVisible()
   })
   it('el Resumen ignora parámetros antiguos de análisis histórico y muestra las alertas vigentes bajo los KPI', async () => {
     const client = fixture({ search: `?period=last_6_months&analysis_mode=historical&analytic_run_id=${runId}`, analysis: analysisPage(true) })
@@ -124,25 +127,47 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(kpis.compareDocumentPosition(alerts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(alerts.compareDocumentPosition(concentration) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
-  it('una gráfica temporal con un solo periodo muestra historia insuficiente y amplía la selección', async () => {
+  it('la evolución pide sus propios últimos 6 meses aunque el periodo sea el mes en curso', async () => {
     const client = fixture({ view: 'contracts', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
     expect(await screen.findByText('Historia insuficiente para mostrar una evolución')).toBeVisible()
+    expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=contractual')).toBe(true)
+    expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_6_months&risk_type=contractual')).toBe(true)
+    const windows = screen.getByRole('group', { name: 'Ventana de la evolución' })
+    expect(within(windows).getByRole('button', { name: 'Últimos 6 meses' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Meses cerrados: agosto 2029 – enero 2030')).toBeVisible()
     expect(screen.getByText('Solo hay datos de enero 2030: 13.6 días.')).toBeVisible()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
-    await userEvent.click(screen.getByRole('button', { name: 'Ver últimos 6 meses' }))
-    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_6_months&risk_type=contractual')).toBe(true))
   })
-  it('con 12 meses y un solo periodo no ofrece ampliar la selección', async () => {
-    fixture({ view: 'contracts', search: '?period=last_12_months', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+  it('con historia insuficiente en 6 meses la gráfica amplía solo la evolución a 12 meses', async () => {
+    const client = fixture({ view: 'contracts', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver últimos 12 meses' }))
+    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_12_months&risk_type=contractual')).toBe(true))
+    // La ventana de evolución no altera el filtro «Periodo» de la dirección.
+    expect(screen.getByLabelText('Dirección actual').textContent).not.toContain('period=')
     expect(await screen.findByText('No hay más meses con datos dentro de la selección.')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Ver últimos/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Ver últimos 12/ })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Ventana de la evolución' })).getByRole('button', { name: 'Últimos 12 meses' })).toHaveAttribute('aria-pressed', 'true')
+  })
+  it('si la selección ya es de 6 meses la evolución reutiliza la misma lectura', async () => {
+    const client = fixture({ view: 'contracts', search: '?period=last_6_months', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    await screen.findByText('Historia insuficiente para mostrar una evolución')
+    expect(client.acquireRead.mock.calls.filter(([path]) => path.startsWith('/dashboard/kpis')).map(([path]) => path)).toEqual(['/dashboard/kpis?period=last_6_months&risk_type=contractual'])
   })
   it('Litigios muestra solo el contexto de asuntos litigiosos y Contratos el contractual', async () => {
     const items = [observation('KPI-RC-01', { value: '5' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Litigio', estado: 'Abierto' }, value: '2' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Contrato', estado: 'Vigente' }, value: '3' })]
     fixture({ view: 'litigation', kpis: kpiPage(items) })
-    expect(await screen.findByText(/^Contexto operativo \(1\)$/)).toBeVisible()
-    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).toHaveTextContent('Tipo de asunto: Litigio')
-    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).not.toHaveTextContent('Tiempo de ciclo')
+    expect(await screen.findByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    const volume = screen.getByRole('table', { name: 'Volumen de asuntos por tipo y estado' })
+    expect(volume).toHaveTextContent('Litigio')
+    expect(volume).not.toHaveTextContent('Contrato')
+    expect(screen.queryByRole('table', { name: 'Datos del contexto operativo' })).not.toBeInTheDocument()
+    expect(document.querySelector('details.data-section')).toBeNull()
+  })
+  it('regresión: un mes en curso (datos al día de hoy) se presenta en la tabla sin romper la vista', async () => {
+    fixture({ kpis: kpiPage([observation('KPI-RC-03', { period_start: '2030-01-01', period_end: '2030-01-31', as_of_date: '2030-01-15', value: '2' })]) })
+    const table = await screen.findByRole('table', { name: 'Datos de los indicadores' })
+    expect(table).toHaveTextContent('enero 2030 (al 15 ene 2030)')
+    expect(screen.getByRole('heading', { name: 'Resumen ejecutivo' })).toBeVisible()
   })
   it('no presenta link de contexto sin document.query', async () => {
     fixture({ analysis: analysisPage(true), roles: [] })
@@ -454,7 +479,8 @@ describe('SRS_REQUIRED: slots estructurales de contratos y litigios', () => {
     expect(slots()).toHaveLength(1)
     expect(slots()[0]).toHaveAttribute('aria-label', KPI_CATALOG['KPI-RC-03'].name)
     expect(slots()[0]).toHaveAttribute('data-state', 'NO_OBSERVATION')
-    expect(screen.getByText(/^Contexto operativo \(1\)$/)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).toHaveTextContent('Tiempo de ciclo')
   })
   it('litigios parcial mantiene LI01 ausente y LI05 cero observado', async () => {
     fixture({ view: 'litigation', kpis: kpiPage([observation('KPI-LI-05')]) })
