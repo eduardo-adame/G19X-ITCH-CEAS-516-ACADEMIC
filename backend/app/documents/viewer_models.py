@@ -61,6 +61,13 @@ class ViewerContent(ViewerItem):
     correlation_id: UUID
 
 
+class ViewerPrintReceipt(BaseModel):
+    """Confirmación de que la impresión quedó registrada; no contiene contenido del documento."""
+    model_config = ConfigDict(extra="forbid")
+    operation_id: UUID
+    correlation_id: UUID
+
+
 class ViewerNotFound(Exception):
     """El recurso no puede exponerse a esta identidad."""
 

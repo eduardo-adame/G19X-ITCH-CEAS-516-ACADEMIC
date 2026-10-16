@@ -546,6 +546,7 @@ Las dos operaciones programadas requieren permiso funcional y una identidad incl
 | `GET` | `/api/documents/viewer` | Consulta el catálogo documental autorizado. |
 | `GET` | `/api/documents/viewer/{document_id}` | Obtiene contenido documental autorizado. |
 | `GET` | `/api/documents/viewer/{document_id}/original` | Obtiene el PDF original autorizado; requiere `version_id`. |
+| `POST` | `/api/documents/viewer/{document_id}/print` | Registra en auditoría la impresión solicitada de la versión vigente; requiere `version_id`. Devuelve solo `operation_id` y `correlation_id`. |
 | `POST` | `/api/rag/query` | Ejecuta una consulta RAG. |
 
 La consulta RAG recibe `query` y admite `context_reference_id` y `retry_of_operation_id` opcionales. También admite una cabecera `Idempotency-Key` con UUID.

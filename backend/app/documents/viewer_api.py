@@ -11,7 +11,7 @@ from fastapi.routing import APIRoute
 import psycopg
 
 from app.config import Settings
-from app.documents.viewer_models import ViewerContent, ViewerNotFound, ViewerPage, ViewerQuery, ViewerUnavailable, ViewerVersionChanged
+from app.documents.viewer_models import ViewerContent, ViewerNotFound, ViewerPage, ViewerPrintReceipt, ViewerQuery, ViewerUnavailable, ViewerVersionChanged
 from app.documents.viewer_repository import ViewerRepository
 from app.documents.viewer_service import ViewerService
 from app.security.api import current_principal, security_settings, service_for
@@ -85,6 +85,16 @@ def original(document_id: str, version_id: UUID = Query(),
         payload = service.read(document_id, version_id, principal, original=True)
         return Response(payload, media_type="application/pdf", headers={
             "Content-Disposition": 'inline; filename="document.pdf"', **_HEADERS})
+    except _ERRORS as exc:
+        raise _error(exc) from None
+
+
+@router.post("/{document_id}/print", response_model=ViewerPrintReceipt)
+def print_request(document_id: str, version_id: UUID = Query(),
+                  principal: AuthenticatedPrincipal = Depends(current_principal),
+                  service: ViewerService = Depends(viewer_service_for)):
+    try:
+        return service.register_print(document_id, version_id, principal)
     except _ERRORS as exc:
         raise _error(exc) from None
 
