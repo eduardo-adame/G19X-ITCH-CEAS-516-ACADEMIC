@@ -1,372 +1,753 @@
-# Dashboard de Indicadores de Riesgo Legal — `producto/`
+# Dashboard de Indicadores de Riesgo Legal
 
-Repositorio Git del sistema. Aplicación web analítica para consolidar, procesar y
-visualizar información de riesgo contractual, litigios, cumplimiento normativo,
-eficiencia operativa y calidad documental.
+Aplicación web para consolidar, procesar y visualizar información de riesgo contractual, litigios, cumplimiento normativo, eficiencia operativa y calidad documental.
 
----
+Este repositorio contiene el sistema desarrollado como MVP del proyecto de residencia profesional.
 
-## 1. Estado actual
+## 1. Descripción del sistema
 
-Este repositorio contiene el MVP implementado. Módulos funcionales:
+El sistema integra las siguientes capacidades:
 
-- **Ingesta:** CSV, XLSX, PDF y DOCX, con detección de formato por contenido, validación
-  estructural y cuarentena unificada.
-- **Procesamiento documental:** OCR (Tesseract) y fecha del documento declarada en la carga
-  manual de PDF/DOCX.
-- **Indicadores y análisis:** cálculo de KPI y análisis proactivo determinista, coordinados
-  por el DAG diario `controlled_ingestion` de Airflow con una cuenta de proceso autorizada.
-- **Búsqueda semántica y RAG:**
-  - recuperación híbrida con BGE-M3 local (vectorial) y BM25, fusión RRF y security
-    trimming previo;
-  - generación sustentada con Groq en una sola llamada;
-  - control de capacidad del proveedor.
-- **Visor documental independiente:** catálogo y apertura de documentos autorizados sin
-  consulta RAG previa.
-- **Seguridad:** autenticación JWT propia, RBAC por roles (Jurídico, Analista y TI) y
-  autorización documental con precedencia DENY > ALLOW > familia > denegación por defecto.
-- **Auditoría:** append-only.
+- **Ingesta de información:** recepción de archivos CSV, XLSX, PDF y DOCX, mediante carga manual o ubicaciones controladas.
+- **Validación y cuarentena:** comprobación de estructura y datos, consulta de incidencias, corrección para reinyección y descarte justificado.
+- **Procesamiento documental:** extracción de texto, OCR con Tesseract para PDF escaneado y preparación del corpus documental.
+- **Indicadores y análisis:** cálculo de KPI y análisis proactivo mediante reglas deterministas.
+- **Consulta documental y RAG:** búsqueda híbrida sobre documentos autorizados y generación de respuestas sustentadas con referencias.
+- **Visor documental:** catálogo y consulta de documentos autorizados, con acceso independiente de las consultas RAG.
+- **Administración y auditoría:** gestión de cuentas, roles, autorizaciones documentales y registro de operaciones.
 
-El esquema se administra con Alembic (`backend/migrations`, revisión head
-`0019_rag_provider_telemetry`). El backend no ejecuta migraciones al arrancar: el operador
-las aplica de forma explícita y el runtime verifica la revisión esperada
-(`python -m app.security.runtime_check`).
+El sistema apoya la consulta y el análisis de información. No realiza decisiones jurídicas autónomas ni sustituye la revisión profesional.
 
-La especificación vigente es el SRS del workspace. Las rutas HTTP de salud se describen
-en §8.
+### Tecnologías
 
----
-
-## 2. Requisitos del equipo
-
-Configuración de referencia del proyecto:
-
-| Recurso | Referencia |
+| Componente | Tecnología |
 |---|---|
-| RAM | **16 GB** (8 GB PostgreSQL/pgvector + 4 GB backend + 4 GB servicios auxiliares y SO) |
-| Almacenamiento | **SSD NVMe con ≥50 GB disponibles** |
+| Backend | Python 3.12 y FastAPI |
+| Frontend | React, Recharts y Vite; servido con nginx en Docker |
+| Base de datos | PostgreSQL 16 con pgvector |
+| Migraciones | Alembic |
+| Orquestación | Apache Airflow |
+| OCR | Tesseract y Poppler |
+| Embeddings | BGE-M3 local, vectores de 1.024 dimensiones |
+| Generación de respuestas | Groq, modelo `openai/gpt-oss-120b` |
+| Autenticación | JWT propio |
+| Entorno | Docker Compose |
 
-La distribución 8/4/4 es una **referencia de verificación**, no un límite funcional
-impuesto por el sistema. Los límites de memoria del Compose son techos de
-implementación y pueden reducirse desde `.env` en equipos con menos recursos.
+BGE-M3 se ejecuta dentro del backend y utiliza una caché persistente. La recuperación combina búsqueda vectorial y BM25, con fusión RRF, deduplicación por fragmento y un máximo de cinco fragmentos finales.
 
-Software necesario: Docker Engine + Docker Compose v2, Python ≥3.10 (para los smoke
-tests) y Node 22 (solo si se desarrolla el frontend fuera del contenedor).
+### Servicios y direcciones locales
 
-> **Equipos por debajo de la referencia:** el stack arranca, pero la carga del
-> modelo de embeddings (~4.3 GB de caché y ~1.3 GB de memoria al cargarlo) puede no
-> ser viable. Ver sección 7.
+| Servicio | Dirección predeterminada | Función |
+|---|---|---|
+| Frontend | http://localhost:3000 | Aplicación web |
+| Backend | http://localhost:8000 | API |
+| PostgreSQL | `localhost:5432` | Base de datos |
+| Airflow | http://localhost:8080 | Administración de procesos programados |
 
----
+Airflow se habilita con el perfil `airflow`. Se materializa en tres contenedores: inicialización, scheduler y webserver. Sus metadatos se almacenan en SQLite, en un volumen independiente de PostgreSQL.
 
-## 3. Puesta en marcha
+## 2. Cómo levantar el entorno
 
-```bash
-cd producto
-copy .env.example .env      # Linux/macOS: cp .env.example .env
+### 2.1. Requisitos
+
+Para ejecutar el sistema con Docker:
+
+- Docker en funcionamiento, con soporte para contenedores Linux.
+- Docker Compose v2 o posterior.
+- Acceso a Internet para descargar imágenes, dependencias y, en su primer uso, el modelo BGE-M3.
+- Los puertos locales configurados disponibles.
+
+El entorno de referencia del proyecto contempla **16 GB de RAM y al menos 50 GB libres en SSD NVMe**. Los límites de memoria de Compose son techos configurables, no reservas.
+
+Los comandos siguientes están escritos para **PowerShell** y se ejecutan desde la raíz de este repositorio: el directorio que contiene `docker-compose.yml`.
+
+Python y Node en el equipo anfitrión solo son necesarios para las pruebas o el desarrollo fuera de los contenedores.
+
+> La primera instalación requiere preparar la base y crear la primera cuenta TI. El arranque de Compose no ejecuta automáticamente las migraciones ni crea usuarios de la aplicación.
+
+### 2.2. Crear la configuración local
+
+Copia la plantilla únicamente si todavía no existe un archivo `.env`:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-Editar `.env` y asignar valores locales a las variables marcadas como
-**OBLIGATORIA**:
+Si ya tienes un entorno configurado, conserva su `.env`.
 
-- `POSTGRES_PASSWORD`
-- `AIRFLOW_ADMIN_PASSWORD` (solo si se activa el perfil `airflow`)
+Edita el archivo y reemplaza los valores de ejemplo. Para la instalación completa deben quedar configuradas estas identidades:
 
-`.env` está excluido de Git por `.gitignore` y **nunca** debe versionarse.
-`.env.example` sí se versiona y solo contiene placeholders.
+| Identidad | Variables | Uso |
+|---|---|---|
+| Administrador de PostgreSQL | `POSTGRES_USER`, `POSTGRES_PASSWORD` | Inicialización, migraciones y aprovisionamiento |
+| Usuario limitado del backend | `RUNTIME_POSTGRES_USER`, `RUNTIME_POSTGRES_PASSWORD` | Operación normal de la aplicación |
+| Lector de auditoría | `AUDIT_POSTGRES_USER`, `AUDIT_POSTGRES_PASSWORD` | Lectura independiente de la bitácora |
+| Administrador web de Airflow | `AIRFLOW_ADMIN_USER`, `AIRFLOW_ADMIN_PASSWORD` | Acceso a la interfaz de Airflow |
+| Cuenta de proceso de la aplicación | `AIRFLOW_INGESTION_USERNAME`, `AIRFLOW_INGESTION_PASSWORD` | Autenticación del DAG contra el backend |
 
-Compose falla de forma explícita si faltan esas variables (sintaxis `${VAR:?...}`),
-en lugar de arrancar con credenciales por defecto.
+Conserva los valores predeterminados de usuario y base de datos para seguir esta instalación:
 
-> **Si se regenera `.env` con una contraseña nueva de PostgreSQL**, el volumen
-> `riesgo-legal-pgdata` conserva la contraseña con la que se inicializó y el
-> backend dejará de autenticarse (la readiness pasará a `503`). La contraseña de
-> PostgreSQL solo se aplica al crear el volumen por primera vez. Para adoptar una
-> contraseña nueva hay que eliminar el volumen de datos, sin tocar los demás:
->
-> ```bash
-> docker compose --profile airflow down
-> docker volume rm riesgo-legal-pgdata    # solo los datos de PostgreSQL
-> docker compose --profile airflow up -d
-> ```
->
-> El volumen de la caché del modelo y el de metadatos de Airflow no se ven
-> afectados.
+```dotenv
+POSTGRES_USER=app
+POSTGRES_DB=riesgo_legal
+RUNTIME_POSTGRES_DB=
+RUNTIME_POSTGRES_USER=riesgo_legal_app
+AUDIT_POSTGRES_USER=riesgo_legal_audit_app
 
----
+AIRFLOW_ADMIN_USER=admin
+AIRFLOW_INGESTION_USERNAME=airflow-ingestion
+SCHEDULED_PROCESS_ACCOUNTS=airflow-ingestion
+```
 
-## 4. Arranque selectivo
+Asigna contraseñas propias y diferentes. No dejes valores `CHANGE_ME_...`.
 
-Los servicios de Airflow están tras el perfil `airflow`, de modo que el trabajo
-diario no obliga a mantener activos los componentes más pesados. El perfil no
-elimina ningún servicio: el stack completo sigue siendo el mismo.
+Configura también:
 
-```bash
-# Desarrollo ligero: frontend + backend + postgres
+```dotenv
+SECURITY_JWT_KEYRING_JSON='{"local":"<CLAVE_BASE64URL_GENERADA>"}'
+SECURITY_JWT_ACTIVE_KID=local
+SECURITY_REFRESH_COOKIE_SECURE=False
+SECURITY_BOOTSTRAP_ENABLED=False
+```
+
+Sustituye `<CLAVE_BASE64URL_GENERADA>` por una clave aleatoria real. Puedes generar un valor de 32 bytes mediante un contenedor temporal:
+
+```powershell
+docker run --rm python:3.12-slim python -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+Ejecuta de nuevo el comando para generar valores independientes para `AIRFLOW_FERNET_KEY` y `AIRFLOW_WEBSERVER_SECRET_KEY`.
+
+Guarda los secretos únicamente en la configuración local protegida. `.env` está excluido de Git.
+
+Para habilitar la generación de respuestas, completa `GROQ_API_KEY`. Puede permanecer vacía para iniciar los demás módulos; la generación mediante Groq requiere una clave válida.
+
+Comprueba que Compose puede interpretar la configuración:
+
+```powershell
+docker compose config --quiet
+```
+
+Si aparece un error, corrige la variable indicada antes de continuar. Este comando comprueba la configuración; no valida las contraseñas contra los servicios.
+
+### 2.3. Construir las imágenes e iniciar PostgreSQL
+
+```powershell
+docker compose build backend frontend
+docker compose up -d --wait postgres
+```
+
+La construcción inicial instala las dependencias del backend, incluidas las de embeddings, y compila el frontend.
+
+### 2.4. Preparar la base de datos — primera instalación
+
+El siguiente bloque:
+
+1. Aplica las migraciones con la identidad administradora.
+2. Aprovisiona el usuario limitado del backend.
+3. Aprovisiona y verifica el lector independiente de auditoría.
+
+Usa las funciones existentes en el repositorio. Las credenciales se leen desde `.env`, montado en modo de solo lectura.
+
+Ejecuta el bloque completo desde la raíz del repositorio:
+
+```powershell
+@'
+import os
+from dotenv import dotenv_values
+from alembic import command
+from alembic.config import Config
+from scripts.provision_runtime_role import main as provision_runtime
+from scripts.provision_audit_reader import provision_protected_payload
+
+local = dotenv_values('/configuracion/.env')
+required = ('POSTGRES_USER', 'POSTGRES_PASSWORD', 'RUNTIME_POSTGRES_USER',
+            'RUNTIME_POSTGRES_PASSWORD', 'AUDIT_POSTGRES_USER', 'AUDIT_POSTGRES_PASSWORD')
+if any(not local.get(key) for key in required):
+    raise SystemExit('Faltan credenciales obligatorias en .env')
+
+os.environ.update({key: value for key, value in local.items() if value is not None})
+os.environ.update(
+    POSTGRES_HOST='postgres',
+    POSTGRES_PORT='5432',
+    POSTGRES_DB=local.get('RUNTIME_POSTGRES_DB') or local.get('POSTGRES_DB') or 'riesgo_legal',
+)
+
+try:
+    command.upgrade(Config('alembic.ini'), 'head')
+    provision_runtime()
+    provision_protected_payload({
+        'host': 'postgres',
+        'port': 5432,
+        'database': os.environ['POSTGRES_DB'],
+        'owner': local['POSTGRES_USER'],
+        'owner_password': local['POSTGRES_PASSWORD'],
+        'login': local['AUDIT_POSTGRES_USER'],
+        'password': local['AUDIT_POSTGRES_PASSWORD'],
+        'configured': True,
+    })
+except Exception as exc:
+    raise SystemExit('PREPARACION_NO_CONFIRMADA: ' + type(exc).__name__) from None
+
+print('PREPARACION_COMPLETADA')
+'@ | docker compose run --rm --no-deps -T --volume "./backend:/administracion:ro" --volume "./.env:/configuracion/.env:ro" --workdir /administracion backend python -
+
+if ($LASTEXITCODE -ne 0) {
+    throw "La preparacion de la base no termino correctamente."
+}
+```
+
+El resultado esperado es `PREPARACION_COMPLETADA`.
+
+La revisión de esquema esperada por el backend es:
+
+```text
+0019_rag_provider_telemetry
+```
+
+Las migraciones y los scripts administrativos se montan porque la imagen de runtime del backend incorpora el código de la aplicación, pero no esos archivos de administración.
+
+Este procedimiento corresponde a la primera instalación. El aprovisionador runtime puede actualizar la contraseña de un usuario existente; no es un paso necesario para cada arranque.
+
+`RUNTIME_POSTGRES_DB`, si se utiliza, debe señalar una base que ya exista. Esta variable no crea ni copia bases de datos.
+
+### 2.5. Crear la primera cuenta TI
+
+Edita temporalmente `.env`:
+
+```dotenv
+SECURITY_BOOTSTRAP_ENABLED=True
+SECURITY_BOOTSTRAP_USERNAME=ti-inicial
+SECURITY_BOOTSTRAP_PASSWORD=<CONTRASEÑA_PROPIA>
+```
+
+La contraseña debe tener entre 12 y 128 caracteres.
+
+Ejecuta:
+
+```powershell
+docker compose run --rm --no-deps backend python -m app.security.bootstrap
+```
+
+El resultado esperado en una instalación nueva es:
+
+```text
+BOOTSTRAP_COMPLETED
+```
+
+Si ya existe una cuenta TI activa, devuelve `BOOTSTRAP_ALREADY_COMPLETED` y conserva la cuenta existente.
+
+Después de completar el bootstrap, vuelve a editar `.env`:
+
+```dotenv
+SECURITY_BOOTSTRAP_ENABLED=False
+SECURITY_BOOTSTRAP_USERNAME=
+SECURITY_BOOTSTRAP_PASSWORD=
+```
+
+Conserva las credenciales de la cuenta creada en un lugar seguro: las utilizarás para iniciar sesión.
+
+### 2.6. Iniciar la aplicación y comprobar su disponibilidad
+
+Verifica primero la identidad y los privilegios del backend:
+
+```powershell
+docker compose run --rm --no-deps backend python -m app.security.runtime_check
+```
+
+El comando termina sin error cuando el contrato de base de datos es correcto.
+
+Inicia la aplicación:
+
+```powershell
+docker compose up -d --wait backend frontend
+docker compose ps
+```
+
+Comprueba la salud:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/health
+Invoke-RestMethod http://localhost:8000/health
+Invoke-RestMethod http://localhost:8000/health/ready
+```
+
+Resultados esperados:
+
+- Frontend y backend responden con `status: ok`.
+- Readiness responde HTTP 200 y confirma que PostgreSQL y pgvector están disponibles.
+
+Abre http://localhost:3000 e inicia sesión con la primera cuenta TI.
+
+Una instalación nueva no incorpora automáticamente documentos ni información de negocio. Los indicadores y las consultas dependerán de los datos cargados y de las autorizaciones configuradas.
+
+### 2.7. Configurar e iniciar Airflow
+
+La cuenta que utiliza Airflow contra la aplicación debe existir antes de ejecutar el DAG.
+
+Desde **Administración**, con una cuenta TI:
+
+1. Crea el usuario definido en `AIRFLOW_INGESTION_USERNAME`.
+2. Asigna el rol **Analista**, que dispone de los permisos de ingesta utilizados por el DAG.
+3. Utiliza la misma contraseña configurada en `AIRFLOW_INGESTION_PASSWORD`.
+4. Comprueba que el nombre figure en `SCHEDULED_PROCESS_ACCOUNTS`.
+
+La cuenta de proceso es independiente del administrador web de Airflow.
+
+Inicia la orquestación:
+
+```powershell
+docker compose --profile airflow up -d
+docker compose --profile airflow ps
+```
+
+Abre http://localhost:8080 e inicia sesión con `AIRFLOW_ADMIN_USER` y `AIRFLOW_ADMIN_PASSWORD`.
+
+Habilita el DAG `controlled_ingestion` desde la interfaz o mediante:
+
+```powershell
+docker compose --profile airflow exec airflow-scheduler airflow dags unpause controlled_ingestion
+```
+
+El DAG se programa diariamente y ejecuta, en orden:
+
+1. Ingesta desde las ubicaciones controladas y despacho de los archivos aceptados.
+2. Recálculo programado de indicadores.
+3. Análisis proactivo programado.
+
+Las ubicaciones se encuentran dentro de `/data/controlled` del backend:
+
+| Directorio | Familia |
+|---|---|
+| `contracts-documents` | Contratos y documentos |
+| `litigation` | Litigios |
+| `compliance` | Cumplimiento |
+| `internal-audit` | Auditoría interna |
+
+El volumen es persistente y Airflow lo monta en modo de solo lectura. El DAG invoca la API del backend para realizar el procesamiento.
+
+### 2.8. Disponibilidad de BGE-M3 y Groq
+
+BGE-M3 se carga de forma diferida y se conserva en memoria una vez cargado por el proceso. La primera operación que lo necesita puede requerir la descarga del modelo.
+
+Consulta su estado sin forzar la carga:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health/embeddings
+```
+
+La sonda `POST /health/embeddings/probe` fuerza la carga y verifica la salida de 1.024 dimensiones. Requiere un token Bearer de una cuenta con `technical_config.manage`, permiso disponible para TI.
+
+Para obtener respuestas RAG sustentadas se necesitan:
+
+- Modelo BGE-M3 disponible.
+- Documentos procesados e indexados.
+- Autorización documental vigente para la cuenta consultante.
+- Evidencia suficiente para la consulta.
+- Configuración y disponibilidad del proveedor Groq.
+
+### 2.9. Arranques posteriores, parada y persistencia
+
+Después de completar la primera instalación:
+
+```powershell
+# Aplicacion sin Airflow
 docker compose up -d
 
-# Stack completo: incluye Airflow
+# Entorno completo
 docker compose --profile airflow up -d
 
-# Estado
-docker compose ps
+# Estado del entorno completo
 docker compose --profile airflow ps
 
-# Detener (CONSERVA volúmenes: no re-descarga el modelo)
+# Detener conservando los datos
 docker compose --profile airflow down
-
-# Detener y DESTRUIR volúmenes (implica volver a descargar el snapshot, ~4.3 GB)
-docker compose --profile airflow down -v
 ```
 
----
+Los datos se conservan en volúmenes separados:
 
-## 5. Topología
+| Volumen | Contenido |
+|---|---|
+| `riesgo-legal-pgdata` | PostgreSQL |
+| `riesgo-legal-bge-cache` | Caché de BGE-M3 |
+| `riesgo-legal-airflow-db` | Metadatos de Airflow |
+| `riesgo-legal-airflow-logs` | Logs de Airflow |
+| `riesgo-legal-ingestion-storage` | Staging y objetos de ingesta |
+| `riesgo-legal-ingestion-controlled` | Ubicaciones controladas |
 
-Cuatro **servicios lógicos**:
+La opción `down -v` elimina los volúmenes del entorno y sus datos. No forma parte del procedimiento normal de parada.
 
-| # | Servicio lógico | Contenedores | Imagen | Puerto por defecto |
-|---|---|---|---|---|
-| 1 | `postgres` | 1 | `pgvector/pgvector:pg16` | 5432 |
-| 2 | `backend` | 1 | build `./backend` | 8000 |
-| 3 | `frontend` | 1 | build `./frontend` (nginx) | 3000 |
-| 4 | `airflow` | 3 (`init`, `scheduler`, `webserver`) | `apache/airflow:2.10.5-python3.12` | 8080 |
+### 2.10. Problemas frecuentes
 
-`airflow` es **un único servicio lógico** materializado en varios contenedores de la
-misma imagen. Los tres llevan la etiqueta `riesgo-legal.logical-service: airflow`,
-lo que permite comprobar que el recuento de servicios lógicos sigue siendo cuatro.
+| Síntoma | Comprobación |
+|---|---|
+| Compose indica que falta una variable | Completar `.env`, especialmente las credenciales runtime y de Airflow. |
+| El backend se reinicia antes de servir HTTP | Consultar `docker compose logs --tail 100 backend`; revisar migraciones, usuario runtime y privilegios. |
+| Readiness devuelve HTTP 503 | Revisar conectividad con PostgreSQL y disponibilidad de pgvector. |
+| PostgreSQL rechaza una contraseña tras editar `.env` | El volumen conserva la contraseña establecida al inicializarlo; editar `.env` no cambia la contraseña almacenada. |
+| El login no funciona | Comprobar bootstrap, cuenta activa y clave JWT válida. |
+| El DAG recibe HTTP 401 | Revisar que la cuenta de proceso exista y que sus credenciales coincidan con `.env`. |
+| Las operaciones programadas reciben HTTP 403 | Revisar permisos y pertenencia a `SCHEDULED_PROCESS_ACCOUNTS`. |
+| No aparecen documentos | Revisar procesamiento, indexación y autorizaciones documentales; el rol funcional no concede acceso documental por sí solo. |
+| Falla la generación RAG | Revisar clave Groq, disponibilidad del modelo, evidencia y límites del proveedor. |
 
-El sistema **no** requiere Redis, RabbitMQ, Elasticsearch, nginx como servicio
-independiente, un segundo PostgreSQL ni un servicio de embeddings.
+Al modificar variables que se transmiten al contenedor, vuelve a ejecutar `docker compose up -d` con el perfil correspondiente para aplicar la configuración.
 
-**Base de datos del backend.** `RUNTIME_POSTGRES_DB` (opcional) selecciona una base existente
-para el backend, independiente de la base inicial `POSTGRES_DB` del contenedor PostgreSQL.
-Vacía conserva `POSTGRES_DB`. No crea, copia ni migra datos.
+## 3. Variables de entorno
 
-**Un único worker del backend.** El control de capacidad del proveedor
-generativo vive en memoria del proceso: concurrencia, RPM, TPM y enfriamiento
-ante 429 se comparten entre todas las consultas. Por eso el backend se ejecuta
-con un solo proceso uvicorn. `BACKEND_WORKERS` y `WEB_CONCURRENCY` están fijados
-a 1 en `docker-compose.yml`, y el backend se niega a arrancar con otro valor. Los
-límites se ajustan con las variables `GROQ_*` documentadas en `.env.example`.
+`.env.example` es la plantilla versionada. `.env` contiene la configuración local y los secretos.
 
-### Volúmenes persistentes (independientes entre sí)
+### Base de datos
 
-| Volumen | Montaje | Contenido |
+| Variable | Valor de referencia | Descripción |
 |---|---|---|
-| `riesgo-legal-pgdata` | `/var/lib/postgresql/data` | Datos de PostgreSQL |
-| `riesgo-legal-bge-cache` | `/home/appuser/.cache/bge-m3` | Caché del modelo de embeddings |
-| `riesgo-legal-airflow-db` | `/opt/airflow/sqlite_db` | Metadatos SQLite de Airflow |
-| `riesgo-legal-airflow-logs` | `/opt/airflow/logs` | Logs de Airflow |
-| `riesgo-legal-ingestion-storage` | `/data/ingestion` (backend) | Staging y objetos almacenados de la ingesta |
-| `riesgo-legal-ingestion-controlled` | `/data/controlled` (backend; solo lectura en Airflow) | Ubicaciones controladas de ingesta |
+| `POSTGRES_USER` | `app` | Administrador utilizado para inicialización y administración. |
+| `POSTGRES_PASSWORD` | Sin valor utilizable de ejemplo | Contraseña administradora; debe definirse. |
+| `POSTGRES_DB` | `riesgo_legal` | Base creada al inicializar PostgreSQL. |
+| `POSTGRES_PORT` | `5432` | Puerto publicado en el equipo. |
+| `RUNTIME_POSTGRES_USER` | `riesgo_legal_app` | Usuario limitado utilizado por el backend. |
+| `RUNTIME_POSTGRES_PASSWORD` | Vacío | Debe definirse y coincidir con el usuario aprovisionado. |
+| `RUNTIME_POSTGRES_DB` | Vacío | Base existente alternativa; vacío utiliza `POSTGRES_DB`. |
+| `AUDIT_POSTGRES_USER` | Vacío en la plantilla | Usuario lector independiente; la instalación utiliza `riesgo_legal_audit_app`. |
+| `AUDIT_POSTGRES_PASSWORD` | Vacío | Contraseña del lector; necesaria para consultar auditoría. |
 
-Los volúmenes se mantienen separados a propósito: los datos de la base, la caché
-del modelo y los metadatos de la orquestación tienen ciclos de vida distintos y no
-deben compartir almacenamiento.
+Compose conecta el backend con PostgreSQL mediante `postgres:5432`. `POSTGRES_PORT` configura el acceso desde el equipo, no el puerto interno.
 
-Los metadatos de Airflow usan SQLite en su propio volumen, no la base de datos de
-la aplicación.
+### Aplicación y seguridad
 
-Ningún volumen se versiona en Git.
+| Variable | Valor predeterminado | Descripción |
+|---|---|---|
+| `APP_NAME` | `backend-riesgo-legal` | Identificación del servicio. |
+| `ENVIRONMENT` | `development` | Entorno de ejecución. |
+| `BACKEND_PORT` | `8000` | Puerto publicado del backend. |
+| `FRONTEND_PORT` | `3000` | Puerto publicado del frontend. |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. |
+| `API_DOCS_ENABLED` | `false` | Habilita Swagger, ReDoc y OpenAPI. |
+| `SECURITY_JWT_ISSUER` | `riesgo-legal-backend` | Emisor esperado del JWT. |
+| `SECURITY_JWT_AUDIENCE` | `riesgo-legal-web` | Audiencia esperada del JWT. |
+| `SECURITY_JWT_KEYRING_JSON` | Placeholder | Objeto JSON de claves HS256; requiere claves reales. |
+| `SECURITY_JWT_ACTIVE_KID` | `local` en la plantilla | Identificador de la clave activa. |
+| `SECURITY_REFRESH_COOKIE_NAME` | `riesgo_legal_refresh` | Nombre de la cookie de refresh. |
+| `SECURITY_REFRESH_COOKIE_SECURE` | `False` | Permite HTTP local de desarrollo; fuera de desarrollo debe ser `True`. |
+| `SECURITY_BOOTSTRAP_ENABLED` | `False` | Habilita deliberadamente el comando inicial TI. |
+| `SECURITY_BOOTSTRAP_USERNAME` | Vacío | Usuario de la primera cuenta TI. |
+| `SECURITY_BOOTSTRAP_PASSWORD` | Vacío | Contraseña de bootstrap. |
+| `SCHEDULED_PROCESS_ACCOUNTS` | Cuenta de ingesta de Airflow en Compose | Nombres autorizados para operaciones programadas. |
 
-`docker compose` crea y usa estos volúmenes. **No se requiere preparación ni `chown` manual previo.**
-El backend se ejecuta como el usuario no root `appuser`, y la imagen crea `/data/ingestion` y
-`/data/controlled` con ese propietario, de modo que Docker inicializa los volúmenes nuevos con el
-propietario correcto. La comprobación con volúmenes realmente nuevos y escritura funcional es:
+El frontend consume `/api` en su mismo origen. nginx reenvía estas peticiones al backend.
 
-```bash
-python scripts/check_fresh_volumes.py --image riesgo-legal-backend:bootstrap
-```
+`VITE_BACKEND_HEALTH_URL` permanece en la plantilla, pero no cambia el proxy de la API definido por nginx.
 
----
+### Embeddings y generación
 
-## 6. Verificación del entorno
+| Variable | Valor de referencia | Descripción |
+|---|---|---|
+| `BGE_M3_MODEL_ID` | `BAAI/bge-m3` | Modelo local de embeddings. |
+| `GROQ_API_KEY` | Vacío | Credencial requerida para generación mediante Groq. |
+| `GROQ_TIMEOUT_SECONDS` | `30` | Timeout del transporte hacia Groq. |
+| `GROQ_MAX_REQUEST_BYTES` | `60000` | Límite del cuerpo enviado al proveedor. |
+| `GROQ_MAX_CONCURRENCY` | `1` | Solicitudes concurrentes al proveedor. |
+| `GROQ_MAX_QUEUE` | `8` | Capacidad de la cola local. |
+| `GROQ_RPM_LIMIT` | `27` | Presupuesto local de solicitudes por minuto. |
+| `GROQ_TPM_LIMIT` | `6400` | Presupuesto local estimado de tokens por minuto. |
+| `GROQ_MAX_IN_FLIGHT_PER_USER` | `1` | Operaciones simultáneas por usuario. |
+| `GROQ_MAX_RETRIES` | `2` | Máximo de reintentos adicionales ante HTTP 429. |
+| `GROQ_BACKOFF_BASE_SECONDS` | `1` | Base del backoff. |
+| `GROQ_BACKOFF_MAX_SECONDS` | `8` | Tope del backoff. |
+| `GROQ_RETRY_AFTER_MAX_SECONDS` | `60` | Límite admitido de espera por `Retry-After`. |
+| `GROQ_OPERATION_DEADLINE_SECONDS` | `45` | Presupuesto temporal de la operación del proveedor. |
+| `GROQ_PROMPT_BYTES_PER_TOKEN` | `3` | Factor utilizado para estimar tokens. |
+| `GROQ_COMPLETION_TOKEN_RESERVE` | `512` | Reserva de tokens para la respuesta. |
 
-Batería única de smoke tests (solo librería estándar de Python):
+Estos valores son controles locales de la aplicación; no garantizan la cuota disponible en una cuenta Groq.
 
-```bash
-# Comprobaciones de repositorio y topología, sin requerir el stack en ejecución
-python scripts/smoke.py --static-only
+El modelo generativo y su origen HTTPS están fijados por la implementación del MVP. El backend se ejecuta con un único worker porque el gestor de capacidad se comparte en la memoria del proceso.
 
-# Stack ligero en ejecución
-python scripts/smoke.py
+### Airflow y recursos
 
-# Stack completo (incluye Airflow)
-python scripts/smoke.py --profile airflow
+| Variables | Uso |
+|---|---|
+| `AIRFLOW_PORT` | Puerto web; predeterminado `8080`. |
+| `AIRFLOW_ADMIN_USER`, `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_ADMIN_EMAIL` | Administrador web de Airflow. |
+| `AIRFLOW_INGESTION_USERNAME`, `AIRFLOW_INGESTION_PASSWORD` | Cuenta de la aplicación utilizada por el DAG. |
+| `AIRFLOW_FERNET_KEY` | Clave Fernet de Airflow. |
+| `AIRFLOW_WEBSERVER_SECRET_KEY` | Secreto del webserver de Airflow. |
+| `POSTGRES_SHARED_BUFFERS`, `POSTGRES_MAX_CONNECTIONS` | Ajustes de PostgreSQL. |
+| `POSTGRES_MEM_LIMIT`, `BACKEND_MEM_LIMIT`, `FRONTEND_MEM_LIMIT` | Techos de memoria de esos servicios. |
+| `AIRFLOW_SCHEDULER_MEM_LIMIT`, `AIRFLOW_WEBSERVER_MEM_LIMIT` | Techos de memoria de Airflow. |
 
-# Omitir la comprobación del modelo de embeddings (descarga pesada)
-python scripts/smoke.py --profile airflow --skip-model
-```
+### Valores fijados por el Compose actual
 
-Cada comprobación devuelve `PASS` / `FAIL` / `SKIP` con su evidencia. El script
-**nunca convierte un `SKIP` en `PASS`**: si una evidencia no pudo obtenerse, se
-reporta como pendiente. El código de salida es `0` solo si no hay `FAIL`.
+Algunas entradas de la plantilla corresponden a la configuración del backend, pero Compose no transmite todas ellas como ajustes libres:
 
-Pruebas unitarias del backend (en el equipo o en CI, no dentro de la imagen):
+- Dimensionalidad: `1024`.
+- Caché del modelo: `/home/appuser/.cache/bge-m3`.
+- Carga obligatoria del modelo al arrancar: desactivada.
+- Almacenamiento de ingesta: `/data/ingestion`.
+- Ubicaciones controladas: `/data/controlled`.
+- `BACKEND_WORKERS` y `WEB_CONCURRENCY`: `1`.
 
-```bash
-cd backend
-python -m venv .venv && .venv\Scripts\activate    # Linux/macOS: source .venv/bin/activate
-pip install -r requirements-dev.txt
-pytest -v
-```
+Los límites `INGESTION_*` de la plantilla no se trasladan actualmente al servicio mediante Compose; el backend utiliza sus valores predeterminados, incluido un máximo de archivo de **52.428.800 bytes (50 MiB)**. Editar esas entradas en `.env` por sí solo no modifica el límite del contenedor.
 
-Las pruebas están marcadas como `contract` (comportamiento requerido) o
-`robustness` (controles defensivos).
+## 4. Endpoints
 
----
+La URL base del backend es http://localhost:8000 con la configuración predeterminada.
 
-## 7. Modelo de embeddings (BGE-M3)
+Las rutas funcionales requieren autenticación y los permisos correspondientes. Login y refresh utilizan sus propios mecanismos de autenticación.
 
-- Se ejecuta como **librería local dentro del contenedor `backend`**.
-- **No existe** un servicio ni contenedor independiente de embeddings.
-- Se carga **una sola vez por proceso** para no recargar los pesos en cada petición.
-- Utiliza el **volumen persistente** `riesgo-legal-bge-cache`, de modo que no se
-  re-descarga entre recreaciones del contenedor.
-- Produce vectores de **1.024 dimensiones**.
-- La **misma instancia** atiende la codificación de documentos y de consultas, de
-  forma que ambas se proyectan en el mismo espacio vectorial.
-- **No sustituye a BM25**: solo se usa la representación densa. La recuperación
-  léxica es un mecanismo independiente y no depende de la disponibilidad del modelo.
-
-El modelo **no** se hornea en la imagen: se descarga en el volumen en el primer uso.
-Por eso el backend arranca aunque el modelo aún no esté disponible, y en ese caso lo
-reporta como indisponibilidad explícita en lugar de simular un resultado correcto.
-
-Comprobación de capacidad (fuerza la carga del modelo; exige una sesión con el
-permiso `technical_config.manage`, es decir, una cuenta TI):
-
-```bash
-curl -X POST http://localhost:8000/health/embeddings/probe      -H "Authorization: Bearer <token de acceso de una cuenta TI>"
-```
-
-Sin credenciales responde 401 y, con una cuenta sin ese permiso, 403 (auditado).
-El estado del modelo sin forzar su carga sigue disponible en `GET /health/embeddings`.
-
-> **Coste de la primera descarga.** El modelo se descarga en el volumen persistente
-> la primera vez que se invoca la comprobación. Conviene distinguir tres magnitudes
-> que no son intercambiables:
->
-> | Magnitud | Valor medido | Qué representa |
-> |---|---|---|
-> | Artefacto de pesos | ~2.2 GB | Un único archivo de pesos |
-> | Huella total de la caché | ~4.3 GB | Dos archivos de pesos más tokenizadores |
-> | Memoria durante la carga | ~1.3 GB | Residentes en el proceso al cargar el modelo |
->
-> Los ~4.3 GB **no describen al modelo**: describen lo que la librería deja en el
-> volumen. La caché contiene **dos** archivos de pesos porque `transformers`, al
-> cargar el modelo, busca una variante `safetensors` y la encuentra en una
-> **referencia de pull request del repositorio** (`refs/pr/130`), no en la rama
-> principal. La rama principal solo publica `pytorch_model.bin`; el segundo archivo
-> se obtiene de esa referencia.
->
-> **Eliminar el segundo archivo no reduce la huella de forma estable.** Se ha
-> verificado que `transformers` vuelve a descargarlo en cada carga fresca del
-> modelo, incluso dejando el centinela de ausencia en la caché. Por eso la huella
-> de referencia es ~4.3 GB y no se documenta una cifra menor.
->
-> La librería ofrece un mecanismo oficial para desactivar esa conversión automática
-> —la variable de entorno `DISABLE_SAFETENSORS_CONVERSION`—, que **no está
-> activada**: el servicio funciona con el comportamiento por defecto. Su adopción
-> depende del comportamiento y del versionado de la librería y debe evaluarse por
-> separado antes de incorporarla. Conviene notar que no cambiaría el artefacto que
-> se carga; solo suprimiría una descarga en segundo plano.
->
-> **No pre-poblar la caché con una descarga del repositorio completo.** Hacerlo
-> añade artefactos que el servicio nunca utiliza y que ni la rama principal ni la
-> carga normal introducen: exportación ONNX, imágenes de documentación y pesos de
-> las variantes sparse y colbert. Esos sí pueden eliminarse sin que reaparezcan.
->
-> BGE-M3 se carga desde **una raíz única** de caché, gobernada por `HF_HUB_CACHE` y
-> alineada con `SENTENCE_TRANSFORMERS_HOME` y `TRANSFORMERS_CACHE`. Si esas
-> variables apuntaran a directorios distintos, el modelo se descargaría por
-> duplicado dentro del mismo volumen.
-
----
-
-## 8. Endpoints de salud
+### Salud
 
 | Método | Ruta | Propósito |
 |---|---|---|
-| `GET` | `/health` | Liveness del backend. No depende de servicios externos. |
-| `GET` | `/health/ready` | Readiness: conectividad con PostgreSQL y disponibilidad de pgvector. |
-| `GET` | `/health/embeddings` | Estado del modelo **sin** forzar su carga. |
-| `POST` | `/health/embeddings/probe` | Fuerza la carga y verifica 1.024 dimensiones. Requiere `technical_config.manage` (TI). |
-| `GET` | `/health` (frontend) | Liveness de nginx, independiente del backend. |
+| `GET` | `/health` | Comprueba que el backend sirve peticiones. |
+| `GET` | `/health/ready` | Comprueba PostgreSQL y pgvector; devuelve 503 si no están disponibles. |
+| `GET` | `/health/embeddings` | Consulta el estado del modelo sin cargarlo. |
+| `POST` | `/health/embeddings/probe` | Carga y verifica BGE-M3; requiere `technical_config.manage`. |
 
-Estas rutas son una decisión de diseño del servicio.
+El frontend dispone de su propio `GET /health`, accesible en http://localhost:3000/health.
 
-La documentación interactiva (`/docs`, `/redoc`, `/openapi.json`) está desactivada por
-defecto. Solo se publica con `API_DOCS_ENABLED=true`, habilitación explícita de desarrollo
-que no depende de `ENVIRONMENT`.
+### Autenticación
 
----
+| Método | Ruta | Propósito |
+|---|---|---|
+| `POST` | `/api/auth/login` | Inicia sesión; devuelve el token de acceso y establece la cookie de refresh. |
+| `POST` | `/api/auth/refresh` | Renueva el acceso utilizando la cookie de refresh. |
+| `POST` | `/api/auth/logout` | Cierra la sesión autenticada. |
+| `GET` | `/api/auth/me` | Devuelve la identidad y los roles de la sesión. |
 
-## 9. Seguridad
+Login recibe un cuerpo JSON con `username` y `password`. Las solicitudes protegidas presentan el acceso mediante `Authorization: Bearer <token>`.
 
-- `.env` **nunca** se versiona; `.gitignore` lo excluye explícitamente.
-- `.env.example` solo contiene placeholders identificables como `CHANGE_ME_...`.
-- Sin credenciales por defecto: Compose exige definirlas.
-- El backend se ejecuta con un usuario **sin privilegios de root** (`appuser`, UID 10001).
-- CORS restringido a orígenes explícitos y sin comodín. Las credenciales del navegador solo
-  se usan para la cookie de refresh (HttpOnly, SameSite=Strict, ruta `/api/auth`); el token
-  de acceso viaja en `Authorization: Bearer`.
-- Los mensajes de error no filtran la contraseña de la base de datos.
-- nginx no expone archivos ocultos y aplica cabeceras básicas de endurecimiento.
+### Ingesta, cuarentena y coordinación
 
-- Autenticación JWT propia con sesiones invalidables. Autorización funcional por RBAC
-  y autorización documental independiente. Auditoría append-only, garantizada por los
-  privilegios de la base de datos.
-- La documentación interactiva de la API está desactivada por defecto
-  (`API_DOCS_ENABLED=false`), y la sonda de embeddings exige `technical_config.manage`.
-- Groq: el modelo (`openai/gpt-oss-120b`) y el endpoint (`https://api.groq.com/openai/v1`)
-  son una decisión técnica fijada por el MVP, con un cliente de origen HTTPS fijo. No se
-  configuran por entorno. Las variables Groq funcionales son `GROQ_API_KEY`,
-  `GROQ_TIMEOUT_SECONDS`, `GROQ_MAX_REQUEST_BYTES` y las de capacidad y límites de tasa
-  (`GROQ_MAX_CONCURRENCY`, `GROQ_RPM_LIMIT`, `GROQ_TPM_LIMIT`, etc.).
+| Método | Ruta | Propósito |
+|---|---|---|
+| `POST` | `/api/ingestion/uploads` | Carga manual mediante multipart; requiere `Idempotency-Key`. |
+| `POST` | `/api/ingestion/runs` | Procesa una ubicación controlada. |
+| `GET` | `/api/validation/quarantine` | Consulta elementos de cuarentena. |
+| `PATCH` | `/api/validation/quarantine/{item_id}/reinject` | Corrige y reinyecta un elemento. |
+| `POST` | `/api/validation/quarantine/{item_id}/discard` | Descarta un elemento con justificación. |
+| `POST` | `/api/coordination/dispatch` | Despacha el procesamiento de un archivo. |
+| `POST` | `/api/coordination/kpi-recalculations/scheduled` | Solicita recálculo programado. |
+| `POST` | `/api/coordination/proactive-analysis/scheduled` | Solicita análisis proactivo programado. |
 
----
+La carga manual recibe `file`, `controlled_location` y, opcionalmente, `document_date` en formato `YYYY-MM-DD`.
 
-## 10. Flujo de trabajo con Git
+Las dos operaciones programadas requieren permiso funcional y una identidad incluida en `SCHEDULED_PROCESS_ACCOUNTS`.
 
-- Rama principal: **`main`**.
-- Los cambios deben ser revisables y reversibles de forma aislada.
-- Convención de mensajes: `<tipo>(<alcance>): <descripción>`, con tipos como
-  `feat`, `fix`, `test`, `refactor`, `docs`, `build`, `ci`, `chore`, `perf`.
-- No se versiona ningún secreto ni archivo generado (véase `.gitignore`).
+### Indicadores, documentos y RAG
 
----
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/api/dashboard/kpis` | Consulta indicadores para los filtros solicitados. |
+| `GET` | `/api/dashboard/analysis` | Consulta resultados de análisis proactivo. |
+| `GET` | `/api/technical/kpis/KPI-CD-03` | Consulta el indicador técnico OCR. |
+| `GET` | `/api/documents/ocr` | Consulta resultados y estado OCR. |
+| `POST` | `/api/documents/{document_id}/ocr/reprocess` | Solicita reprocesamiento OCR. |
+| `GET` | `/api/documents/viewer` | Consulta el catálogo documental autorizado. |
+| `GET` | `/api/documents/viewer/{document_id}` | Obtiene contenido documental autorizado. |
+| `GET` | `/api/documents/viewer/{document_id}/original` | Obtiene el PDF original autorizado; requiere `version_id`. |
+| `POST` | `/api/rag/query` | Ejecuta una consulta RAG. |
 
-## 11. Estructura
+La consulta RAG recibe `query` y admite `context_reference_id` y `retry_of_operation_id` opcionales. También admite una cabecera `Idempotency-Key` con UUID.
+
+### Administración y auditoría
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `POST` | `/api/security/users` | Crea una cuenta. |
+| `PATCH` | `/api/security/users/{account_id}` | Actualiza su nombre visible. |
+| `POST` | `/api/security/users/{account_id}/activate` | Activa la cuenta. |
+| `POST` | `/api/security/users/{account_id}/disable` | Deshabilita la cuenta. |
+| `POST` | `/api/security/users/{account_id}/reset-access` | Restablece su contraseña. |
+| `PUT` | `/api/security/users/{account_id}/roles` | Sustituye sus roles. |
+| `PUT` | `/api/security/document-scopes/{role_id}/{source_family}` | Administra acceso documental por familia. |
+| `PUT` | `/api/security/document-exceptions/user/{account_id}/{document_id}` | Administra excepciones por cuenta y documento. |
+| `PUT` | `/api/security/document-exceptions/role/{role_id}/{document_id}` | Administra excepciones por rol y documento. |
+| `GET` | `/api/audit/events` | Consulta los eventos permitidos para la cuenta. |
+
+### Documentación interactiva
+
+Está desactivada por defecto. Para habilitarla deliberadamente en desarrollo:
+
+```dotenv
+API_DOCS_ENABLED=true
+```
+
+Recrea el backend para aplicar el cambio:
+
+```powershell
+docker compose up -d backend
+```
+
+Quedarán disponibles:
+
+- Swagger: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- OpenAPI: http://localhost:8000/openapi.json
+
+El esquema OpenAPI permite consultar los cuerpos, filtros y respuestas de cada operación.
+
+## 5. Seguridad
+
+### Cuentas y sesiones
+
+- Contraseñas protegidas con Argon2id.
+- JWT de acceso HS256 con vigencia de 30 minutos.
+- Sesión con duración máxima absoluta de ocho horas.
+- Refresh opaco, almacenado mediante hash y rotado después de su uso.
+- Cookie de refresh `HttpOnly`, `SameSite=Strict` y limitada a `/api/auth`.
+- Token de acceso conservado en memoria por el frontend.
+- Verificación del estado vigente de cuenta, sesión y autorización.
+
+Los cambios de cuenta, roles o autorizaciones invalidan las sesiones afectadas conforme a las reglas implementadas.
+
+Las cuentas se deshabilitan; no se eliminan físicamente. Un TI no puede modificar sus propios roles ni deshabilitar al último TI activo.
+
+### Permisos y documentos
+
+Los roles funcionales son **Jurídico**, **Analista** y **TI**. Una cuenta puede tener varios roles activos.
+
+La autorización documental es independiente de los permisos funcionales, con esta precedencia:
 
 ```text
-producto/
-├── .env                  ← local, NO versionado
-├── .env.example          ← versionado, solo placeholders
-├── .gitignore
-├── docker-compose.yml    ← los 4 servicios lógicos
-├── README.md
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt          núcleo (FastAPI, uvicorn, psycopg)
-│   ├── requirements-ml.txt       embeddings (sentence-transformers)
-│   ├── requirements-dev.txt      pruebas (pytest, httpx)
-│   ├── pytest.ini
-│   ├── app/
-│   │   ├── main.py               endpoints de salud
-│   │   ├── config.py             configuración desde entorno
-│   │   ├── db.py                 conectividad y disponibilidad de pgvector
-│   │   └── embeddings/bge_m3.py  modelo local, instancia única, caché persistente
-│   └── tests/
-├── frontend/
-│   ├── Dockerfile                multi-stage: build Node → servicio nginx
-│   ├── nginx.conf
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   ├── src/{main.jsx,App.jsx,styles.css}
-│   └── tests/
-└── scripts/
-    └── smoke.py                  batería única de verificación
+Denegación explícita por documento
+→ Autorización explícita por documento
+→ Autorización por rol y familia
+→ Denegación por defecto
 ```
+
+El alcance documental autorizado se aplica antes de recuperar contenido y antes de enviarlo a Groq. Las referencias de contexto del análisis proactivo no conceden permisos ni constituyen evidencia por sí mismas.
+
+### Auditoría y operación
+
+La auditoría es append-only. El usuario runtime puede insertar eventos, pero no leer, actualizar ni eliminar la bitácora; la consulta utiliza una identidad lectora independiente.
+
+El backend se ejecuta como usuario sin privilegios de root y verifica su identidad de base de datos, revisión de esquema y privilegios antes de servir la API mediante Compose.
+
+CORS utiliza orígenes explícitos. nginx aplica cabeceras de endurecimiento y desactiva la caché y el registro de acceso en las rutas de API.
+
+El Compose descrito sirve HTTP para desarrollo local. Un despliegue fuera de ese entorno requiere TLS/HTTPS y cookies `Secure`; el Compose actual no configura la terminación TLS.
+
+Los secretos, tokens y documentos sensibles no deben incorporarse a Git ni copiarse a registros o reportes de prueba.
+
+## 6. Pruebas y verificación
+
+Las pruebas del backend se encuentran en `backend/tests`, las del frontend en `frontend/tests` y las del DAG en `airflow/tests`.
+
+Los comandos de esta sección son independientes del arranque normal del sistema.
+
+### 6.1. Comprobaciones del entorno
+
+Con los servicios iniciados:
+
+```powershell
+docker compose --profile airflow ps
+Invoke-RestMethod http://localhost:3000/health
+Invoke-RestMethod http://localhost:8000/health
+Invoke-RestMethod http://localhost:8000/health/ready
+Invoke-RestMethod http://localhost:8080/health
+```
+
+Estas comprobaciones informan de la disponibilidad de los servicios; no sustituyen las pruebas funcionales.
+
+### 6.2. Backend
+
+Para trabajar fuera del contenedor utiliza Python 3.12 y un entorno virtual.
+
+Desde la raíz del repositorio:
+
+```powershell
+Push-Location backend
+
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+# Ejemplo acotado: JWT, contraseñas y transporte Groq simulado
+.\.venv\Scripts\python.exe -m pytest tests/security/test_tokens_and_passwords.py tests/rag/test_provider.py -v
+
+Pop-Location
+```
+
+Este ejemplo utiliza pruebas existentes y no requiere llamar al servicio real de Groq.
+
+La imagen del backend no incorpora las pruebas ni las dependencias de desarrollo.
+
+### 6.3. Integración con PostgreSQL y modelo real
+
+Las suites PostgreSQL necesitan un **clúster temporal dedicado**, separado del servidor habitual. Varias pruebas ejecutan migraciones descendentes y modifican roles de alcance global del clúster.
+
+No basta con crear otra base dentro del mismo servidor para aislar esas operaciones.
+
+El entorno de integración debe utilizar:
+
+- Imagen `pgvector/pgvector:pg16`.
+- Inicialización `--encoding=UTF8 --locale=C`.
+- Bases de prueba y credenciales propias.
+- Migraciones y usuarios runtime/lector según los requisitos de cada fixture.
+- Conexiones protegidas mediante variables como `DATA_TEST_DATABASE_URL`, `RUNTIME_TEST_DATABASE_URL`, `AUDIT_TEST_*` y `VIEWER_TEST_*`.
+
+Algunas suites esperan URL SQLAlchemy y otras cadenas libpq. Debe respetarse el formato solicitado por cada fixture; los marcadores de pytest no identifican por sí solos todas las pruebas que necesitan base de datos.
+
+Con el entorno aislado preparado, la suite del backend se ejecuta desde `backend` mediante:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -v
+```
+
+Las pruebas que utilizan BGE-M3 real requieren además las dependencias de `requirements-ml.txt`, la caché del modelo y recursos suficientes. La imagen Docker del backend ya instala esas dependencias.
+
+Un caso omitido se reporta como `SKIP`; no demuestra que la funcionalidad haya sido verificada. Las pruebas del proveedor con respuestas simuladas tampoco certifican la disponibilidad de Groq.
+
+### 6.4. Frontend
+
+Para ejecutar las pruebas localmente utiliza Node.js 22.
+
+Desde la raíz del repositorio:
+
+```powershell
+Push-Location frontend
+
+npm ci
+npm test
+npm run build
+
+Pop-Location
+```
+
+`npm test` ejecuta las pruebas estáticas y unitarias. `npm run build` comprueba la compilación del frontend.
+
+Para las pruebas de navegador:
+
+```powershell
+Push-Location frontend
+
+npx playwright install chromium
+npm run test:e2e
+
+Pop-Location
+```
+
+Playwright inicia su servidor de prueba en `http://127.0.0.1:5173` y verifica tres tamaños de pantalla.
+
+Estas pruebas utilizan fixtures HTTP sintéticos. Verifican la interfaz y sus contratos; no equivalen a una prueba completa contra PostgreSQL, OCR y Groq reales.
+
+### 6.5. Scripts de diagnóstico existentes
+
+El repositorio incluye:
+
+```powershell
+python scripts/smoke.py --static-only
+python scripts/smoke.py --profile airflow
+```
+
+`smoke.py` conserva comprobaciones de la etapa inicial del entorno, como la ausencia de lógica de negocio y de una extensión vectorial instalada permanentemente. Esas condiciones ya no describen el MVP actual.
+
+Sus resultados deben interpretarse por comprobación. No debe utilizarse como único criterio de aceptación del sistema.
+
+También existe:
+
+```powershell
+python scripts/check_fresh_volumes.py --image riesgo-legal-backend:bootstrap
+```
+
+Este script comprueba escritura funcional con el usuario de la imagen en volúmenes temporales nuevos. Crea y elimina sus propios volúmenes de prueba.
