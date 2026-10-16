@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Input, Select } from '../../components/controls.jsx'
 import { FilterToolbar, ResultsSummary, useDebouncedCallback } from '../../components/filters.jsx'
@@ -10,7 +10,10 @@ import { ApiError } from '../../api/errors.js'
 import { isUuid } from '../rag/adapters.js'
 import { families, validDocumentId } from './adapters.js'
 import { catalogPath, documentPath, readCatalog, readDocument, readOriginal, useViewerRead, useViewerAccess } from './api.js'
+import { useSession } from '../../auth/SessionProvider.jsx'
 import { PdfOriginal } from './PdfOriginal.jsx'
+import { PrintControl } from './printing.jsx'
+import { FullscreenButton, SearchableText, useFullscreen, ViewerHelp } from './viewerTools.jsx'
 
 function Metadata({ item }) {
   return <aside className="min-w-0 rounded-panel border border-border bg-surface p-5 lg:col-span-5"><h2 className="mb-4 text-base font-semibold">Metadatos del documento</h2><dl className="space-y-3 break-words text-[13px] text-secondary">{[
@@ -21,6 +24,10 @@ function Metadata({ item }) {
 }
 function FullDocument({ id, version, accessPending, initialPage }) {
   const [textMode, setTextMode] = useState(false)
+  const panel = useRef(null)
+  const fullscreen = useFullscreen(panel)
+  const [pdf, setPdf] = useState(null)
+  const [currentPage, setCurrentPage] = useState(initialPage)
   const detail = useViewerRead(documentPath(id, version), (client, signal) => readDocument(client, id, version, signal), !accessPending)
   const item = detail.data
   const pdfEnabled = !accessPending && item?.representation === 'PDF_ORIGINAL' && !textMode
@@ -29,20 +36,37 @@ function FullDocument({ id, version, accessPending, initialPage }) {
   if (detail.error) return <ErrorState error={detail.error} onRetry={detail.reload} />
   if (!item) return null
   const showText = item.representation === 'CONSOLIDATED_TEXT' || textMode
-  return <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"><section className="min-w-0 rounded-panel border border-border bg-surface p-5 lg:col-span-7" aria-label="Documento completo"><h2 className="mb-3 break-words text-base font-semibold">{item.name}</h2><div className="mb-4 flex flex-wrap gap-3">{item.representation === 'PDF_ORIGINAL' && <Button variant="secondary" disabled={!textMode} onClick={() => setTextMode(false)}>Archivo original PDF</Button>}{item.textAvailable && item.representation === 'PDF_ORIGINAL' && <Button variant="secondary" disabled={textMode} onClick={() => setTextMode(true)}>Ver texto completo procesado</Button>}</div>
-    {showText ? <><p className="mb-3 text-xs text-muted">Texto completo procesado; no reproduce la maquetación original.</p>{item.textAvailable ? <div tabIndex={0} role="region" aria-label="Texto completo procesado" className="max-h-[740px] overflow-y-auto whitespace-pre-wrap break-words font-serif text-sm leading-relaxed">{item.text}</div> : <EmptyState title="Texto no disponible" message="No existe texto completo procesado disponible para esta versión." />}</> : original.error ? <ErrorState error={original.error} onRetry={original.reload} /> : original.data ? <PdfOriginal blob={original.data} initialPage={initialPage} /> : <Loading label="Cargando el archivo original autorizado…" />}
+  return <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"><section ref={panel} className="viewer-panel min-w-0 rounded-panel border border-border bg-surface p-5 lg:col-span-7" aria-label="Documento completo"><h2 className="mb-3 break-words text-base font-semibold">{item.name}</h2>
+    <div className="mb-4 flex flex-wrap items-center gap-3">{item.representation === 'PDF_ORIGINAL' && <div role="group" aria-label="Representación del documento" className="segmented"><button type="button" aria-pressed={!textMode} onClick={() => setTextMode(false)}>Archivo original PDF</button>{item.textAvailable && <button type="button" aria-pressed={textMode} onClick={() => setTextMode(true)}>Texto completo procesado</button>}</div>}
+      <span aria-hidden="true" className="flex-1" /><FullscreenButton fullscreen={fullscreen} />
+      {showText ? <PrintControl key="text" item={item} mode="text" text={item.textAvailable ? item.text : undefined} /> : <PrintControl key="pdf" item={item} mode="pdf" pages={pdf?.pages} renderPage={pdf?.renderPage} currentPage={currentPage} />}
+      <ViewerHelp /></div>
+    {showText ? item.textAvailable ? <SearchableText text={item.text} /> : <><p className="mb-3 text-xs text-muted">Texto completo procesado; no reproduce la maquetación original.</p><EmptyState title="Texto no disponible" message="No existe texto completo procesado disponible para esta versión." /></> : original.error ? <ErrorState error={original.error} onRetry={original.reload} /> : original.data ? <PdfOriginal blob={original.data} initialPage={currentPage} onReady={setPdf} onPage={setCurrentPage} /> : <Loading label="Cargando el archivo original autorizado…" />}
   </section><Metadata item={item} /></div>
 }
+
+// Filtros del catálogo recordados solo en memoria y solo para la misma sesión: al volver de un documento
+// se conservan; no se escriben en la URL ni en el almacenamiento del navegador.
+let rememberedFilters = null
+const EMPTY_FILTERS = Object.freeze({ q: '', source_family: '', document_type: '' })
+export function recallFilters(owner) {
+  if (rememberedFilters?.owner !== owner) rememberedFilters = null
+  return rememberedFilters?.filters ?? EMPTY_FILTERS
+}
+export function rememberFilters(owner, filters) { rememberedFilters = { owner, filters: { ...filters } } }
 
 export function DocumentCatalog({ accessPending }) {
   const [params, setParams] = useSearchParams()
   const access = useViewerAccess()
+  const session = useSession()
+  const owner = `${session.principal?.id ?? ''}:${session.generation}`
   const blocked = accessPending || access.pending || !access.allowed
   const id = params.get('document_id')
   const version = params.get('version_id')
   const invalid = id !== null && !validDocumentId(id) || version !== null && (!id || !isUuid(version)) || params.getAll('document_id').length > 1 || params.getAll('version_id').length > 1
-  const [draft, setDraft] = useState({ q: '', source_family: '', document_type: '' })
+  const [draft, setDraft] = useState(() => recallFilters(owner))
   const [filters, setFilters] = useState(draft)
+  useEffect(() => { rememberFilters(owner, filters) }, [owner, filters])
   const [cursor, setCursor] = useState('')
   const [previous, setPrevious] = useState([])
   const [validation, setValidation] = useState(null)

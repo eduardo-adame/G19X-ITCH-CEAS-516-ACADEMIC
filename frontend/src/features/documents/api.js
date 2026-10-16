@@ -28,6 +28,13 @@ export async function readOriginal(client, id, version, signal) {
   if (!(result instanceof Blob) || result.type.toLowerCase() !== 'application/pdf' || result.size < 1 || result.size > 50 * 1024 * 1024) throw new ApiError(503)
   return result
 }
+// Registro de la impresión en auditoría (RF-077, SRS 0.25). Solo un recibo confirmado autoriza imprimir.
+export async function registerPrint(client, id, version, signal) {
+  if (!validDocumentId(id) || !isUuid(version)) throw new ApiError(422)
+  const receipt = await client.request(`/documents/viewer/${encodeURIComponent(id)}/print?version_id=${encodeURIComponent(version)}`, { method: 'POST', signal })
+  if (!receipt || !isUuid(receipt.operation_id) || !isUuid(receipt.correlation_id)) throw new ApiError(503)
+  return receipt
+}
 
 export function useViewerRead(key, read, enabled) {
   const session = useSession()

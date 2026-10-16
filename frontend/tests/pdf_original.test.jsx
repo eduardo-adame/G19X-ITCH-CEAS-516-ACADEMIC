@@ -30,14 +30,16 @@ describe('SRS_REQUIRED: renderizador local de PDF', () => {
     expect(screen.getByRole('img', { name: 'Página 1 de 2 del PDF original' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Página siguiente' })).toBeEnabled()
   })
-  it('navega entre páginas con el mismo blob autorizado', async () => {
+  it('navega entre páginas con el mismo blob autorizado sin volver a cargar el documento', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({})
     Object.defineProperty(Blob.prototype, 'arrayBuffer', { configurable: true, value: vi.fn(async () => new TextEncoder().encode('%PDF-sintetico').buffer) })
     render(<PdfOriginal blob={new Blob(['%PDF-sintetico'], { type: 'application/pdf' })} />)
     await screen.findByRole('img', { name: 'Página 1 de 2 del PDF original' })
     fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
     await screen.findByRole('img', { name: 'Página 2 de 2 del PDF original' })
-    expect(pdf.getDocument).toHaveBeenCalledTimes(2)
+    // El documento se interpreta una sola vez; cambiar de página solo vuelve a dibujar.
+    expect(pdf.getDocument).toHaveBeenCalledTimes(1)
+    expect(pdf.getPage).toHaveBeenLastCalledWith(2)
   })
   it('ROBUSTNESS: abre en la página inicial de la cita y la acota al número real de páginas', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({})

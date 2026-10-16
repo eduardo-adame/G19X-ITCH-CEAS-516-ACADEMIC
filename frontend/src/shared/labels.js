@@ -44,7 +44,7 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   ACCOUNT_CREATE: 'Creación de cuenta', ACCOUNT_UPDATE: 'Edición de cuenta', ACCOUNT_ACTIVATE: 'Activación de cuenta',
   ACCOUNT_DISABLE: 'Deshabilitación de cuenta', ACCOUNT_RESET_ACCESS: 'Restablecimiento de acceso',
   ROLE_ASSIGNMENT: 'Asignación de roles', DOCUMENT_SCOPE_GRANT: 'Alcance documental por familia',
-  DOCUMENT_EXCEPTION: 'Excepción documental', DOCUMENT_VIEW: 'Apertura de documento', DOCUMENT_DENIED: 'Documento denegado',
+  DOCUMENT_EXCEPTION: 'Excepción documental', DOCUMENT_VIEW: 'Apertura de documento', DOCUMENT_PRINT: 'Impresión de documento', DOCUMENT_DENIED: 'Documento denegado',
   DOCUMENT_INVALIDATED: 'Invalidación de documento', DOCUMENT_VERSION_ACTIVATED: 'Activación de versión documental',
   INGESTION_COMPLETED: 'Recepción de archivo', INGESTION_DENIED: 'Recepción denegada',
   AUTOMATIC_INGESTION: 'Ingesta automática', AUTOMATIC_OCR: 'OCR automático',

@@ -111,3 +111,35 @@ main[tabindex="-1"]:focus { outline: none; }
 @media (min-width: 768px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; } }
 @media (min-width: 1024px) { .kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } .kpi-row-five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1280px) { .kpi-row-five { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+/* Coincidencias de búsqueda del visor: todas marcadas y la activa con el color de marca. */
+mark.search-hit { border-radius: 2px; background: var(--brand-subtle); color: inherit; box-shadow: 0 0 0 1px var(--brand-border); }
+mark.search-hit-current { background: var(--brand); color: var(--brand-on); box-shadow: none; }
+/* Pantalla completa del visor: el área de lectura ocupa todo el alto disponible. */
+.viewer-panel:fullscreen { display: flex; flex-direction: column; overflow: hidden; border-radius: 0; background: var(--surface); padding: 24px; }
+.viewer-panel:fullscreen > .viewer-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.viewer-panel:fullscreen .viewer-scroll { flex: 1; min-height: 0; max-height: none; }
+/* Impresión del visor (RF-077, SRS 0.25): en pantalla las hojas no existen; al imprimir solo se ven ellas,
+   en blanco y negro sobre papel con independencia del tema. */
+.print-root { display: none; }
+@media print {
+  @page { margin: 1.5cm; }
+  body > *:not(.print-root) { display: none !important; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .print-root { display: block; color: #000; background: #fff; font-family: var(--font-sans, sans-serif); }
+  .print-page { display: flex; flex-direction: column; align-items: center; margin: 0; break-after: page; break-inside: avoid; }
+  .print-page:last-child { break-after: auto; }
+  .print-page img { display: block; max-width: 100%; max-height: 23.5cm; object-fit: contain; }
+  .print-caption, .print-footer { margin-top: 4mm; font-size: 8.5pt; color: #333; }
+  .print-title { margin: 0 0 6mm; font-size: 13pt; font-weight: 600; }
+  .print-text { padding-bottom: 1.2cm; font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .print-footer { position: fixed; right: 0; bottom: 0; left: 0; margin: 0; background: #fff; }
+}
+/* Selector segmentado (p. ej. original PDF / texto procesado): la opción activa usa el color de marca. */
+.segmented { display: inline-flex; overflow: hidden; border: 1px solid var(--border-default); border-radius: var(--radius-small); }
+.segmented > button { height: 32px; padding: 0 12px; background: var(--background-primary); color: var(--text-secondary); font-size: 13px; }
+.segmented > button + button { border-left: 1px solid var(--border-default); }
+.segmented > button:hover { color: var(--text-primary); }
+.segmented > button[aria-pressed="true"] { background: var(--nav-active-bg, var(--brand-subtle)); color: var(--nav-active-text); font-weight: 500; }
+.segmented > button:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: -2px; }
+/* Casillas y opciones nativas con el color de marca en ambos temas. */
+input[type="radio"], input[type="checkbox"] { accent-color: var(--brand-strong); }
