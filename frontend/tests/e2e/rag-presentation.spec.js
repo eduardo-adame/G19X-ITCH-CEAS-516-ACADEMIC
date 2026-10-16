@@ -63,14 +63,16 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
       await expect(page.getByText(label, { exact: true })).toBeVisible()
       await expect(page.getByText(explanations[state], { exact: true })).toHaveCount(1)
       await expect(page.getByText('Mensaje DTO sintético anterior.', { exact: true })).toHaveCount(0)
-      await expect(page.getByRole('heading', { name: 'Respuesta generada' })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Respuesta generada' })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Fuentes citadas' })).toHaveCount(0)
       if (state === 'EVIDENCIA_INSUFICIENTE') {
-        await expect(page.getByRole('heading', { name: 'Fuentes', exact: true })).toBeVisible()
-        await expect(page.getByText('Fragmento disponible como referencia', { exact: true })).toBeVisible()
-        await page.getByRole('link', { name: 'Ver fragmento en visor' }).click()
+        const sources = page.getByRole('region', { name: 'Fuentes relacionadas' })
+        await expect(sources.getByRole('heading', { name: 'Fuentes relacionadas (1)' })).toBeVisible()
+        await expect(sources.getByText('Referencia', { exact: true })).toBeVisible()
+        await sources.getByRole('link', { name: 'Abrir en el visor' }).click()
         await expect(page.getByRole('heading', { name: 'Visor documental' })).toBeVisible()
         await expect(page.getByText(dto.fragments[0].fragment_text, { exact: true })).toBeVisible()
-      } else await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toHaveCount(0)
+      } else await expect(page.getByRole('region', { name: 'Fuentes relacionadas' })).toHaveCount(0)
       expect(requests).toHaveLength(1)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     })
@@ -79,10 +81,13 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
   test('Estado 1 conserva síntesis, cita y encabezados de fuentes anteriores', async ({ page }) => {
     const requests = await mockRag(page, RAG_EVIDENCIA_SUFICIENTE)
     await page.goto('/consulta'); await submit(page)
-    await expect(page.getByRole('heading', { name: 'Respuesta generada' })).toBeVisible()
-    await expect(page.getByText(RAG_EVIDENCIA_SUFICIENTE.generated_response, { exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Fragmentos autorizados' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toContainText('[E1]')
+    await expect(page.getByRole('region', { name: 'Respuesta generada' })).toContainText(RAG_EVIDENCIA_SUFICIENTE.generated_response)
+    const sources = page.getByRole('region', { name: 'Fuentes citadas' })
+    await expect(sources.getByRole('heading', { name: 'Fuentes citadas (1)' })).toBeVisible()
+    await expect(sources).toContainText('[E1]')
+    // La marca [E1] de la respuesta lleva el foco a su fuente.
+    await page.getByRole('region', { name: 'Respuesta generada' }).getByRole('button', { name: /^Ir a la fuente E1/ }).click()
+    await expect(sources.getByRole('article')).toBeFocused()
     expect(requests).toHaveLength(1)
   })
 
@@ -94,8 +99,8 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
     await expect(page.getByText('Evidencia insuficiente', { exact: true })).toBeVisible()
     await expect(page.getByText('Fallo técnico sintético controlado.', { exact: true })).toBeVisible()
     await expect(page.getByText(explanations.EVIDENCIA_INSUFICIENTE, { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Reintentar con una nueva operación' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Fuentes relacionadas' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Intentar de nuevo' })).toBeVisible()
   })
 
   test('estado null fallido con mensaje null conserva error explícito sin inventar evidencia', async ({ page }) => {
@@ -104,7 +109,7 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
     await expect(page.getByRole('alert')).toContainText('El servicio no está disponible')
     await expect(page.getByText(explanations.SIN_EVIDENCIA, { exact: true })).toHaveCount(0)
     await expect(page.getByText(explanations.EVIDENCIA_INSUFICIENTE, { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: 'Fuentes citadas' })).toHaveCount(0); await expect(page.getByRole('region', { name: 'Fuentes relacionadas' })).toHaveCount(0)
   })
 
   for (const status of [401, 403, 500]) {
@@ -119,7 +124,7 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
       if (status === 401) await expect(page.getByRole('button', { name: 'Iniciar sesión', exact: true })).toBeVisible()
       else await expect(page.getByRole('alert')).toBeVisible()
       for (const message of Object.values(explanations)) await expect(page.getByText(message, { exact: true })).toHaveCount(0)
-      await expect(page.getByRole('region', { name: 'Fuentes autorizadas' })).toHaveCount(0)
+      await expect(page.getByRole('region', { name: 'Fuentes citadas' })).toHaveCount(0); await expect(page.getByRole('region', { name: 'Fuentes relacionadas' })).toHaveCount(0)
     })
   }
 

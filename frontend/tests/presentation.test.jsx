@@ -25,7 +25,8 @@ describe('ROBUSTNESS: presentación conforme a Legal Minimal sin datos inventado
 
   it('la cita conserva enlace al visor y texto citado diferenciado sin divisores', () => {
     const { container } = render(<MemoryRouter><EvidenceCard fragment={fragment} handle="E1" /></MemoryRouter>)
-    expect(screen.getByRole('link', { name: 'Ver fragmento en visor' })).toHaveAttribute('href', `/documentos?fragment_id=${fragment.fragmentId}`)
+    expect(screen.getByRole('link', { name: 'Abrir en el visor' })).toHaveAttribute('href', `/documentos?fragment_id=${fragment.fragmentId}`)
+    expect(screen.getByRole('link', { name: 'Abrir documento completo' })).toHaveAttribute('href', '/documentos?document_id=DOC-1&page=1')
     expect(container.querySelector('blockquote')).toHaveClass('italic')
     expect(container.querySelector('.border-b')).toBeNull()
   })

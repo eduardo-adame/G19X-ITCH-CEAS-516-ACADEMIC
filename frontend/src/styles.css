@@ -50,10 +50,15 @@
   .technical-details dd { margin: 0; overflow-wrap: anywhere; }
   .technical-details .mono { font-family: var(--font-family-mono); font-size: 11.5px; }
   .data-section > summary { cursor: pointer; list-style: revert; }
+  /* Esqueletos y actividad de la consulta documental (DESIGN §16.6); sin movimiento con reduced motion. */
+  .skeleton { border-radius: var(--radius-small); background: var(--background-selected); animation: skeleton-pulse 1.6s ease-in-out infinite; }
+  .rag-activity { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--text-secondary); animation: skeleton-pulse 1.2s ease-in-out infinite; }
 }
 /* El área principal recibe el foco al cambiar de ruta para lectores de pantalla; no es un control
    interactivo, así que no muestra el anillo de foco (el enlace «Ir al contenido» sí lo conserva). */
 main[tabindex="-1"]:focus { outline: none; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton, .rag-activity { animation: none !important; } }
 @keyframes kpi-entry { from { opacity: 0; transform: translateY(var(--kpi-entry-offset)); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .kpi-entry { animation: none !important; animation-delay: 0ms !important; opacity: 1; transform: none; } }
 @media (min-width: 768px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; } }

@@ -74,7 +74,7 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
     expect(request).not.toHaveBeenCalled()
     expect(uuid).not.toHaveBeenCalled()
     expect(textarea).toHaveValue(query)
-    expect(screen.queryByText('Consultando las fuentes autorizadas…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Buscando en tus documentos autorizados…')).not.toBeInTheDocument()
     expect(screen.queryByText('Sin evidencia')).not.toBeInTheDocument()
   })
 
@@ -161,7 +161,7 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
 
   it('limpiar elimina respuesta local y devuelve las cuatro sugerencias', async () => {
     mount(); await submit('hola')
-    await userEvent.click(screen.getByRole('button', { name: 'Limpiar consulta' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Nueva consulta' }))
     expect(screen.queryByRole('status', { name: 'Respuesta local' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue('')
     expect(screen.getByRole('region', { name: 'Preguntas sugeridas' })).toBeVisible()

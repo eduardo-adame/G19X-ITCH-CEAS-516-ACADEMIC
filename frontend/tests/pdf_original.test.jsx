@@ -39,6 +39,17 @@ describe('SRS_REQUIRED: renderizador local de PDF', () => {
     await screen.findByRole('img', { name: 'Página 2 de 2 del PDF original' })
     expect(pdf.getDocument).toHaveBeenCalledTimes(2)
   })
+  it('ROBUSTNESS: abre en la página inicial de la cita y la acota al número real de páginas', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({})
+    Object.defineProperty(Blob.prototype, 'arrayBuffer', { configurable: true, value: vi.fn(async () => new TextEncoder().encode('%PDF-sintetico').buffer) })
+    const view = render(<PdfOriginal blob={new Blob(['%PDF-sintetico'], { type: 'application/pdf' })} initialPage={2} />)
+    await screen.findByRole('img', { name: 'Página 2 de 2 del PDF original' })
+    expect(pdf.getPage).toHaveBeenLastCalledWith(2)
+    view.unmount()
+    render(<PdfOriginal blob={new Blob(['%PDF-sintetico'], { type: 'application/pdf' })} initialPage={99} />)
+    await screen.findByRole('img', { name: 'Página 2 de 2 del PDF original' })
+    expect(pdf.getPage).not.toHaveBeenCalledWith(99)
+  })
   it('desmonta un documento con el contrato API6 sin destroy propio y borra sus píxeles', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({})
     Object.defineProperty(Blob.prototype, 'arrayBuffer', { configurable: true, value: vi.fn(async () => new TextEncoder().encode('%PDF-sintetico').buffer) })

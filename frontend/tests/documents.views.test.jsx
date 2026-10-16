@@ -10,7 +10,7 @@ import { ApiError } from '../src/api/errors.js'
 import { fullDocument, metadata } from './fixtures/documents.js'
 
 vi.mock('../src/features/documents/PdfOriginal.jsx', () => ({
-  PdfOriginal: ({ blob }) => <canvas title="PDF original renderizado" data-size={blob.size} />,
+  PdfOriginal: ({ blob, initialPage }) => <canvas title="PDF original renderizado" data-size={blob.size} data-initial-page={initialPage} />,
 }))
 
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
@@ -71,6 +71,21 @@ describe('SRS_REQUIRED: catálogo y documento completo autorizados', () => {
     expect(document.querySelector('iframe')).toBeNull()
     const verification = deferred(); manager.revalidate.mockImplementation(() => verification.promise); fireEvent(window, new Event('focus')); expect(screen.queryByTitle('PDF original renderizado')).not.toBeInTheDocument()
     await act(async () => verification.resolve(true)); await screen.findByTitle('PDF original renderizado'); view.unmount()
+  })
+  it('ROBUSTNESS: una cita abre el PDF completo en su página inicial y descarta páginas inválidas', async () => {
+    const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }
+    const request = vi.fn(async (path) => path.includes('/original') ? new Blob(['%PDF-sintetico'], { type: 'application/pdf' }) : pdf)
+    const first = mount({ path: `/documentos?document_id=${metadata.document_id}&page=3`, request })
+    expect(await screen.findByTitle('PDF original renderizado')).toHaveAttribute('data-initial-page', '3')
+    expect(screen.getByLabelText('URL actual')).toHaveTextContent('page=3')
+    expect(request.mock.calls.every(([path]) => !path.includes('page='))).toBe(true)
+    first.view.unmount()
+    for (const page of ['0', 'abc', '100000']) {
+      const view = mount({ path: `/documentos?document_id=${metadata.document_id}&page=${page}`, request })
+      expect(await screen.findByTitle('PDF original renderizado')).toHaveAttribute('data-initial-page', '1')
+      expect(screen.getByLabelText('URL actual')).not.toHaveTextContent('page=')
+      view.view.unmount()
+    }
   })
   it('no crea URL para PDF tardío después de logout', async () => {
     const pending = deferred(); const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }

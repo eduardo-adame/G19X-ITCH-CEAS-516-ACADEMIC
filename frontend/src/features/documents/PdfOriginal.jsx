@@ -10,9 +10,10 @@ import { ErrorState, Loading } from '../../components/feedback.jsx'
 // código, fuentes ni contenido desde una URL externa del documento.
 GlobalWorkerOptions.workerSrc = workerSource
 
-export function PdfOriginal({ blob }) {
+export function PdfOriginal({ blob, initialPage = 1 }) {
   const canvasRef = useRef(null)
-  const [state, setState] = useState({ loading: true, error: null, page: 1, pages: 0 })
+  // La página inicial se acota al número real de páginas al renderizar (safePage).
+  const [state, setState] = useState({ loading: true, error: null, page: Math.max(1, Number(initialPage) || 1), pages: 0 })
   const page = state.page
 
   useEffect(() => {
