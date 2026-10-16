@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider.jsx'
 import { can } from '../../auth/permissions.js'
 import { useResource } from '../../api/useResource.js'
 import { ApiError } from '../../api/errors.js'
 import { PageHeader } from '../../components/layout.jsx'
-import { Button, FilterBar, Input, Select } from '../../components/controls.jsx'
+import { Button, Input, Select } from '../../components/controls.jsx'
+import { FilterToolbar, useDebouncedCallback } from '../../components/filters.jsx'
 import { Badge, DataTable, KpiMetric, KpiRow, RiskBadge, TechnicalDetails } from '../../components/data.jsx'
 import { EmptyState, ErrorState, ResourceState } from '../../components/feedback.jsx'
 import { Icon } from '../../components/Icon.jsx'
@@ -13,7 +14,7 @@ import { validDate } from '../../shared/formatters.js'
 import { formatAuditTimestamp, formatMonth, formatPeriodRange, formatQuantity, formatUserTimestamp } from '../../shared/presentation.js'
 import { writeQuery } from '../../shared/query.js'
 import { analyticsFilters, analyticsPaths, FILTER_VALIDATORS, PERIODS, RISKS } from './api.js'
-import { adaptAnalysis, adaptKpis, alertCountLabel, KPI_CATALOG, ruleLabel } from './adapters.js'
+import { adaptAnalysis, adaptKpis, alertCountLabel, KPI_CATALOG, ruleLabel, ruleShortLabel } from './adapters.js'
 import { AlertsSkeleton, ChartLoadingState, ExposureEvolutionChart, IncidentsByAreaChart, LitigationExposureChart, MatterVolumeTable, ObservationTable, SeverityChart, TemporalChart } from './charts.jsx'
 import { matterVolumePivot } from './viewModels.js'
 import { resolveDomainKpis, resolveExecutiveKpis } from './executiveKpis.js'
@@ -36,35 +37,53 @@ function ValidatedResource({ resource, adapt, children, loading, context }) {
   }}</ResourceState>
 }
 
-// Los selectores se aplican al cambiar (RF-074); el rango personalizado espera a tener ambas fechas.
-function Filters({ filters, entities, setParams, showAnalysis }) {
+// Filtros de analítica (DESIGN §19): se aplican solos (RF-074) con una espera breve para agrupar cambios del
+// teclado; el rango personalizado se aplica cuando ambas fechas son válidas y están en orden.
+const periodLabel = (value) => PERIODS.find((item) => item.value === value)?.label ?? value
+const riskLabel = (value) => RISKS.find((item) => item.value === value)?.label ?? value
+function Filters({ filters, entities, setParams, showAnalysis, defaults }) {
   const [draft, setDraft] = useState({ ...filters.raw, period: filters.period, risk_type: filters.risk_type, mode: filters.analysisMode })
-  const [error, setError] = useState(false)
-  useEffect(() => { setDraft({ ...filters.raw, period: filters.period, risk_type: filters.risk_type, mode: filters.analysisMode }); setError(false) }, [filters.canonical, filters.risk_type])
+  const [rangeError, setRangeError] = useState(null)
+  useEffect(() => { setDraft({ ...filters.raw, period: filters.period, risk_type: filters.risk_type, mode: filters.analysisMode }); setRangeError(null) }, [filters.canonical, filters.risk_type])
   function apply(values) {
-    if (values.period === 'custom' && (!validDate(values.period_start) || !validDate(values.period_end) || values.period_start > values.period_end)) { setError(true); return }
+    if (values.period === 'custom' && (!validDate(values.period_start) || !validDate(values.period_end) || values.period_start > values.period_end)) return
     const next = { risk_type: values.risk_type, entity: values.entity, period: values.period, ...(showAnalysis ? { analysis_mode: values.mode } : {}) }
     if (showAnalysis && values.mode === 'historical') next.analytic_run_id = values.analytic_run_id
     if (values.period === 'custom') { next.period_start = values.period_start; next.period_end = values.period_end }
-    setError(false); setParams(writeQuery(next, FILTER_VALIDATORS))
+    setParams(writeQuery(next, FILTER_VALIDATORS))
   }
+  const schedule = useDebouncedCallback(apply, 250)
   const choose = (key) => (event) => {
     const values = { ...draft, [key]: event.target.value }
     setDraft(values)
-    if (values.period !== 'custom') apply(values)
+    if (values.period !== 'custom') schedule(values)
   }
-  const type = (key) => (event) => setDraft((value) => ({ ...value, [key]: event.target.value }))
-  return <form onSubmit={(event) => { event.preventDefault(); apply(draft) }}><FilterBar>
+  const setDate = (key) => (event) => {
+    const values = { ...draft, [key]: event.target.value }
+    setDraft(values)
+    const complete = validDate(values.period_start) && validDate(values.period_end)
+    const inverted = complete && values.period_start > values.period_end
+    setRangeError(inverted ? 'Debe ser igual o posterior a «Desde».' : null)
+    if (complete && !inverted) schedule(values)
+  }
+  const reset = (patch) => apply({ ...draft, ...patch })
+  const chips = [
+    ...(filters.period !== defaults.period ? [{ id: 'period', label: filters.period === 'custom' && filters.raw.period_start ? `Periodo: ${formatPeriodRange(filters.raw.period_start, filters.raw.period_end)}` : `Periodo: ${periodLabel(filters.period)}`, onRemove: () => reset({ period: defaults.period, period_start: undefined, period_end: undefined }) }] : []),
+    ...(filters.risk_type !== defaults.risk ? [{ id: 'risk', label: `Riesgo: ${riskLabel(filters.risk_type)}`, onRemove: () => reset({ risk_type: defaults.risk }) }] : []),
+    ...(filters.raw.entity ? [{ id: 'entity', label: `Entidad: ${filters.raw.entity}`, onRemove: () => reset({ entity: undefined }) }] : []),
+    ...(showAnalysis && filters.analysisMode === 'historical' ? [{ id: 'mode', label: filters.raw.analytic_run_id ? 'Análisis: ejecución seleccionada' : 'Análisis: histórico', onRemove: () => reset({ mode: 'current', analytic_run_id: undefined }) }] : []),
+  ]
+  const primary = <>
     {showAnalysis && <Select label="Análisis" value={draft.mode} onChange={choose('mode')} options={[{ value: 'current', label: 'Vigente' }, { value: 'historical', label: 'Histórico' }]} />}
     <Select label="Periodo" value={draft.period} onChange={choose('period')} options={PERIODS} />
+    {draft.period === 'custom' && <><Input compact label="Desde" type="date" max={draft.period_end || undefined} value={draft.period_start || ''} onChange={setDate('period_start')} /><Input compact label="Hasta" type="date" min={draft.period_start || undefined} value={draft.period_end || ''} onChange={setDate('period_end')} error={rangeError} /></>}
     <Select label="Tipo de riesgo" value={draft.risk_type} onChange={choose('risk_type')} options={RISKS} />
     {entities.length
       ? <Select label="Entidad" value={draft.entity || ''} onChange={choose('entity')} options={[{ value: '', label: 'Todas las aplicables' }, ...entities.map((value) => ({ value, label: value }))]} />
-      : <p className="self-end pb-2 text-xs text-secondary" data-testid="entity-not-applicable">Entidad: No aplicable</p>}
+      : <p className="field text-xs text-secondary" data-testid="entity-not-applicable">Entidad: No aplicable</p>}
     {draft.entity && !entities.includes(draft.entity) && <p className="text-xs text-secondary">Entidad seleccionada: {draft.entity}. Sin opciones disponibles en esta lectura.</p>}
-    {draft.period === 'custom' && <><Input compact label="Desde" type="date" value={draft.period_start || ''} onChange={type('period_start')} /><Input compact label="Hasta" type="date" value={draft.period_end || ''} onChange={type('period_end')} /><Button type="submit" variant="secondary">Aplicar rango</Button></>}
-    {showAnalysis && draft.analytic_run_id && draft.mode === 'historical' && <Button variant="ghost" onClick={() => apply({ ...draft, analytic_run_id: undefined })}>Quitar selección de ejecución</Button>}
-  </FilterBar>{error && <p role="alert" className="mt-2 text-xs text-[var(--critical)]">El rango personalizado requiere fechas válidas y ordenadas.</p>}</form>
+  </>
+  return <FilterToolbar label="Filtros de la vista" primary={primary} chips={chips} onClearAll={() => setParams('')} />
 }
 
 // Dónde se lee hoy el desglose de un KPI dimensional (las tarjetas no suman en el frontend, D-UX-7).
@@ -127,24 +146,33 @@ function NoFindings({ riskType }) {
 
 function evaluationResult(row) {
   if (row.outcome === 'INSUFFICIENT_HISTORY') return 'Historial insuficiente'
-  if (row.signal_detected) return row.recurrence_month_count >= 3 ? `Requiere atención · ${row.recurrence_month_count} de 4 meses` : 'Requiere atención'
+  // La recurrencia va en una segunda línea atenuada: la celda conserva un ancho estrecho y legible.
+  if (row.signal_detected) return row.recurrence_month_count >= 3 ? <><span className="block whitespace-nowrap">Requiere atención</span>{' '}<span className="block whitespace-nowrap text-xs text-secondary">{row.recurrence_month_count} de 4 meses</span></> : 'Requiere atención'
   return 'Sin alerta'
 }
 
 // Detalle del análisis visible: ejecución, ventana y evaluaciones por indicador. El texto registrado por el
 // análisis se conserva sin modificar solo en «Detalle técnico» (D-UX-1): puede venir en formato antiguo.
 function AnalysisRunDetail({ run }) {
+  // Un único mes evaluado se informa una vez en la ficha, no repetido en cada fila (DESIGN §16.3).
+  const months = [...new Set(run.evaluations.map((row) => row.evaluation_period))]
+  const singleMonth = months.length === 1 ? formatMonth(months[0]) : null
+  // Reglas presentes en todas las evaluaciones: se enuncian una vez sobre la tabla; cada fila conserva
+  // solo las propias del indicador (mismos datos registrados, sin repetirlos).
+  const commonRules = run.evaluations.length > 1 ? run.evaluations[0].rules_applied.filter((rule) => run.evaluations.every((row) => row.rules_applied.includes(rule))) : []
+  const ownRules = (row) => row.rules_applied.filter((rule) => !commonRules.includes(rule))
   return <div className="space-y-4 rounded-panel border border-border bg-surface p-5">
-    <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3"><div><dt className="text-muted">Ejecución</dt><dd className="mt-0.5">{formatUserTimestamp(run.completed_at)}</dd></div><div><dt className="text-muted">Ventana de datos</dt><dd className="mt-0.5">{formatPeriodRange(run.window_start.slice(0, 10), run.window_end.slice(0, 10))}</dd></div></dl>
-    <DataTable caption="Evaluaciones del análisis" rows={run.evaluations} columns={[
-      { key: 'name', label: 'Indicador' },
-      ...(run.evaluations.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', render: (row) => row.dimensionsText || '—' }] : []),
-      { key: 'evaluation_period', label: 'Mes', render: (row) => formatMonth(row.evaluation_period) },
+    <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">{singleMonth && <div><dt className="text-muted">Mes evaluado</dt><dd className="mt-0.5">{singleMonth}</dd></div>}<div><dt className="text-muted">Ejecución</dt><dd className="mt-0.5">{formatUserTimestamp(run.completed_at)}</dd></div><div><dt className="text-muted">Ventana de datos</dt><dd className="mt-0.5">{formatPeriodRange(run.window_start.slice(0, 10), run.window_end.slice(0, 10))}</dd></div></dl>
+    {commonRules.length > 0 && <p className="text-xs text-secondary">Reglas aplicadas a todos los indicadores: {commonRules.map(ruleLabel).join('; ')}.</p>}
+    <DataTable caption="Evaluaciones del análisis" compact rows={run.evaluations} columns={[
+      { key: 'name', label: 'Indicador', wide: true },
+      ...(run.evaluations.some((row) => row.dimensionsText) ? [{ key: 'dimensionsText', label: 'Ámbito', medium: true, render: (row) => row.dimensionsText || '—' }] : []),
+      ...(singleMonth ? [] : [{ key: 'evaluation_period', label: 'Mes', nowrap: true, render: (row) => formatMonth(row.evaluation_period) }]),
       { key: 'currentText', label: 'Actual', numeric: true, render: (row) => formatQuantity(row.current_value, row.unit) },
       { key: 'referenceText', label: 'Referencia', numeric: true, render: (row) => formatQuantity(row.reference_value, row.unit) },
       { key: 'absoluteText', label: 'Variación', numeric: true, render: (row) => formatQuantity(row.absolute_variation, row.unit, { signed: true }) },
       { key: 'result', label: 'Resultado', render: evaluationResult },
-      { key: 'rules_applied', label: 'Reglas', render: (row) => row.rules_applied.map(ruleLabel).join(' · ') },
+      { key: 'rules_applied', label: commonRules.length ? 'Regla del indicador' : 'Reglas', medium: true, render: (row) => ownRules(row).length ? <ul className="space-y-0.5">{ownRules(row).map((rule) => <li key={rule} title={ruleLabel(rule)}>{ruleShortLabel(rule)}</li>)}</ul> : '—' },
     ]} />
     <TechnicalDetails><dl><dt>Ejecución</dt><dd className="mono">{formatAuditTimestamp(run.completed_at)}</dd><dt>Ventana de datos</dt><dd className="mono">{formatAuditTimestamp(run.window_start)} – {formatAuditTimestamp(run.window_end)}</dd><dt>Texto registrado</dt><dd className="whitespace-pre-wrap">{run.executive_summary}</dd></dl></TechnicalDetails>
   </div>
@@ -190,6 +218,16 @@ function ContractDefinitions() {
     <div><dt className="font-medium">Contratos próximos a vencimiento sin revisión</dt><dd className="mt-1 text-secondary">Contratos cuya revisión no ha iniciado y que vencen entre hoy y los próximos 60 días.</dd></div>
     <div><dt className="font-medium">Tiempo de ciclo del contrato</dt><dd className="mt-1 text-secondary">Promedio de días entre la solicitud y la firma, para contratos con ambas fechas válidas.</dd></div>
   </dl>
+}
+
+// Línea de contexto de los indicadores con la ayuda sobre el alcance de las alertas (desplegable, accesible por teclado).
+function ContextLine({ text, closedOnly, onCurrent }) {
+  const [help, setHelp] = useState(false)
+  const id = useId()
+  return <div className="space-y-1 text-xs text-secondary">
+    <p className="flex min-h-[18px] flex-wrap items-center gap-x-2 gap-y-1"><span>{text}<span aria-hidden="true"> ·</span></span><span>Alertas del último análisis</span><button type="button" className="inline-flex items-center text-secondary hover:text-primary" aria-expanded={help} aria-controls={id} aria-label="Qué muestran las alertas" onClick={() => setHelp((open) => !open)}><Icon name="help" size={14} /></button>{closedOnly && <><span><span aria-hidden="true">· </span>Solo meses cerrados</span><button type="button" className="font-medium underline" onClick={onCurrent}>Ver periodo en curso</button></>}</p>
+    {help && <p id={id} className="max-w-2xl rounded-control bg-secondary px-3 py-2">Las alertas corresponden al último análisis completado; el periodo solo cambia los indicadores.</p>}
+  </div>
 }
 
 function SectionTitle({ children }) { return <h2 className="text-base font-semibold">{children}</h2> }
@@ -281,18 +319,20 @@ export function AnalyticsPage({ view = 'summary' }) {
   // Evaluaciones visibles al final de las vistas de dominio; en Tendencias van dentro de cada ejecución.
   const evaluationsBlock = trends || analysis.state !== 'success' ? null : <ValidatedResource resource={analysis} adapt={adaptAnalysis} context="el análisis">{(data) => <AnalysisEvaluations data={data} />}</ValidatedResource>
   const evolutionBlock = trends ? null : <EvolutionSection resource={evolutionResource} window={evolutionWindow} onWindow={setEvolutionWindow}>{(data) => evolutionCharts(view, data.items, historyAction)}</EvolutionSection>
-  const filterBlock = <div className="space-y-3"><Filters filters={filters} entities={entities} setParams={setParams} showAnalysis={trends} /><p className="text-xs text-secondary">{!trends ? 'Las alertas corresponden al último análisis completado; el periodo solo cambia los indicadores.' : filters.analysisMode === 'current' ? 'Se muestran las alertas del último análisis completado.' : 'Se muestran los análisis completados dentro del periodo seleccionado.'}</p>{filters.period !== 'current_month' && !trends && <div className="flex flex-wrap items-center gap-3"><p className="text-xs text-secondary">Este rango incluye solo meses cerrados.</p><Button variant="secondary" onClick={() => requestPeriod('current_month')}>Ver periodo en curso</Button></div>}</div>
+  const defaults = { period: trends ? 'last_6_months' : 'current_month', risk: config.risk }
+  const filterBlock = <Filters filters={filters} entities={entities} setParams={setParams} showAnalysis={trends} defaults={defaults} />
   const analysisBlock = <ValidatedResource resource={analysis} adapt={adaptAnalysis} context="el análisis" loading={<AlertsSkeleton />}>{(data) => <AnalysisContent data={data} mode={filters.analysisMode} principal={principal} selectRun={changeRun} riskType={filters.risk_type} heading={trends ? null : 'Requiere atención'} showDetail={trends} />}</ValidatedResource>
   const loadingSlots = trends ? undefined : (view === 'summary' ? resolveExecutiveKpis : resolveDomainKpis)({ view, riskType: filters.risk_type, resourceState: 'LOADING' }).filter((slot) => slot.state !== 'NOT_APPLICABLE')
   const updated = kpis.data ? latestCalculation(kpis.data) : null
-  const periodLabel = kpis.state === 'loading' ? 'Cargando periodo de indicadores…' : kpis.error ? 'Periodo de indicadores no disponible.' : validDate(kpis.data?.period_start) && validDate(kpis.data?.period_end) ? `Periodo de los indicadores: ${formatPeriodRange(kpis.data.period_start, kpis.data.period_end)}${updated ? ` · Actualizado el ${formatUserTimestamp(updated)}` : ''}` : 'Sin periodo completo disponible para esta selección.'
+  const periodText = kpis.state === 'loading' ? 'Cargando periodo de indicadores…' : kpis.error ? 'Periodo de indicadores no disponible.' : validDate(kpis.data?.period_start) && validDate(kpis.data?.period_end) ? `Indicadores de ${formatPeriodRange(kpis.data.period_start, kpis.data.period_end)}${updated ? ` · actualizados el ${formatUserTimestamp(updated)}` : ''}` : 'Sin periodo completo disponible para esta selección.'
+  const contextLine = <ContextLine text={periodText} closedOnly={filters.period !== 'current_month'} onCurrent={() => requestPeriod('current_month')} />
   // Las alertas se insertan bajo los KPI cuando los indicadores son legibles; si no, siguen al bloque de lectura.
   // Mientras cargan los KPI, el bloque de alertas ya ocupa su posición final (sin saltos al llegar los datos).
   const alertsInside = can(principal, 'dashboard.read') && (kpisValid || kpis.state === 'loading')
   // El rango tiene el mismo espacio al cargar y al recibir la API para que
   // las métricas no se desplacen al sustituir los skeletons por resultados.
-  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8"><p className="h-9 text-xs leading-[18px] text-secondary">{periodLabel}</p><ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} beforeAlerts={view === 'contracts' ? <ContractDefinitions /> : null} alerts={alertsInside ? analysisBlock : null} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} evolution={evolutionBlock} /><ObservationSections data={data} view={view} />{evaluationsBlock}</div>}</ValidatedResource></div>
-  return <div className="space-y-8"><PageHeader title={config.title} description={config.description} />{corrected && <p role="status" className="text-xs text-secondary">Se retiraron filtros no válidos de la dirección.</p>}{filterBlock}{trends ? analysisBlock : <>{kpiBlock}{!alertsInside && analysisBlock}</>}</div>
+  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8">{contextLine}<ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} beforeAlerts={view === 'contracts' ? <ContractDefinitions /> : null} alerts={alertsInside ? analysisBlock : null} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} evolution={evolutionBlock} /><ObservationSections data={data} view={view} />{evaluationsBlock}</div>}</ValidatedResource></div>
+  return <div className="space-y-8"><PageHeader title={config.title} description={config.description} />{corrected && <p role="status" className="text-xs text-secondary">Se retiraron filtros no válidos de la dirección.</p>}{filterBlock}{trends && <p className="text-xs text-secondary">{filters.analysisMode === 'current' ? 'Se muestran las alertas del último análisis completado.' : 'Se muestran los análisis completados dentro del periodo seleccionado.'}</p>}{trends ? analysisBlock : <>{kpiBlock}{!alertsInside && analysisBlock}</>}</div>
 }
 
 export const SummaryPage = () => <AnalyticsPage view="summary" />

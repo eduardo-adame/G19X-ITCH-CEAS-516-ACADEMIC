@@ -4,12 +4,13 @@ import { useSession } from '../../auth/SessionProvider.jsx'
 import { can } from '../../auth/permissions.js'
 import { ApiError } from '../../api/errors.js'
 import { PageHeader } from '../../components/layout.jsx'
-import { Button, Input, FilterBar, Select } from '../../components/controls.jsx'
+import { Select } from '../../components/controls.jsx'
+import { CursorPager, DateRangeFields, FilterToolbar, RefreshButton, ResultsSummary, SearchField, useCursorHistory, useDebouncedCallback } from '../../components/filters.jsx'
 import { DataTable, StatusBadge, TechnicalDetails } from '../../components/data.jsx'
 import { ResourceState, ErrorState } from '../../components/feedback.jsx'
 import { actorTypeLabel, AUDIT_ACTION_LABELS, auditActionLabel } from '../../shared/labels.js'
-import { localDayBoundary, localDayOf } from '../../shared/presentation.js'
-import { auditPage, readFilters, filterQuery } from './adapters.js'
+import { formatDayRange as rangeText, localDayBoundary, localDayOf } from '../../shared/presentation.js'
+import { auditPage, readFilters, filterQuery, changeFilters, uuid, pageKey } from './adapters.js'
 import { queryPath, useOperationsRead } from './api.js'
 
 export function AuditPage() {
@@ -17,6 +18,7 @@ export function AuditPage() {
   if (!can(principal, 'audit.read.own')) return <ErrorState error={new ApiError(403)} />
   return <AuditWorkspace key={generation} principal={principal} />
 }
+const withoutCursor = ({ cursor, ...rest }) => rest
 const actionOptions = (current) => {
   const known = Object.entries(AUDIT_ACTION_LABELS).map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, 'es'))
   return [{ value: '', label: 'Todas' }, ...(current && !Object.hasOwn(AUDIT_ACTION_LABELS, current) ? [{ value: current, label: current }] : []), ...known]
@@ -34,33 +36,42 @@ function AuditDetail({ row }) {
 function AuditWorkspace({ principal }) {
   const [params, setParams] = useSearchParams(); const filters = readFilters(params.toString(), 'audit')
   const [error, setError] = useState(null); const resource = useOperationsRead(queryPath('audit', filters), auditPage)
-  function submit(event) {
-    event.preventDefault(); const data = new FormData(event.currentTarget); const next = {}
-    for (const [key, value] of data) if (value) next[key] = value
-    if (next.occurred_from) next.occurred_from = localDayBoundary(next.occurred_from)
-    if (next.occurred_to) next.occurred_to = localDayBoundary(next.occurred_to, { end: true })
-    try { setParams(filterQuery(next, 'audit')); setError(null) } catch (cause) { setError(cause) }
-  }
+  // Filtros automáticos (DESIGN §19): sin botón «Aplicar»; cambiar un filtro vuelve a la primera página.
+  function change(patch) { try { setParams(filterQuery(changeFilters(filters, patch), 'audit')); setError(null) } catch (cause) { setError(cause) } }
+  const schedule = useDebouncedCallback(change, 250)
+  // Clave canónica (incluye el límite por defecto) para que pasar de página no reinicie el historial.
+  const pages = useCursorHistory(pageKey(withoutCursor(filters), 'audit'))
+  const from = localDayOf(filters.occurred_from); const to = localDayOf(filters.occurred_to)
+  const chips = [
+    ...(from || to ? [{ id: 'range', label: `Fecha: ${rangeText(from, to)}`, onRemove: () => change({ occurred_from: '', occurred_to: '' }) }] : []),
+    ...(filters.action ? [{ id: 'action', label: `Evento: ${auditActionLabel(filters.action)}`, onRemove: () => change({ action: '' }) }] : []),
+    ...(filters.resource_type ? [{ id: 'resource', label: `Recurso: ${filters.resource_type}`, onRemove: () => change({ resource_type: '' }) }] : []),
+    ...(filters.correlation_id ? [{ id: 'correlation', label: `Correlación: ${filters.correlation_id.slice(0, 8)}…`, onRemove: () => change({ correlation_id: '' }) }] : []),
+  ]
+  const secondaryActive = (filters.resource_type ? 1 : 0) + (filters.correlation_id ? 1 : 0)
   return <>
-    <PageHeader title="Auditoría" description={can(principal, 'audit.read.all') ? 'Bitácora de eventos del sistema. Solo lectura.' : 'Tus eventos de ingesta y cuarentena. Solo lectura.'} />
-    <form key={params.toString()} onSubmit={submit} className="space-y-2"><FilterBar>
-      <Input compact label="Desde" type="date" name="occurred_from" defaultValue={localDayOf(filters.occurred_from)} />
-      <Input compact label="Hasta" type="date" name="occurred_to" defaultValue={localDayOf(filters.occurred_to)} />
-      <Select label="Evento" name="action" defaultValue={filters.action || ''} options={actionOptions(filters.action)} />
-      <Select label="Filas por página" name="limit" defaultValue={filters.limit || '25'} options={['25', '50', '100'].map((value) => ({ value, label: value }))} />
-      <Button type="submit">Aplicar filtros</Button><Button variant="secondary" onClick={resource.reload}>Actualizar</Button>
-    </FilterBar>
-    <details className="text-xs text-secondary" open={Boolean(filters.resource_type || filters.correlation_id)}><summary className="w-fit cursor-pointer">Filtros avanzados</summary><div className="mt-2 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-      <Input compact label="Tipo de recurso" name="resource_type" maxLength={128} defaultValue={filters.resource_type || ''} />
-      <Input compact label="Correlación (identificador)" name="correlation_id" defaultValue={filters.correlation_id || ''} />
-    </div></details></form>
+    <PageHeader title="Auditoría" description={can(principal, 'audit.read.all') ? 'Bitácora de eventos del sistema. Solo lectura.' : 'Tus eventos de ingesta y cuarentena. Solo lectura.'} actions={<RefreshButton onClick={resource.reload} />} />
+    <FilterToolbar label="Filtros de auditoría" chips={chips} onClearAll={() => change({ occurred_from: '', occurred_to: '', action: '', resource_type: '', correlation_id: '' })} secondaryActive={secondaryActive}
+      primary={<>
+        <DateRangeFields from={from} to={to} onChange={(range) => change({ occurred_from: localDayBoundary(range.from), occurred_to: localDayBoundary(range.to, { end: true }) })} />
+        <Select label="Evento" value={filters.action || ''} options={actionOptions(filters.action)} onChange={(event) => schedule({ action: event.target.value })} />
+      </>}
+      secondary={<>
+        <SearchField label="Tipo de recurso" value={filters.resource_type || ''} maxLength={128} onApply={(value) => change({ resource_type: value })} />
+        <SearchField label="Correlación (identificador)" value={filters.correlation_id || ''} validate={uuid} invalidMessage="Pega el identificador completo (36 caracteres, p. ej. 1a2b3c4d-…)." onApply={(value) => change({ correlation_id: value })} />
+      </>} />
     {error && <ErrorState error={error} />}
-    <ResourceState resource={resource} context="la auditoría" skeleton="table" empty={{ title: 'Sin eventos para estos filtros', message: 'Prueba con otro rango de fechas o retira algún filtro.' }}>{(data) => <div className="space-y-4"><DataTable caption="Eventos de auditoría" rows={data.items} columns={[
+    <ResourceState resource={resource} context="la auditoría" skeleton="table" empty={{ title: 'Sin eventos para estos filtros', message: 'Prueba con otro rango de fechas o retira algún filtro.' }}>{(data) => <div className="space-y-4"><ResultsSummary count={data.items.length} hasMore={Boolean(data.next_cursor)} noun={['evento', 'eventos']} /><DataTable caption="Eventos de auditoría" rows={data.items} columns={[
       { key: 'occurredLabel', label: 'Fecha y hora', render: (row) => <span className="whitespace-nowrap font-mono text-xs">{row.occurredLabel}</span> },
       { key: 'actor_identifier', label: 'Actor', render: (row) => <span>{row.actor_identifier}{row.actor_type !== 'HUMAN' && <span className="block text-xs text-muted">{actorTypeLabel(row.actor_type)}</span>}</span> },
       { key: 'action', label: 'Evento', render: (row) => auditActionLabel(row.action) },
       { key: 'result', label: 'Resultado', render: (row) => <StatusBadge kind="audit" value={row.result} /> },
-      { key: 'detail', label: 'Detalle', render: (row) => <AuditDetail row={row} /> },
-    ]} />{data.next_cursor && <Button variant="secondary" onClick={() => setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'audit'))}>Página siguiente</Button>}</div>}</ResourceState>
+      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <AuditDetail row={row} /> },
+    ]} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
+      onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'audit')) }}
+      onPrevious={() => { const previous = pages.pop(); setParams(filterQuery(previous ? { ...withoutCursor(filters), cursor: previous } : withoutCursor(filters), 'audit')) }}
+      onFirst={() => setParams(filterQuery(withoutCursor(filters), 'audit'))}>
+      <div className="filter-row"><Select label="Filas por página" value={filters.limit || '25'} options={['25', '50', '100'].map((value) => ({ value, label: value }))} onChange={(event) => change({ limit: event.target.value })} /></div>
+    </CursorPager></div>}</ResourceState>
   </>
 }

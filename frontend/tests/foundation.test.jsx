@@ -177,6 +177,8 @@ describe('ROBUSTNESS: lecturas protegidas y ciclo React', () => {
     const manager = createSessionManager(async (path) => { if (path.endsWith('/logout')) throw new Error('Detalle interno'); return ok(path.endsWith('/refresh') ? { access_token: 'sintetico', token_type: 'bearer' } : identity) })
     render(<App manager={manager} manifest={buildRegistry({})} />)
     await screen.findByRole('heading', { name: 'Sin funciones disponibles' }); await userEvent.click(screen.getAllByRole('button', { name: 'Cerrar sesión' })[0])
+    // El cierre pedido por la persona se confirma en el diálogo.
+    await userEvent.click(within(await screen.findByRole('dialog', { name: '¿Cerrar sesión?' })).getByRole('button', { name: 'Cerrar sesión' }))
     expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible(); expect(await screen.findByRole('alert')).toHaveTextContent('Consulta el estado'); expect(screen.getByRole('alert')).not.toHaveTextContent('Detalle interno')
   })
   it('StrictMode comparte lectura y descarta datos al cambiar query', async () => {

@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
@@ -169,6 +169,22 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(table).toHaveTextContent('enero 2030 (al 15 ene 2030)')
     expect(screen.getByRole('heading', { name: 'Resumen ejecutivo' })).toBeVisible()
   })
+  it('evaluaciones: reglas comunes una vez sobre la tabla, regla propia breve por fila y mes único en la ficha', async () => {
+    const payload = analysisPage(true)
+    const base = payload.items[0].evaluations[0]
+    base.rules_applied = ['RC03_APPEARANCE_OR_INCREASE', 'TREND_STRICT_THREE_MONTH', 'RECURRENCE_THREE_OF_FOUR']
+    payload.items[0].evaluations.push({ ...base, id: '66666666-6666-4666-8666-666666666666', kpi_code: 'KPI-LI-05', signal_detected: false, rules_applied: ['LI05_STRICT_THREE_MONTH_INCREASE', 'TREND_STRICT_THREE_MONTH', 'RECURRENCE_THREE_OF_FOUR'] })
+    fixture({ analysis: payload })
+    const table = await screen.findByRole('table', { name: 'Evaluaciones del análisis' })
+    expect(screen.getByText('Reglas aplicadas a todos los indicadores: Tendencia de tres meses consecutivos; Recurrencia en 3 de los últimos 4 meses.')).toBeVisible()
+    expect(within(table).getByRole('columnheader', { name: 'Regla del indicador' })).toBeVisible()
+    expect(within(table).getByText('Aparición o aumento')).toBeVisible()
+    expect(within(table).getByText('Aumento tres meses seguidos')).toBeVisible()
+    expect(within(table).queryByText('Tendencia de tres meses consecutivos')).not.toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: 'Mes' })).not.toBeInTheDocument()
+    // «Mes evaluado» aparece en la tarjeta de la alerta y una vez en la ficha de evaluaciones.
+    expect(within(table.closest('.rounded-panel')).getByText('Mes evaluado', { selector: 'dt' })).toBeVisible()
+  })
   it('no presenta link de contexto sin document.query', async () => {
     fixture({ analysis: analysisPage(true), roles: [] })
     await screen.findByText('1 alerta'); expect(screen.queryByRole('link', { name: 'Verificar evidencia documental' })).not.toBeInTheDocument()
@@ -179,12 +195,14 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=all')).toBe(true)
     expect(screen.getByLabelText('Periodo')).toBeEnabled()
     expect(screen.queryAllByRole('columnheader', { name: 'Fecha de cálculo' })).toHaveLength(0)
-    expect(screen.getByText(/Actualizado el \d{1,2} (ene|feb) 2030, \d{2}:\d{2}$/)).toBeVisible()
+    expect(screen.getByText(/actualizados el \d{1,2} (ene|feb) 2030, \d{2}:\d{2}$/)).toBeVisible()
   })
   it('Tendencias aplica filtros históricos y back/forward restaura selección', async () => {
     const client = fixture({ view: 'trends' }); await screen.findByText('0 alertas')
     await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('analysis_mode=historical'))
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'last_3_months')
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('period=last_3_months'))
     await userEvent.selectOptions(screen.getByLabelText('Tipo de riesgo'), 'compliance')
     await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/analysis?period=last_3_months&risk_type=compliance')).toBe(true))
     await userEvent.click(screen.getByRole('button', { name: 'Atrás de prueba' }))
@@ -223,9 +241,18 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     const client = fixture(); await screen.findByText('0 alertas'); const before = client.acquireRead.mock.calls.length
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'custom')
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
-    await userEvent.click(screen.getByRole('button', { name: 'Aplicar rango' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('fechas válidas y ordenadas')
+    // Sin botón «Aplicar»: un rango invertido marca «Hasta» y no consulta.
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2030-02-01' } })
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2030-01-01' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Debe ser igual o posterior a «Desde».')
+    expect(screen.getByLabelText('Hasta')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Hasta')).toHaveAttribute('min', '2030-02-01')
+    await new Promise((resolve) => setTimeout(resolve, 300))
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
+    // Rango válido: se aplica solo, sin botón.
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2030-03-01' } })
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('period_start=2030-02-01'))
+    expect(screen.queryByRole('button', { name: 'Aplicar rango' })).not.toBeInTheDocument()
   })
   it('retira parámetros desconocidos con aviso seguro y sin usarlos en API', async () => {
     const client = fixture({ search: '?query=contenido-no-permitido&risk_type=alto' })

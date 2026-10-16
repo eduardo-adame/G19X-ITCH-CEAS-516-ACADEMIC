@@ -4,12 +4,13 @@ import { useSession } from '../../auth/SessionProvider.jsx'
 import { can } from '../../auth/permissions.js'
 import { ApiError } from '../../api/errors.js'
 import { PageHeader, Modal } from '../../components/layout.jsx'
-import { Button, Input, Select, FilterBar, Tabs } from '../../components/controls.jsx'
+import { Button, Input, Select, Tabs } from '../../components/controls.jsx'
+import { CursorPager, DateRangeFields, FilterToolbar, RefreshButton, ResultsSummary, SearchField, useCursorHistory, useDebouncedCallback } from '../../components/filters.jsx'
 import { DataTable, StatusBadge, TechnicalDetails } from '../../components/data.jsx'
 import { ActionNotice, ResourceState, ErrorState } from '../../components/feedback.jsx'
 import { familyLabel, quarantineCauseLabel } from '../../shared/labels.js'
-import { localDayBoundary, localDayOf } from '../../shared/presentation.js'
-import { quarantinePage, readFilters, changeFilters, filterQuery, families, quarantineCauses } from './adapters.js'
+import { formatDayRange as rangeText, localDayBoundary, localDayOf } from '../../shared/presentation.js'
+import { quarantinePage, readFilters, changeFilters, filterQuery, families, quarantineCauses, uuid, pageKey } from './adapters.js'
 import { queryPath, useOperationsRead, useOperation } from './api.js'
 import { QuarantineEditor } from './QuarantineEditor.jsx'
 
@@ -20,6 +21,7 @@ const STATE_TABS = Object.freeze([
   { id: 'cuarentena-reinyectados', state: 'Reinyectado', label: 'Reinyectados', empty: ['Sin reinyecciones', 'Ningún elemento se ha reinyectado con estos filtros.'] },
   { id: 'cuarentena-descartados', state: 'Descartado', label: 'Descartados', empty: ['Sin descartes', 'Ningún elemento se ha descartado con estos filtros.'] },
 ])
+const withoutCursor = ({ cursor, ...rest }) => rest
 const affected = (row) => [row.cause_description, row.row_number !== null && row.row_number !== undefined ? `fila ${row.row_number}` : null].filter(Boolean).join(' · ')
 
 export function QuarantinePage() {
@@ -37,32 +39,44 @@ function QuarantineWorkspace({ principal }) {
     try { setParams(filterQuery(changeFilters(filters, patch), 'quarantine')); setFilterError(null); setEditing(null); setDiscarding(null); setNotice(null) }
     catch (cause) { setFilterError(cause) }
   }
+  const schedule = useDebouncedCallback(change, 250)
+  // Clave canónica (incluye el límite por defecto) para que pasar de página no reinicie el historial.
+  const pages = useCursorHistory(pageKey(withoutCursor(filters), 'quarantine'))
+  const from = localDayOf(filters.rejected_from); const to = localDayOf(filters.rejected_to)
+  const chips = [
+    ...(filters.source_family ? [{ id: 'family', label: `Familia: ${familyLabel(filters.source_family)}`, onRemove: () => change({ source_family: '' }) }] : []),
+    ...(filters.cause_code ? [{ id: 'cause', label: `Regla: ${quarantineCauseLabel(filters.cause_code)}`, onRemove: () => change({ cause_code: '' }) }] : []),
+    ...(from || to ? [{ id: 'range', label: `Retenido: ${rangeText(from, to)}`, onRemove: () => change({ rejected_from: '', rejected_to: '' }) }] : []),
+    ...(filters.ingest_file_id ? [{ id: 'file', label: `Archivo: ${filters.ingest_file_id.slice(0, 8)}…`, onRemove: () => change({ ingest_file_id: '' }) }] : []),
+  ]
   async function discard(event) {
     event.preventDefault(); if (mutation.busy || !discarding?.canAct || !justification.trim()) return
     const result = await mutation.execute('quarantine.discard', (api) => api.discard(discarding.id, justification))
     if (result) { setNotice({ title: 'Descarte confirmado.', detail: affected(discarding) }); setDiscarding(null); setJustification(''); resource.reload() }
   }
   return <>
-    <PageHeader title="Zona de cuarentena" description="Registros y archivos retenidos por validación. El contenido original no se modifica." />
+    <PageHeader title="Zona de cuarentena" description="Registros y archivos retenidos por validación. El contenido original no se modifica." actions={<RefreshButton onClick={resource.reload} />} />
     <Tabs label="Estado de los elementos" items={STATE_TABS.map((tab) => ({ id: tab.id, label: tab.label, panelId: 'cuarentena-resultados' }))} active={activeTab.id} onChange={(id) => change({ state: STATE_TABS.find((tab) => tab.id === id).state })} />
-    <FilterBar>
-      <Select label="Familia" value={filters.source_family || ''} onChange={(e) => change({ source_family: e.target.value })} options={[{ value: '', label: 'Todas' }, ...families.map((v) => ({ value: v, label: familyLabel(v) }))]} />
-      <Select label="Regla infringida" value={filters.cause_code || ''} onChange={(e) => change({ cause_code: e.target.value })} options={[{ value: '', label: 'Todas' }, ...quarantineCauses.map((v) => ({ value: v, label: quarantineCauseLabel(v) }))]} />
-      <Input key={`from-${filters.rejected_from || ''}`} label="Retenido desde" type="date" compact defaultValue={localDayOf(filters.rejected_from)} onChange={(e) => change({ rejected_from: localDayBoundary(e.target.value) })} />
-      <Input key={`to-${filters.rejected_to || ''}`} label="Retenido hasta" type="date" compact defaultValue={localDayOf(filters.rejected_to)} onChange={(e) => change({ rejected_to: localDayBoundary(e.target.value, { end: true }) })} />
-      <Button variant="secondary" onClick={resource.reload}>Actualizar estado</Button>
-    </FilterBar>
-    {filters.ingest_file_id && <p className="flex flex-wrap items-center gap-2 text-xs text-secondary">Mostrando solo el archivo recibido <span className="font-mono">{filters.ingest_file_id.slice(0, 8)}…</span><Button variant="ghost" onClick={() => change({ ingest_file_id: '' })}>Quitar filtro de archivo</Button></p>}
-    <details className="text-xs text-secondary" open={Boolean(filters.ingest_file_id)}><summary className="cursor-pointer w-fit">Filtros avanzados</summary><div className="mt-2 max-w-md"><Input key={`file-${filters.ingest_file_id || ''}`} label="Archivo de origen (identificador)" compact defaultValue={filters.ingest_file_id || ''} onBlur={(e) => change({ ingest_file_id: e.target.value })} /></div></details>
+    <FilterToolbar label="Filtros de cuarentena" chips={chips} onClearAll={() => change({ source_family: '', cause_code: '', rejected_from: '', rejected_to: '', ingest_file_id: '' })}
+      primary={<>
+        <Select label="Familia" value={filters.source_family || ''} onChange={(e) => schedule({ source_family: e.target.value })} options={[{ value: '', label: 'Todas' }, ...families.map((v) => ({ value: v, label: familyLabel(v) }))]} />
+        <Select label="Regla infringida" value={filters.cause_code || ''} onChange={(e) => schedule({ cause_code: e.target.value })} options={[{ value: '', label: 'Todas' }, ...quarantineCauses.map((v) => ({ value: v, label: quarantineCauseLabel(v) }))]} />
+        <DateRangeFields fromLabel="Retenido desde" toLabel="Retenido hasta" from={from} to={to} onChange={(range) => change({ rejected_from: localDayBoundary(range.from), rejected_to: localDayBoundary(range.to, { end: true }) })} />
+      </>}
+      secondary={<SearchField label="Archivo de origen (identificador)" value={filters.ingest_file_id || ''} validate={uuid} invalidMessage="Pega el identificador completo (36 caracteres, p. ej. 1a2b3c4d-…)." onApply={(value) => change({ ingest_file_id: value })} />}
+      secondaryActive={filters.ingest_file_id ? 1 : 0} />
     {filterError && <ErrorState error={filterError} />}
     {notice && <ActionNotice title={notice.title} onDismiss={() => setNotice(null)}>{notice.detail}</ActionNotice>}
     {mutation.error && !discarding && <ErrorState error={mutation.error} title={mutation.error.status === 403 ? undefined : 'No se pudo descartar el registro'} />}
-    <div id="cuarentena-resultados" role="tabpanel" aria-labelledby={activeTab.id}><ResourceState resource={resource} context="la cuarentena" skeleton="table" empty={{ title: activeTab.empty[0], message: activeTab.empty[1] }}>{(data) => <div className="space-y-4"><DataTable caption="Elementos en cuarentena" rows={data.items} columns={[
-      { key: 'cause_description', label: 'Causa' }, { key: 'source_family', label: 'Familia', render: (row) => familyLabel(row.source_family) ?? '—' }, { key: 'row_number', label: 'Fila' },
-      { key: 'createdLabel', label: 'Retenido' }, { key: 'state', label: 'Estado', render: (row) => <StatusBadge kind="quarantine" value={row.state} /> },
-      { key: 'actions', label: 'Acciones', render: (row) => <div className="flex flex-wrap items-center gap-2">{row.canCorrect && can(principal, 'quarantine.reinject') && <Button variant="secondary" onClick={() => setEditing(row)}>Corregir</Button>}{row.canAct && can(principal, 'quarantine.discard') && <Button variant="danger" onClick={() => { mutation.clear(); setDiscarding(row); setJustification('') }}>Descartar</Button>}{!row.canAct && <span className="text-xs text-muted">Resuelto</span>}{row.canAct && !row.canCorrect && <span className="text-xs text-muted">Sin registro tabular corregible</span>}</div> },
-      { key: 'detail', label: 'Detalle', render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Elemento</dt><dd className="mono">{row.id}</dd><dt>Archivo de origen</dt><dd className="mono">{row.ingest_file_id ?? '—'}</dd><dt>Registro fuente</dt><dd className="mono">{row.source_record_id ?? '—'}</dd><dt>Regla</dt><dd className="mono">{row.cause_code}</dd><dt>Retenido</dt><dd className="mono">{row.createdAudit}</dd></dl></TechnicalDetails> },
-    ]} />{data.next_cursor && <Button variant="secondary" onClick={() => setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'quarantine'))}>Página siguiente</Button>}</div>}</ResourceState></div>
+    <div id="cuarentena-resultados" role="tabpanel" aria-labelledby={activeTab.id}><ResourceState resource={resource} context="la cuarentena" skeleton="table" empty={{ title: activeTab.empty[0], message: activeTab.empty[1] }}>{(data) => <div className="space-y-4"><ResultsSummary count={data.items.length} hasMore={Boolean(data.next_cursor)} /><DataTable caption="Elementos en cuarentena" rows={data.items} columns={[
+      { key: 'cause_description', label: 'Causa', medium: true }, { key: 'source_family', label: 'Familia', render: (row) => familyLabel(row.source_family) ?? '—' }, { key: 'row_number', label: 'Fila', numeric: true },
+      { key: 'createdLabel', label: 'Retenido', nowrapWide: true }, { key: 'state', label: 'Estado', render: (row) => <StatusBadge kind="quarantine" value={row.state} /> },
+      { key: 'actions', label: 'Acciones', fit: true, sticky: true, render: (row) => <div className="flex flex-wrap items-center gap-2">{row.canCorrect && can(principal, 'quarantine.reinject') && <Button variant="secondary" onClick={() => setEditing(row)}>Corregir</Button>}{row.canAct && can(principal, 'quarantine.discard') && <Button variant="danger" onClick={() => { mutation.clear(); setDiscarding(row); setJustification('') }}>Descartar</Button>}{!row.canAct && <span className="text-xs text-muted">Resuelto</span>}{row.canAct && !row.canCorrect && <span className="text-xs text-muted">Sin registro tabular corregible</span>}</div> },
+      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Elemento</dt><dd className="mono">{row.id}</dd><dt>Archivo de origen</dt><dd className="mono">{row.ingest_file_id ?? '—'}</dd><dt>Registro fuente</dt><dd className="mono">{row.source_record_id ?? '—'}</dd><dt>Regla</dt><dd className="mono">{row.cause_code}</dd><dt>Retenido</dt><dd className="mono">{row.createdAudit}</dd></dl></TechnicalDetails> },
+    ]} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
+      onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'quarantine')) }}
+      onPrevious={() => { const previous = pages.pop(); setParams(filterQuery(previous ? { ...withoutCursor(filters), cursor: previous } : withoutCursor(filters), 'quarantine')) }}
+      onFirst={() => setParams(filterQuery(withoutCursor(filters), 'quarantine'))} /></div>}</ResourceState></div>
     {editing && !resource.error && <QuarantineEditor key={editing.id} item={editing} onClose={() => setEditing(null)} onConfirmed={(result) => { setNotice({ title: result.message, detail: affected(editing) }); resource.reload() }} />}
     <Modal open={Boolean(discarding) && !resource.error} title="Confirmar descarte" onClose={() => { setDiscarding(null); setJustification('') }}><form onSubmit={discard} className="space-y-4"><Input label="Justificación del descarte" value={justification} required disabled={mutation.busy} onChange={(e) => setJustification(e.target.value)} /><p className="text-sm text-secondary">El registro se excluirá de futuras reinyecciones. El original se conserva.</p>{mutation.error && <ErrorState error={mutation.error} title={mutation.error.status === 403 ? undefined : 'No se pudo descartar el registro'} />}<Button type="submit" variant="danger" busy={mutation.busy} disabled={!justification.trim() || Boolean(mutation.error)}>Confirmar descarte</Button></form></Modal>
   </>

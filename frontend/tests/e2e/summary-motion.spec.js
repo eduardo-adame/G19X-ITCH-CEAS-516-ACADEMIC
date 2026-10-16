@@ -1,6 +1,6 @@
 /** Motion de tarjetas ejecutivas con contratos HTTP sintéticos, sin persistencia real. */
 import { test, expect } from '@playwright/test'
-import { mockSessionTI, ME_RESPONSE_TI, EMPTY_KPI_RESPONSE, EMPTY_ANALYSIS_RESPONSE, SYNTHETIC_KPI_ITEM } from './helpers.js'
+import { mockSessionTI, ME_RESPONSE_TI, EMPTY_KPI_RESPONSE, EMPTY_ANALYSIS_RESPONSE, SYNTHETIC_KPI_ITEM, showFilters } from './helpers.js'
 
 const metrics = (page) => page.locator('section[aria-label="Indicadores principales"] .kpi-metric')
 
@@ -103,6 +103,7 @@ test.describe('ROBUSTNESS: motion ejecutivo aprobado', () => {
     await analyticsRoutes(page)
     await page.goto('/')
     await waitForFinal(page)
+    await showFilters(page)
     await page.getByLabel('Periodo', { exact: true }).selectOption('custom')
     await page.getByLabel('Desde', { exact: true }).fill('2026-01-01')
     expect(await page.evaluate(() => window.__kpiMotionBatches.length)).toBe(1)

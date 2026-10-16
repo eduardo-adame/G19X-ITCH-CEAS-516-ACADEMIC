@@ -7,12 +7,13 @@
   --background-selected: #F1F1F1;
   --text-primary: #171717;
   --text-secondary: #525252;
-  --text-muted: #737373;
+  /* Ajustados por la auditoría de contraste (DESIGN §20): ≥ 4.5:1 también sobre fondos secundarios. */
+  --text-muted: #6B6B6B;
   --text-disabled: #A3A3A3;
   --border-default: #E5E5E5;
   --border-subtle: #EEEEEE;
   --border-strong: #D4D4D4;
-  --critical: #DC2626;
+  --critical: #C81E1E;
   --critical-subtle: #FEF2F2;
   --critical-border: #FECACA;
   --warning: #B45309;
@@ -24,12 +25,32 @@
   --information: #2563EB;
   --information-subtle: #EFF6FF;
   --information-border: #BFDBFE;
+  /* Marca «Arena dorada» (escala amber/stone): #BB9457 como relleno de acciones con texto oscuro (6.2:1).
+     Los tonos derivados cubren lo que exige más contraste: foco, línea activa (≥3:1) y texto (≥4.5:1). */
+  --brand: #BB9457;
+  --brand-hover: #A9844B;
+  --brand-on: #1A1A1A;
+  --brand-strong: #8C6A3A;
+  --brand-ink: #7A5A22;
+  --brand-subtle: #F7EFD9;
+  --brand-border: #E2D2AC;
+  /* Roles derivados de la marca: cada superficie cambia de tono sin tocar los componentes. */
+  /* Encabezado neutro (stone-100/700/200): un tono más oscuro que las filas blancas, texto 9.4:1. */
+  --table-header-bg: #F5F5F4;
+  --table-header-text: #44403C;
+  --table-header-border: #E7E5E4;
+  --nav-active-bg: var(--brand-subtle);
+  --nav-active-text: #5A4317;
+  --nav-active-bar: #9C763F;
+  --link: var(--brand-ink);
   --chart-bar-1: #4A607A;
   --chart-bar-2: #5A7365;
   --chart-bar-3: #8C6254;
   --chart-bar-4: #6B5B7B;
   --chart-bar-5: #857053;
   --chart-bar-6: #3D6068;
+  --overlay: rgba(0, 0, 0, 0.4);
+  --scroll-shadow: rgba(0, 0, 0, 0.10);
   --chart-bar-opacity: 0.85;
   --radius-small: 6px;
   --radius-medium: 10px;
@@ -67,6 +88,110 @@
   --icon-size-action: 14px;
   --icon-size-small: 12px;
   --icon-size-modal-close: 18px;
+}
+
+/* Tema oscuro (DESIGN §20): mismos roles con valores oscuros. Se aplica por elección explícita
+   (data-theme="dark") o, sin elección guardada, cuando el sistema prefiere oscuro. Ambos bloques deben
+   mantenerse idénticos (prueba estática). */
+:root[data-theme="dark"] {
+  --background-page: #111111;
+  --background-primary: #191919;
+  --background-secondary: #1F1F1F;
+  --background-hover: #222222;
+  --background-selected: #2A2A2A;
+  --text-primary: #EDEDED;
+  --text-secondary: #B4B4B4;
+  --text-muted: #8F8F8F;
+  --text-disabled: #6B6B6B;
+  --border-default: #2E2E2E;
+  --border-subtle: #262626;
+  --border-strong: #3D3D3D;
+  --critical: #F87171;
+  --critical-subtle: #2A1515;
+  --critical-border: #5C2424;
+  --warning: #FBBF24;
+  --warning-subtle: #2A2009;
+  --warning-border: #5C4510;
+  --success: #4ADE80;
+  --success-subtle: #0F2417;
+  --success-border: #1F5132;
+  --information: #60A5FA;
+  --information-subtle: #0F1C2E;
+  --information-border: #1E3A5F;
+  --brand: #BB9457;
+  --brand-hover: #C9A46A;
+  --brand-on: #1A1A1A;
+  --brand-strong: #D4B483;
+  --brand-ink: #D9BD8C;
+  --brand-subtle: #2A2216;
+  --brand-border: #4A3A22;
+  --table-header-bg: #222222;
+  --table-header-text: #C9C9C9;
+  --table-header-border: #2E2E2E;
+  --nav-active-bg: #2A2216;
+  --nav-active-text: #E6CC9A;
+  --nav-active-bar: #BB9457;
+  --chart-bar-1: #8BA3BE;
+  --chart-bar-2: #8FAE9C;
+  --chart-bar-3: #C08E7E;
+  --chart-bar-4: #A493B8;
+  --chart-bar-5: #BFA57F;
+  --chart-bar-6: #7FA6AE;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --scroll-shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background-page: #111111;
+    --background-primary: #191919;
+    --background-secondary: #1F1F1F;
+    --background-hover: #222222;
+    --background-selected: #2A2A2A;
+    --text-primary: #EDEDED;
+    --text-secondary: #B4B4B4;
+    --text-muted: #8F8F8F;
+    --text-disabled: #6B6B6B;
+    --border-default: #2E2E2E;
+    --border-subtle: #262626;
+    --border-strong: #3D3D3D;
+    --critical: #F87171;
+    --critical-subtle: #2A1515;
+    --critical-border: #5C2424;
+    --warning: #FBBF24;
+    --warning-subtle: #2A2009;
+    --warning-border: #5C4510;
+    --success: #4ADE80;
+    --success-subtle: #0F2417;
+    --success-border: #1F5132;
+    --information: #60A5FA;
+    --information-subtle: #0F1C2E;
+    --information-border: #1E3A5F;
+    --brand: #BB9457;
+    --brand-hover: #C9A46A;
+    --brand-on: #1A1A1A;
+    --brand-strong: #D4B483;
+    --brand-ink: #D9BD8C;
+    --brand-subtle: #2A2216;
+    --brand-border: #4A3A22;
+    --table-header-bg: #222222;
+    --table-header-text: #C9C9C9;
+    --table-header-border: #2E2E2E;
+    --nav-active-bg: #2A2216;
+    --nav-active-text: #E6CC9A;
+    --nav-active-bar: #BB9457;
+    --chart-bar-1: #8BA3BE;
+    --chart-bar-2: #8FAE9C;
+    --chart-bar-3: #C08E7E;
+    --chart-bar-4: #A493B8;
+    --chart-bar-5: #BFA57F;
+    --chart-bar-6: #7FA6AE;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --scroll-shadow: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
 }
 :focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
 .tabular-nums { font-variant-numeric: tabular-nums; }

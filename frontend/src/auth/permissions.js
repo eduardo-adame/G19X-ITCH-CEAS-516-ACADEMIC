@@ -10,5 +10,7 @@ export function capabilitiesFor(principal) { return new Set((principal?.roles ||
 export function can(principal, capability) { return KNOWN_CAPABILITIES.includes(capability) && capabilitiesFor(principal).has(capability) }
 export function validatePrincipal(data) {
   if (!data || typeof data.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) || typeof data.username !== 'string' || !data.username || !Array.isArray(data.roles) || data.roles.some((role) => typeof role !== 'string')) return null
-  return Object.freeze({ id: data.id, username: data.username, roles: Object.freeze([...new Set(data.roles)].sort()) })
+  // Nombre asignado (solo presentación); si falta o no es válido se muestra el usuario.
+  const displayName = typeof data.display_name === 'string' && data.display_name.trim() && data.display_name.length <= 256 ? data.display_name.trim() : data.username
+  return Object.freeze({ id: data.id, username: data.username, displayName, roles: Object.freeze([...new Set(data.roles)].sort()) })
 }

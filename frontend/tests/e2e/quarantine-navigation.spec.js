@@ -1,6 +1,6 @@
 // Contrato HTTP sintético de navegación; no accede a bases ni usa credenciales reales.
 import { test, expect } from '@playwright/test'
-import { mockSessionTI, mockDashboardEmpty } from './helpers.js'
+import { mockSessionTI, mockDashboardEmpty, showFilters } from './helpers.js'
 import { quarantineCauseItem } from '../fixtures/quarantineCauses.js'
 const fileA = '11111111-1111-4111-8111-111111111111'
 const fileB = '22222222-2222-4222-8222-222222222222'
@@ -14,7 +14,7 @@ test('SRS_REQUIRED: A/B/Atrás/Adelante sincroniza URL, UUID visible y GET sin r
     return route.fulfill({ json: { items: [{ ...quarantineCauseItem('FORMAT_MISMATCH', 'Formato incompatible'), ingest_file_id: query.get('ingest_file_id') || fileA }], next_cursor: null } })
   })
   await page.goto('/cuarentena'); await expect(page.getByText('Formato incompatible')).toBeVisible()
-  await page.getByText('Filtros avanzados', { exact: true }).click()
+  await showFilters(page, { more: true })
   const input = page.getByLabel('Archivo de origen (identificador)', { exact: true })
   async function transition(action, id) {
     const read = page.waitForResponse(r => new URL(r.url()).pathname === '/api/validation/quarantine')
@@ -24,8 +24,9 @@ test('SRS_REQUIRED: A/B/Atrás/Adelante sincroniza URL, UUID visible y GET sin r
     expect(new URL(page.url()).searchParams.get('ingest_file_id')).toBe(id)
     await expect(page.getByRole('alert')).toHaveCount(0)
   }
-  await transition(async () => { await input.fill(fileA); await input.blur() }, fileA)
-  await transition(async () => { await input.fill(fileB); await input.blur() }, fileB)
+  // El identificador se aplica con Enter (DESIGN §19).
+  await transition(async () => { await input.fill(fileA); await input.press('Enter') }, fileA)
+  await transition(async () => { await input.fill(fileB); await input.press('Enter') }, fileB)
   await transition(() => page.goBack(), fileA)
   await transition(() => page.goForward(), fileB)
   expect(queries).toEqual([null, fileA, fileB, fileA, fileB])

@@ -32,9 +32,13 @@ async function consistent(client, id) {
     expect(new URLSearchParams(client.acquireRead.mock.calls.at(-1)[0].split('?')[1]).get('ingest_file_id') || '').toBe(id)
   })
 }
+// El identificador está en «Más filtros» y se aplica con Enter (o tras una pausa al escribir).
 async function setFile(id) {
-  fireEvent.change(screen.getByLabelText('Archivo de origen (identificador)'), { target: { value: id } })
-  fireEvent.blur(screen.getByLabelText('Archivo de origen (identificador)'))
+  const more = screen.getByRole('button', { name: /Más filtros/ })
+  if (more.getAttribute('aria-expanded') === 'false') fireEvent.click(more)
+  const input = screen.getByLabelText('Archivo de origen (identificador)')
+  fireEvent.change(input, { target: { value: id } })
+  fireEvent.keyDown(input, { key: 'Enter' })
 }
 
 describe('SRS_REQUIRED: URL autoritativa en navegación de cuarentena', () => {
@@ -60,7 +64,9 @@ describe('ROBUSTNESS: validación de filtros sin alterar el destino', () => {
     const client = mount(`/cuarentena?ingest_file_id=${fileA}`); await screen.findByText('Formato incompatible')
     const before = client.acquireRead.mock.calls.length
     await setFile('no-es-uuid')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Revisa los datos')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pega el identificador completo')
+    expect(screen.getByLabelText('Archivo de origen (identificador)')).toHaveAttribute('aria-invalid', 'true')
+    await new Promise((resolve) => setTimeout(resolve, 450))
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
     expect(new URLSearchParams(screen.getByLabelText('Consulta actual').textContent).get('ingest_file_id')).toBe(fileA)
   })

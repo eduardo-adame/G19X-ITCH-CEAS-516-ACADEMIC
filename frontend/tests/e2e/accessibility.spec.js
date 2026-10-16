@@ -5,7 +5,7 @@
  * No se instala axe-core ni otra biblioteca de accesibilidad sin enmienda.
  */
 import { test, expect } from '@playwright/test'
-import {
+import { showFilters,
   mockSessionTI, mockDashboardEmpty, EMPTY_ANALYSIS_RESPONSE,
   SYNTHETIC_OCR_PAGE, SYNTHETIC_AUDIT_PAGE,
 } from './helpers.js'
@@ -69,9 +69,11 @@ test.describe('Accesibilidad — Labels y nombres accesibles', () => {
 
   test('los controles de filtro en analítica tienen label', async ({ page }) => {
     await page.goto('/')
+    await showFilters(page)
     await expect(page.getByRole('combobox', { name: 'Periodo', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByRole('combobox', { name: 'Tipo de riesgo', exact: true })).toBeVisible()
     await page.goto('/tendencias')
+    await showFilters(page)
     await expect(page.getByRole('combobox', { name: /análisis/i })).toBeVisible({ timeout: 8000 })
   })
 
@@ -131,8 +133,8 @@ test.describe('Accesibilidad — Modal y drawer', () => {
     )
     await page.goto('/ingesta')
     await expect(page.getByRole('heading', { name: /gestión ocr/i })).toBeVisible({ timeout: 8000 })
-    // Consultar para ver los registros
-    await page.getByRole('button', { name: /consultar estado ocr/i }).click()
+    // Actualizar el estado OCR para ver los registros
+    await page.getByRole('button', { name: 'Actualizar', exact: true }).click()
     const reprocesarBtn = page.getByRole('button', { name: /reprocesar/i }).first()
     if (await reprocesarBtn.isVisible()) {
       await reprocesarBtn.click()

@@ -4,6 +4,14 @@ import { formatDecimal, formatTimestamp, roundDecimal, validDate } from './forma
 // presentación no dependa de variantes de Intl («octubre de 2026», «sept.»).
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+// Reloj de la barra superior en la zona y el idioma del navegador (USER_TIMESTAMP): «jueves, 16 oct 2026 · 10:42».
+export function formatClock(date) {
+  const pad = (value) => String(value).padStart(2, '0')
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  const day = `${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`
+  return { long: `${WEEKDAYS[date.getDay()]}, ${day} ${date.getFullYear()} · ${time}`, short: `${day}, ${time}`, iso: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${time}` }
+}
 
 const validMonth = (value) => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
 const parts = (value) => value.split('-').map(Number)
@@ -81,6 +89,11 @@ export function formatQuantity(value, unit, { signed = false } = {}) {
 
 // Filtros por fecha: el selector entrega un día local; el contrato exige marca de tiempo con zona.
 // Se envía el inicio (o fin) de ese día en la zona del navegador, con su desplazamiento explícito.
+// Rango de días para chips de filtro: «1 oct 2026 – 15 oct 2026», «desde …» o «hasta …».
+export function formatDayRange(from, to) {
+  if (from && to) return `${formatDocumentDate(from)} – ${formatDocumentDate(to)}`
+  return from ? `desde ${formatDocumentDate(from)}` : `hasta ${formatDocumentDate(to)}`
+}
 export function localDayBoundary(date, { end = false } = {}) {
   if (!validDate(date)) return ''
   const [year, month, day] = parts(date)

@@ -121,10 +121,19 @@ describe('SRS_REQUIRED: vistas operativas', () => {
 
   it('filtros inválidos de cuarentena muestran error seguro y no cambian la consulta', async () => {
     const { client } = mount(<QuarantinePage />); await screen.findByText('Falta campo obligatorio'); const before = client.acquireRead.mock.calls.length
-    await userEvent.type(screen.getByLabelText('Archivo de origen (identificador)'), 'no-es-uuid')
-    await userEvent.tab()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Revisa los datos')
-    expect(client.acquireRead).toHaveBeenCalledTimes(before)
+    await userEvent.click(screen.getByRole('button', { name: /Más filtros/ }))
+    await userEvent.type(screen.getByLabelText('Archivo de origen (identificador)'), 'no-es-uuid{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pega el identificador completo')
+    // Rango invertido: error en «Retenido hasta», sin consultar.
+    fireEvent.change(screen.getByLabelText('Retenido desde'), { target: { value: '2030-02-01' } })
+    await waitFor(() => expect(client.acquireRead.mock.calls.length).toBeGreaterThan(before))
+    const afterFrom = client.acquireRead.mock.calls.length
+    fireEvent.change(screen.getByLabelText('Retenido hasta'), { target: { value: '2030-01-01' } })
+    expect(screen.getByLabelText('Retenido hasta')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Retenido hasta')).toHaveAttribute('min', '2030-02-01')
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent.includes('Debe ser igual o posterior a «Retenido desde»'))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(client.acquireRead).toHaveBeenCalledTimes(afterFrom)
   })
 
   it.each(['TI', 'ANALISTA'])('OCR autorizado para %s separa estados y ofrece únicamente acciones elegibles', async (role) => {

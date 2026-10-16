@@ -1,6 +1,6 @@
 /** Contrato HTTP sintético; no accede a DB ni utiliza credenciales reales. */
 import { test, expect } from '@playwright/test'
-import { mockSessionTI, mockDashboardEmpty } from './helpers.js'
+import { mockSessionTI, mockDashboardEmpty, showFilters } from './helpers.js'
 import { canonicalQuarantineCauses, quarantineCauseItem } from '../fixtures/quarantineCauses.js'
 
 test.beforeEach(async ({ page }) => {
@@ -22,6 +22,7 @@ test.describe('SRS_REQUIRED: motivos técnicos de cuarentena — BROWSER_CONTRAC
     const table = page.getByRole('table', { name: 'Elementos en cuarentena' })
     await expect(table.getByRole('row')).toHaveCount(26)
     await expect(page.getByRole('alert')).toHaveCount(0)
+    await showFilters(page)
     const filter = page.getByRole('combobox', { name: 'Regla infringida', exact: true })
     await expect(filter.getByRole('option')).toHaveCount(26)
     for (const [code, description] of canonicalQuarantineCauses) {

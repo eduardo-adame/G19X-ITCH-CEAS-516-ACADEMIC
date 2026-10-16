@@ -46,6 +46,8 @@ export function filterQuery(filters, kind) {
   // Auditoría pagina de 25 en 25 por defecto: la bitácora es extensa y la lectura empieza por lo reciente.
   return writeQuery({ limit: kind === 'audit' ? '25' : '100', ...filters }, validators)
 }
+// Identidad de una consulta sin cursor; si los filtros no son canónicos se usa su forma literal.
+export function pageKey(filters, kind) { try { return filterQuery(filters, kind) } catch { return JSON.stringify(filters) } }
 export function changeFilters(filters, patch) { const next = { ...filters, ...patch }; delete next.cursor; for (const key of Object.keys(next)) if (next[key] === '') delete next[key]; return next }
 export function ingestionResult(data) {
   assert(object(data) && uuid(data.file_id) && uuid(data.operation_id) && uuid(data.correlation_id) && ['COMPLETADO', 'CUARENTENA', 'RECHAZADO'].includes(data.state) && nullable(data.format) && families.includes(data.family) && ['VALIDATION', 'DOCUMENT', 'NONE'].includes(data.routing_target) && nullable(data.safe_cause_code) && typeof data.idempotent === 'boolean' && (data.document_date === undefined || data.document_date === null || validDate(data.document_date)))

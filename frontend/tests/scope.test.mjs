@@ -58,12 +58,27 @@ test('SRS_REQUIRED: frontend autocontenido sin fuentes jurídicas inventadas ni 
   for (const path of sources) {
     const text = read(path)
     assert.doesNotMatch(text, /(?:from\s+|@import\s+)['"][^'"]*(?:handoffs|Design\/|docs\/|tailwindcss|postcss|braces|selector-parser)/)
-    assert.doesNotMatch(text, /dangerouslySetInnerHTML|localStorage|sessionStorage|document\.cookie/)
+    // Única excepción aprobada (DESIGN §20): la preferencia de tema en src/shared/theme.js.
+    assert.doesNotMatch(text, path === 'src/shared/theme.js' ? /dangerouslySetInnerHTML|sessionStorage|document\.cookie/ : /dangerouslySetInnerHTML|localStorage|sessionStorage|document\.cookie/)
     assert.doesNotMatch(text, /(api[_-]?key|secret|password|token)\s*[:=]\s*['"][A-Za-z0-9_\-]{16,}['"]/i)
     assert.doesNotMatch(text, /(?:Codex|OpenCode|ChatGPT|orchestrator)/i)
   }
+  // El tema guarda solo su propia clave con «claro»/«oscuro»; nada de sesión, consultas ni resultados.
+  const theme = read('src/shared/theme.js')
+  assert.equal((theme.match(/localStorage\.(setItem|getItem)/g) || []).length, 2)
+  assert.match(theme, /const KEY = 'riesgo-legal\.tema'/)
+  assert.match(theme, /localStorage\.setItem\(KEY, STORED_NAME\[theme\]\)/)
+  assert.match(theme, /STORED_NAME = Object\.freeze\(\{ light: 'claro', dark: 'oscuro' \}\)/)
   assert.match(read('src/routing/registry.jsx'), /import\.meta\.glob\('\.\.\/features\/\*\/routes\.jsx'/)
   assert.doesNotMatch(read('src/App.jsx'), /LineChart|BarChart|ResponsiveContainer|VITE_BACKEND_HEALTH_URL/)
+})
+test('ROBUSTNESS: el tema oscuro por elección y por sistema usan exactamente los mismos tokens', () => {
+  const tokens = read('src/design/tokens.css')
+  const explicit = tokens.match(/:root\[data-theme="dark"\] \{([^}]*)\}/)[1]
+  const system = tokens.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]*)\}/)[1]
+  const normalize = (block) => block.split(';').map((line) => line.trim()).filter(Boolean)
+  assert.deepEqual(normalize(system), normalize(explicit))
+  assert.ok(normalize(explicit).length > 40)
 })
 test('SRS_REQUIRED: dimensiones visuales canónicas y responsive sin aproximaciones', () => {
   const tokens = read('src/design/tokens.css'); const styles = read('src/styles.css')
@@ -79,8 +94,10 @@ test('SRS_REQUIRED: CSS compilado conserva colores de todas las variantes de bot
     result.root.walkRules(selector, (rule) => rule.walkDecls((declaration) => { values[declaration.prop] = declaration.value }))
     return values
   }
-  assert.equal(declarations('.button-primary').background, 'var(--text-primary)')
-  assert.equal(declarations('.button-primary').color, 'var(--background-primary)')
+  // Marca: relleno #BB9457 con texto oscuro (contraste 7.3:1).
+  assert.equal(declarations('.button-primary').background, 'var(--brand)')
+  assert.equal(declarations('.button-primary').color, 'var(--brand-on)')
+  assert.ok(read('src/design/tokens.css').includes('--brand: #BB9457;'))
   assert.equal(declarations('.button-secondary').background, 'var(--background-secondary)')
   assert.equal(declarations('.button-danger').background, 'var(--critical-subtle)')
   assert.equal(declarations('.button-ghost').color, 'var(--text-secondary)')

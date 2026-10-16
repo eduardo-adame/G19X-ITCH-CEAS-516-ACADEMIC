@@ -38,7 +38,8 @@ async function upload(page) {
 }
 async function assertSamePage(page) {
   expect(await page.evaluate(() => window.__refreshTestIdentity)).toBe('misma-pagina')
-  await expect(page.getByLabel('Documento conocido')).toHaveValue('DOC-REF')
+  // El filtro de documento se conserva: visible como filtro activo (también en móvil, con el panel cerrado).
+  await expect(page.locator('[aria-label="Filtros activos"]').first()).toContainText('Documento: DOC-REF')
   expect(new URL(page.url()).searchParams.get('document_id')).toBe('DOC-REF')
 }
 
