@@ -513,7 +513,7 @@ El frontend dispone de su propio `GET /health`, accesible en http://localhost:30
 | `POST` | `/api/auth/login` | Inicia sesión; devuelve el token de acceso y establece la cookie de refresh. |
 | `POST` | `/api/auth/refresh` | Renueva el acceso utilizando la cookie de refresh. |
 | `POST` | `/api/auth/logout` | Cierra la sesión autenticada. |
-| `GET` | `/api/auth/me` | Devuelve la identidad y los roles de la sesión. |
+| `GET` | `/api/auth/me` | Devuelve la identidad de la sesión: `id`, `username`, `display_name` (nombre asignado, solo para presentación; si falta se usa `username`) y `roles`. |
 
 Login recibe un cuerpo JSON con `username` y `password`. Las solicitudes protegidas presentan el acceso mediante `Authorization: Bearer <token>`.
 

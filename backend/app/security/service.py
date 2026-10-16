@@ -179,7 +179,7 @@ class SecurityService:
                     correlation_id=correlation,
                 )
                 roles, permissions = self.repository._roles_and_permissions(connection, account_id)
-                principal = AuthenticatedPrincipal(account_id, session_id, str(account["username"]), authorization_version, roles, permissions)
+                principal = AuthenticatedPrincipal(account_id, session_id, str(account["username"]), authorization_version, roles, permissions, str(account["display_name"]))
                 self.repository.write_audit_event(connection, actor=principal, action="AUTH_LOGIN", resource_type="SESSION", resource_identifier=str(session_id), result="SUCCESS", correlation_id=correlation)
                 result = (self._jwt().issue(account_id=account_id, session_id=session_id, authorization_version=authorization_version), refresh_token)
         if denied or result is None:

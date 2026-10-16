@@ -77,7 +77,7 @@ class SecurityRepository:
     def principal_for_session(self, connection: psycopg.Connection, account_id: UUID, session_id: UUID, authorization_version: int) -> AuthenticatedPrincipal | None:
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT u.id, u.username, u.state, u.authorization_version,
+                """SELECT u.id, u.username, u.display_name, u.state, u.authorization_version,
                           s.state AS session_state, s.expires_at,
                           s.authorization_version AS session_authorization_version
                    FROM app.user_account u
@@ -102,6 +102,7 @@ class SecurityRepository:
             authorization_version=current_version,
             roles=roles,
             permissions=permissions,
+            display_name=str(row["display_name"]),
         )
 
     @staticmethod
