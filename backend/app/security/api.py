@@ -162,7 +162,8 @@ def logout(response: Response, principal: AuthenticatedPrincipal = Depends(curre
 
 @router.get("/auth/me")
 def me(principal: AuthenticatedPrincipal = Depends(current_principal)) -> dict[str, object]:
-    return {"id": str(principal.account_id), "username": principal.username, "roles": sorted(principal.roles)}
+    # El nombre asignado solo se presenta; si una identidad no lo trae se usa el usuario.
+    return {"id": str(principal.account_id), "username": principal.username, "display_name": principal.display_name or principal.username, "roles": sorted(principal.roles)}
 
 
 @router.post("/security/users", status_code=status.HTTP_201_CREATED)

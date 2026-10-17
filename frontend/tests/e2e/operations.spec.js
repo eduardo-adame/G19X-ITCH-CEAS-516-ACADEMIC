@@ -130,6 +130,9 @@ test.describe('Operaciones — Cuarentena', () => {
     await page.getByRole('button', { name: /corregir/i }).click()
     // En el editor modal: el original rechazado y el candidato editable están separados
     await expect(page.getByText(/original rechazado/i)).toBeVisible({ timeout: 8000 })
+    // El candidato se edita por campo; el JSON queda como modo avanzado, también separado del original.
+    await expect(page.getByRole('group', { name: 'Valores corregidos' })).toBeVisible({ timeout: 8000 })
+    await page.getByRole('button', { name: 'Editar como JSON' }).click()
     await expect(page.getByLabel(/candidato corregido/i)).toBeVisible({ timeout: 8000 })
   })
 
@@ -205,7 +208,9 @@ test.describe('SRS_REQUIRED: OCR veraz y autorizado — BROWSER_CONTRACT_E2E', (
         const processingLabel = { LISTA: 'Listo', PROCESANDO: 'En procesamiento', PENDIENTE: 'Pendiente', RECHAZADA: 'Rechazado', FALLIDA: 'Fallido' }[processing]
         // Estado OCR y procesamiento son columnas distintas; pueden coincidir en rótulo («Pendiente»).
         await expect(row.getByRole('cell', { name: label, exact: true })).toHaveCount(label === processingLabel ? 2 : 1)
-        await expect(row.getByRole('cell', { name: processingLabel, exact: true })).toHaveCount(label === processingLabel ? 2 : 1)
+        // «En procesamiento» incluye la ayuda para contactar a TI dentro de la misma celda.
+        if (processing === 'PROCESANDO') await expect(row.getByRole('cell', { name: 'En procesamiento En procesamiento. Si permanece así, avisa al equipo de TI.', exact: true })).toHaveCount(1)
+        else await expect(row.getByRole('cell', { name: processingLabel, exact: true })).toHaveCount(label === processingLabel ? 2 : 1)
         await expect(row.getByRole('cell', { name: confidence === null ? 'No disponible' : `${confidence * 100} %`, exact: true })).toHaveCount(1)
         await expect(row.getByRole('button', { name: 'Reprocesar', exact: true })).toHaveCount(eligible ? 1 : 0)
       }
@@ -288,22 +293,23 @@ test.describe('Operaciones — Auditoría', () => {
 })
 
 test.describe('Operaciones — Administración TI (CD-03)', () => {
-  test('muestra el formulario de administración solo para TI', async ({ page }) => {
+  test('muestra la administración solo para TI, con «Nueva cuenta»', async ({ page }) => {
     await page.goto('/administracion')
     await expect(page.getByRole('heading', { name: /administración/i })).toBeVisible({ timeout: 8000 })
-    await expect(page.getByRole('combobox', { name: /operación administrativa/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Nueva cuenta' })).toBeVisible()
   })
 
-  test('no hay catálogo de búsqueda de cuentas (CD-03)', async ({ page }) => {
+  // SRS 0.26: TI consulta la lista de cuentas y elige la cuenta en lugar de pegar su identificador.
+  test('ofrece la lista de cuentas registradas (SRS 0.26)', async ({ page }) => {
     await page.goto('/administracion')
-    // La descripción debe indicar que no hay catálogo de búsqueda
-    await expect(page.getByText(/no existe un catálogo de búsqueda/i)).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('heading', { name: 'Cuentas registradas' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(/no existe un catálogo de búsqueda/i)).toHaveCount(0)
   })
 
-  test('la asignación de roles exige identificador de cuenta conocido', async ({ page }) => {
+  test('no pide identificadores de cuenta: las operaciones se eligen en cada fila', async ({ page }) => {
     await page.goto('/administracion')
-    await page.getByRole('combobox', { name: /operación administrativa/i }).selectOption('roles')
-    // Debe aparecer el campo de identificador de cuenta UUID
-    await expect(page.getByLabel(/identificador conocido de cuenta/i)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Cuentas registradas' })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByLabel(/identificador conocido de cuenta/i)).toHaveCount(0)
+    await expect(page.getByRole('combobox', { name: /operación administrativa/i })).toHaveCount(0)
   })
 })

@@ -38,7 +38,7 @@ function mount(request = vi.fn(async () => RAG_SIN_EVIDENCIA), path = '/consulta
   return { request, manager, current, view }
 }
 async function submit(query) {
-  const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+  const textarea = await screen.findByLabelText('Tu consulta')
   await waitFor(() => expect(textarea).toBeEnabled())
   fireEvent.change(textarea, { target: { value: query } })
   await userEvent.click(screen.getByRole('button', { name: 'Consultar', exact: true }))
@@ -74,7 +74,7 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
     expect(request).not.toHaveBeenCalled()
     expect(uuid).not.toHaveBeenCalled()
     expect(textarea).toHaveValue(query)
-    expect(screen.queryByText('Consultando las fuentes autorizadas…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Buscando en tus documentos autorizados…')).not.toBeInTheDocument()
     expect(screen.queryByText('Sin evidencia')).not.toBeInTheDocument()
   })
 
@@ -83,7 +83,7 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
     const suggestions = await screen.findByRole('region', { name: 'Preguntas sugeridas' })
     const buttons = within(suggestions).getAllByRole('button')
     expect(buttons.map((button) => button.textContent)).toEqual(suggestedQuestions)
-    const textarea = screen.getByLabelText('Consulta en lenguaje natural')
+    const textarea = screen.getByLabelText('Tu consulta')
     for (const button of buttons) { await userEvent.click(button); expect(textarea).toHaveValue(button.textContent); expect(request).not.toHaveBeenCalled() }
     await userEvent.clear(textarea); await userEvent.type(textarea, 'Consulta documental editada')
     await userEvent.click(screen.getByRole('button', { name: 'Consultar', exact: true }))
@@ -99,13 +99,13 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
     const button = within(suggestions).getAllByRole('button')[0]
     button.focus(); await userEvent.keyboard('{Enter}')
     expect(button).toHaveFocus()
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue(suggestedQuestions[0])
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue(suggestedQuestions[0])
     expect(request).not.toHaveBeenCalled()
   })
 
   it.each(['', ' ', '\t\n', '\u00a0', '\u0085\u001c\u001f', 'hola'.repeat(1025), `hola${' '.repeat(4093)}`])('valida vacío/blanco/límite antes de clasificar (%j)', async (query) => {
     const { request, current } = mount()
-    const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+    const textarea = await screen.findByLabelText('Tu consulta')
     await waitFor(() => expect(textarea).toBeEnabled())
     fireEvent.change(textarea, { target: { value: query } }); fireEvent.submit(textarea.closest('form'))
     expect(await screen.findByRole('alert')).toHaveTextContent('Revisa los datos de la solicitud')
@@ -161,9 +161,9 @@ describe('ROBUSTNESS: respuestas locales y sugerencias', () => {
 
   it('limpiar elimina respuesta local y devuelve las cuatro sugerencias', async () => {
     mount(); await submit('hola')
-    await userEvent.click(screen.getByRole('button', { name: 'Limpiar consulta' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Nueva consulta' }))
     expect(screen.queryByRole('status', { name: 'Respuesta local' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue('')
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue('')
     expect(screen.getByRole('region', { name: 'Preguntas sugeridas' })).toBeVisible()
   })
 
@@ -235,10 +235,10 @@ describe('SRS_REQUIRED: retiro de estados locales y evidencia por autorización'
     const update = change === 'logout' ? { status: 'anonymous', principal: null, generation: 2 }
       : change === 'usuario' ? { principal: { id: 'cuenta-b', roles: ['JURIDICO'] } } : { generation: 2 }
     act(() => manager.update(update))
-    await screen.findByLabelText('Consulta en lenguaje natural')
+    await screen.findByLabelText('Tu consulta')
     expect(current.rag.local).toBeNull()
     expect(screen.queryByRole('status', { name: 'Respuesta local' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue('')
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue('')
     expect(request).not.toHaveBeenCalled()
   })
 

@@ -7,8 +7,8 @@ async function initial(page) {
   await mockSessionTI(page); await mockDashboardEmpty(page); await mockLogout(page)
   await page.route('**/api/rag/query', (route) => route.fulfill({ json: RAG_EVIDENCIA_SUFICIENTE }))
   await page.goto('/consulta')
-  await expect(page.getByLabel('Consulta en lenguaje natural')).toBeEnabled()
-  await page.getByLabel('Consulta en lenguaje natural').fill('Consulta sintética de validación de sesión')
+  await expect(page.getByLabel('Tu consulta')).toBeEnabled()
+  await page.getByLabel('Tu consulta').fill('Consulta sintética de validación de sesión')
   await page.getByRole('button', { name: 'Consultar', exact: true }).click()
   await expect(page.getByText(fragment, { exact: true })).toBeVisible()
 }
@@ -51,6 +51,8 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: revalidación de sesión segur
     await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible()
     await expect(page.getByText(notice)).toHaveCount(0)
     await page.getByRole('button', { name: 'Cerrar sesión' }).click()
+    // El cierre voluntario se confirma en el diálogo.
+    await page.getByRole('dialog', { name: '¿Cerrar sesión?' }).getByRole('button', { name: 'Cerrar sesión' }).click()
     await expect(page.getByLabel('Usuario', { exact: true })).toBeVisible()
     await expect(page.getByText(notice)).toHaveCount(0)
   })

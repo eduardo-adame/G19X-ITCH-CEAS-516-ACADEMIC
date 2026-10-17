@@ -1,6 +1,6 @@
 import React, { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
@@ -8,9 +8,10 @@ import { RagLayout } from '../src/features/rag/state.jsx'
 import { RagDocumentPage } from '../src/features/rag/pages.jsx'
 import { ApiError } from '../src/api/errors.js'
 import { fullDocument, metadata } from './fixtures/documents.js'
+import { recallFilters } from '../src/features/documents/DocumentCatalog.jsx'
 
 vi.mock('../src/features/documents/PdfOriginal.jsx', () => ({
-  PdfOriginal: ({ blob }) => <canvas title="PDF original renderizado" data-size={blob.size} />,
+  PdfOriginal: ({ blob, initialPage }) => <canvas title="PDF original renderizado" data-size={blob.size} data-initial-page={initialPage} />,
 }))
 
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
@@ -22,7 +23,8 @@ function mount({ path = '/documentos', request = vi.fn(async (url) => url.includ
   const view = render(<StrictMode><SessionProvider manager={manager}><MemoryRouter initialEntries={[path]}><Location /><Routes><Route element={<RagLayout />}><Route path="/documentos" element={<RagDocumentPage />} /></Route></Routes></MemoryRouter></SessionProvider></StrictMode>)
   return { manager, request, view }
 }
-afterEach(() => vi.restoreAllMocks())
+// Cada prueba empieza sin filtros recordados de la anterior (otra identidad vacía la memoria).
+afterEach(() => { vi.restoreAllMocks(); recallFilters('sin-sesion') })
 
 describe('SRS_REQUIRED: catálogo y documento completo autorizados', () => {
   it('abrir menú lista documentos y selección abre contenido completo sin POST', async () => {
@@ -39,9 +41,26 @@ describe('SRS_REQUIRED: catálogo y documento completo autorizados', () => {
   })
   it('aplica búsqueda literal, filtros y reinicia paginación sin filtros en URL', async () => {
     const { request } = mount(); await screen.findByRole('link', { name: 'Abrir Documento sintético' })
-    await userEvent.type(screen.getByLabelText('Buscar por nombre'), 'nombre sintético'); await userEvent.selectOptions(screen.getByLabelText('Tipo documental'), 'PDF'); await userEvent.selectOptions(screen.getByLabelText('Familia documental'), 'LITIGIOS'); await userEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }))
-    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('q=nombre+sint%C3%A9tico'), expect.any(Object)))
+    await userEvent.type(screen.getByLabelText('Buscar por nombre'), 'nombre sintético'); await userEvent.selectOptions(screen.getByLabelText('Tipo documental'), 'PDF'); await userEvent.selectOptions(screen.getByLabelText('Familia documental'), 'LITIGIOS')
+    // Sin botón «Aplicar»: los selectores aplican al cambiar y la búsqueda tras una pausa al escribir.
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('q=nombre+sint%C3%A9tico&source_family=LITIGIOS&document_type=PDF'), expect.any(Object)))
+    expect(screen.queryByRole('button', { name: 'Aplicar filtros' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('URL actual')).not.toHaveTextContent('nombre')
+  })
+  it('ROBUSTNESS: al volver de un documento se conservan los filtros del catálogo', async () => {
+    const { request } = mount(); await screen.findByRole('link', { name: 'Abrir Documento sintético' })
+    await userEvent.type(screen.getByLabelText('Buscar por nombre'), 'sintético'); await userEvent.selectOptions(screen.getByLabelText('Tipo documental'), 'DOCX')
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('q=sint%C3%A9tico&document_type=DOCX'), expect.any(Object)), { timeout: 3000 })
+    await userEvent.click(screen.getByRole('link', { name: 'Abrir Documento sintético' }))
+    const panel = await screen.findByRole('region', { name: 'Documento completo' }, { timeout: 4000 })
+    expect(within(panel).getByRole('button', { name: 'Imprimir' })).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: 'Ayuda del visor' })).toBeVisible()
+    expect(within(panel).getByRole('searchbox', { name: 'Buscar en el texto' })).toBeVisible()
+    await userEvent.click(screen.getByRole('link', { name: 'Volver a documentos autorizados' }))
+    expect(await screen.findByLabelText('Buscar por nombre', {}, { timeout: 4000 })).toHaveValue('sintético')
+    expect(screen.getByLabelText('Tipo documental')).toHaveValue('DOCX')
+    expect(screen.getByRole('button', { name: /Quitar filtro Tipo: DOCX|Tipo: DOCX/ })).toBeVisible()
+    expect(screen.getByLabelText('URL actual')).not.toHaveTextContent('sint')
   })
   it('catálogo vacío no revela existencia o cantidades excluidas', async () => { mount({ request: vi.fn(async () => ({ items: [], next_cursor: null })) }); expect(await screen.findByText('Sin documentos disponibles')).toBeVisible() })
   it.each([403, 404, 409, 503])('error%s no muestra metadata ni contenido anterior', async (status) => { mount({ path: `/documentos?document_id=${metadata.document_id}`, request: vi.fn(async () => { throw new ApiError(status) }) }); await screen.findByRole('alert'); expect(screen.queryByText(metadata.document_name)).not.toBeInTheDocument(); expect(screen.queryByRole('region', { name: 'Texto completo procesado' })).not.toBeInTheDocument() })
@@ -72,13 +91,28 @@ describe('SRS_REQUIRED: catálogo y documento completo autorizados', () => {
     const verification = deferred(); manager.revalidate.mockImplementation(() => verification.promise); fireEvent(window, new Event('focus')); expect(screen.queryByTitle('PDF original renderizado')).not.toBeInTheDocument()
     await act(async () => verification.resolve(true)); await screen.findByTitle('PDF original renderizado'); view.unmount()
   })
+  it('ROBUSTNESS: una cita abre el PDF completo en su página inicial y descarta páginas inválidas', async () => {
+    const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }
+    const request = vi.fn(async (path) => path.includes('/original') ? new Blob(['%PDF-sintetico'], { type: 'application/pdf' }) : pdf)
+    const first = mount({ path: `/documentos?document_id=${metadata.document_id}&page=3`, request })
+    expect(await screen.findByTitle('PDF original renderizado')).toHaveAttribute('data-initial-page', '3')
+    expect(screen.getByLabelText('URL actual')).toHaveTextContent('page=3')
+    expect(request.mock.calls.every(([path]) => !path.includes('page='))).toBe(true)
+    first.view.unmount()
+    for (const page of ['0', 'abc', '100000']) {
+      const view = mount({ path: `/documentos?document_id=${metadata.document_id}&page=${page}`, request })
+      expect(await screen.findByTitle('PDF original renderizado')).toHaveAttribute('data-initial-page', '1')
+      expect(screen.getByLabelText('URL actual')).not.toHaveTextContent('page=')
+      view.view.unmount()
+    }
+  })
   it('no crea URL para PDF tardío después de logout', async () => {
     const pending = deferred(); const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }
     const { manager, request } = mount({ path: `/documentos?document_id=${metadata.document_id}`, request: vi.fn((path) => path.includes('/original') ? pending.promise : Promise.resolve(pdf)) })
     await waitFor(() => expect(request.mock.calls.some(([path]) => path.includes('/original'))).toBe(true)); act(() => manager.update({ status: 'anonymous', principal: null, generation: 2 })); await act(async () => pending.resolve(new Blob(['%PDF-sintetico'], { type: 'application/pdf' }))); expect(screen.queryByTitle('PDF original renderizado')).not.toBeInTheDocument()
   })
   it('MIME inválido conserva error y permite texto alternativo explícito, nunca iframe', async () => {
-    const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }; mount({ path: `/documentos?document_id=${metadata.document_id}`, request: vi.fn(async (path) => path.includes('/original') ? new Blob(['sintetico'], { type: 'text/html' }) : pdf) }); await screen.findByRole('alert'); expect(screen.queryByTitle('PDF original renderizado')).not.toBeInTheDocument(); expect(document.querySelector('iframe')).toBeNull(); await userEvent.click(screen.getByRole('button', { name: 'Ver texto completo procesado' })); expect(await screen.findByRole('region', { name: 'Texto completo procesado' })).toHaveTextContent('Final del documento sintético.')
+    const pdf = { ...fullDocument, document_type: 'PDF', representation: 'PDF_ORIGINAL' }; mount({ path: `/documentos?document_id=${metadata.document_id}`, request: vi.fn(async (path) => path.includes('/original') ? new Blob(['sintetico'], { type: 'text/html' }) : pdf) }); await screen.findByRole('alert'); expect(screen.queryByTitle('PDF original renderizado')).not.toBeInTheDocument(); expect(document.querySelector('iframe')).toBeNull(); await userEvent.click(screen.getByRole('button', { name: 'Texto completo procesado' })); expect(await screen.findByRole('region', { name: 'Texto completo procesado' })).toHaveTextContent('Final del documento sintético.')
   })
 })
 describe('ROBUSTNESS: selectores aislados y respuestas tardías', () => {

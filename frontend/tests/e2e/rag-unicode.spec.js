@@ -24,7 +24,7 @@ async function inputAndSubmit(page, query, accepted) {
     await route.fulfill({ json: RAG_SIN_EVIDENCIA })
   })
   await page.goto('/consulta')
-  const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+  const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
   await expect(textarea).toBeEnabled()
   await textarea.focus()
   // La entrada de teclado permite verificar el límite real del control, sin asignar su valor por fill.

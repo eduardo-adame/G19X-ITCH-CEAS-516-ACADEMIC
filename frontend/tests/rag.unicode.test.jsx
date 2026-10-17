@@ -75,7 +75,7 @@ describe('ROBUSTNESS: límite RAG de 4096 puntos de código Unicode', () => {
 
   it.each(matrix)('formulario %s con %i puntos permite texto exacto y aplica el límite antes de POST', async (_name, length, query) => {
     const request = mount()
-    const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+    const textarea = await screen.findByLabelText('Tu consulta')
     await waitFor(() => expect(textarea).toBeEnabled())
     fireEvent.change(textarea, { target: { value: query } })
     expect(textarea).toHaveValue(query)

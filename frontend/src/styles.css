@@ -8,18 +8,23 @@
 @tailwind utilities;
 @layer base {
   :root { color-scheme: light; font-family: var(--font-family-sans); }
+  :root[data-theme="dark"] { color-scheme: dark; }
   body { margin: 0; background: var(--background-page); color: var(--text-primary); font-size: 13px; line-height: 1.5; }
   button, input, select, textarea { font: inherit; }
   button:disabled { cursor: not-allowed; color: var(--text-disabled); }
   button { cursor: pointer; }
   /* Foco visible para navegación por teclado conforme a WCAG 2.1 2.4.7 */
-  :focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
+  :focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 1px; }
+  /* Enlaces de texto en el tono de marca legible; la navegación y los botones definen su propio color. */
+  a { color: var(--link); }
   /* Reduced motion: desactiva transiciones para usuarios que lo requieren */
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
 }
 @layer components {
   .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: var(--radius-small); font-size: 12px; font-weight: 500; border: 1px solid transparent; }
-  .button-primary { background: var(--text-primary); color: var(--background-primary); }
+  .button-primary { background: var(--brand); color: var(--brand-on); border-color: var(--brand-hover); }
+  .button-primary:hover:not(:disabled) { background: var(--brand-hover); filter: none; }
+  .button-primary:disabled { opacity: 0.55; color: var(--brand-on); }
   .button-secondary { background: var(--background-secondary); color: var(--text-primary); border-color: var(--border-default); }
   .button-danger { background: var(--critical-subtle); color: var(--critical); border-color: var(--critical-border); }
   .button-ghost { color: var(--text-secondary); background: transparent; }
@@ -29,16 +34,42 @@
   .control[aria-invalid="true"] { border-color: var(--critical); }
   .nav-link { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-small); color: var(--text-secondary); font-size: 12px; }
   .nav-link:hover { background: var(--background-hover); color: var(--text-primary); }
-  .nav-link[aria-current="page"] { background: var(--background-selected); color: var(--text-primary); font-weight: 500; }
+  /* Indicador activo: línea recta de 3 px (sin esquina redondeada en el lado izquierdo). */
+  .nav-link[aria-current="page"] { background: var(--nav-active-bg); color: var(--nav-active-text); font-weight: 500; border-radius: 0 var(--radius-small) var(--radius-small) 0; box-shadow: inset 3px 0 0 var(--nav-active-bar); }
   .badge { display: inline-flex; padding: 2px 7px; border: 1px solid var(--border-default); border-radius: var(--radius-small); font-size: 11px; }
   .kpi-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
   .kpi-metric { height: var(--kpi-card-height); }
   .kpi-entry { animation: kpi-entry var(--kpi-entry-duration) ease-out both; animation-delay: calc(var(--kpi-entry-index, 0) * var(--kpi-entry-stagger)); }
   /* Scroll horizontal controlado en tablas para evitar overflow no intencional */
-  .table-scroll { overflow-x: auto; border: 1px solid var(--border-default); border-radius: var(--radius-medium); background: var(--background-primary); -webkit-overflow-scrolling: touch; }
+  /* position: relative contiene el caption accesible (sr-only, absoluto): sin ello alarga el documento
+     fuera del área principal y aparece un espacio en blanco al final del desplazamiento. */
+  .table-scroll { position: relative; overflow-x: auto; border: 1px solid var(--border-default); border-radius: var(--radius-medium); background: var(--background-primary); -webkit-overflow-scrolling: touch; }
+  /* Sombras de desplazamiento (solo CSS): aparecen en el borde por el que la tabla continúa y desaparecen
+     al llegar al extremo; sin desplazamiento no se ven. */
+  .table-scroll {
+    background:
+      linear-gradient(to right, var(--background-primary) 30%, transparent) left / 32px 100% no-repeat local,
+      linear-gradient(to left, var(--background-primary) 30%, transparent) right / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right / 10px 100% no-repeat scroll,
+      var(--background-primary);
+  }
   .data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
-  .data-table th { background: var(--background-secondary); padding: var(--table-header-padding-y) var(--table-cell-padding-x); font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+  .data-table th { background: var(--table-header-bg); padding: var(--table-header-padding-y) var(--table-cell-padding-x); font-size: 12px; font-weight: 600; color: var(--table-header-text); border-bottom: 1px solid var(--table-header-border); }
+  .data-table th { white-space: nowrap; }
   .data-table td { height: var(--table-row-height); padding: 8px var(--table-cell-padding-x); border-top: 1px solid var(--border-subtle); }
+  .data-table td.cell-text { min-width: 6rem; }
+  .data-table td.cell-wide { min-width: 12rem; }
+  .data-table td.cell-medium { min-width: 9.5rem; }
+  @media (min-width: 1280px) { .data-table td.cell-nowrap-wide { white-space: nowrap; } }
+  /* Columna de acciones fija al borde derecho cuando la tabla se desplaza horizontalmente. */
+  .data-table .cell-sticky { position: sticky; right: 0; z-index: 1; background: var(--background-primary); box-shadow: inset 1px 0 0 var(--border-subtle); }
+  .data-table th.cell-sticky { background: var(--table-header-bg); }
+  .data-table tbody tr:hover .cell-sticky { background: var(--background-hover); }
+  /* Tablas densas (muchas columnas con importes): relleno lateral de 12 px para caber sin desplazamiento. */
+  .data-table-compact th, .data-table-compact td { padding-left: 12px; padding-right: 12px; }
+  /* Densidad responsiva: con el menú lateral fijo, por debajo de 1280 px el contenido es estrecho. */
+  @media (max-width: 1279px) { .data-table th, .data-table td { padding-left: 12px; padding-right: 12px; } }
   .data-table tbody tr:hover { background: var(--background-hover); }
   /* Metadatos técnicos plegados (DESIGN §16.1/16.3): presentes para trazabilidad, fuera de la lectura principal. */
   .technical-details { font-size: 12px; color: var(--text-secondary); }
@@ -50,12 +81,89 @@
   .technical-details dd { margin: 0; overflow-wrap: anywhere; }
   .technical-details .mono { font-family: var(--font-family-mono); font-size: 11.5px; }
   .data-section > summary { cursor: pointer; list-style: revert; }
+  /* Barra de filtros compacta (DESIGN §19): etiqueta visible en línea a la izquierda de cada control. */
+  .filter-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 20px; row-gap: 8px; }
+  /* Un rango de fechas (con su rango rápido) salta de línea completo, nunca partido. */
+  .filter-row > .filter-group { display: flex; flex-wrap: nowrap; align-items: center; column-gap: 20px; }
+  .filter-stack > .filter-group { display: grid; gap: 14px; }
+  .filter-row > .field, .filter-row > .filter-group > .field { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px; }
+  .filter-row > .field > * + *, .filter-row > .filter-group > .field > * + * { margin-top: 0; }
+  .filter-row > .field > label, .filter-row > .filter-group > .field > label { white-space: nowrap; }
+  .filter-row > .field > .control, .filter-row > .filter-group > .field > .control { width: auto; min-width: 8.5rem; max-width: 13rem; }
+  .filter-row > .field > input[type="date"].control, .filter-row > .filter-group > .field > input[type="date"].control { min-width: 0; }
+  .filter-row > .field > .field-error, .filter-row > .filter-group > .field > .field-error { flex-basis: 100%; }
+  /* En línea, el prefijo repetido de la segunda fecha solo se lee (lectores de pantalla), no se ve. */
+  .filter-row .inline-prefix { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Panel de filtros en móvil: controles apilados a todo el ancho y objetivos táctiles de 44 px. */
+  .filter-stack { display: grid; gap: 14px; }
+  .filter-stack .control { height: 44px; }
+  .filter-stack > .button { height: 44px; }
+  .filter-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--brand-border); border-radius: 999px; background: var(--brand-subtle); color: var(--nav-active-text); font-size: 12px; }
+  .filter-chip:hover { border-color: var(--brand); }
+  /* Esqueletos y actividad de la consulta documental (DESIGN §16.6); sin movimiento con reduced motion. */
+  .skeleton { border-radius: var(--radius-small); background: var(--background-selected); animation: skeleton-pulse 1.6s ease-in-out infinite; }
+  .rag-activity { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--text-secondary); animation: skeleton-pulse 1.2s ease-in-out infinite; }
 }
 /* El área principal recibe el foco al cambiar de ruta para lectores de pantalla; no es un control
    interactivo, así que no muestra el anillo de foco (el enlace «Ir al contenido» sí lo conserva). */
 main[tabindex="-1"]:focus { outline: none; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton, .rag-activity { animation: none !important; } }
 @keyframes kpi-entry { from { opacity: 0; transform: translateY(var(--kpi-entry-offset)); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .kpi-entry { animation: none !important; animation-delay: 0ms !important; opacity: 1; transform: none; } }
 @media (min-width: 768px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; } }
 @media (min-width: 1024px) { .kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } .kpi-row-five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1280px) { .kpi-row-five { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+/* Coincidencias de búsqueda del visor: todas marcadas y la activa con el color de marca. */
+mark.search-hit { border-radius: 2px; background: var(--brand-subtle); color: inherit; box-shadow: 0 0 0 1px var(--brand-border); }
+mark.search-hit-current { background: var(--brand); color: var(--brand-on); box-shadow: none; }
+/* Pantalla completa del visor: el área de lectura ocupa todo el alto disponible. */
+.viewer-panel:fullscreen { display: flex; flex-direction: column; overflow: hidden; border-radius: 0; background: var(--surface); padding: 24px; }
+.viewer-panel:fullscreen > .viewer-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.viewer-panel:fullscreen .viewer-scroll { flex: 1; min-height: 0; max-height: none; }
+/* Impresión del visor (RF-077, SRS 0.25): en pantalla las hojas no existen; al imprimir solo se ven ellas,
+   en blanco y negro sobre papel con independencia del tema. */
+.print-root { display: none; }
+@media print {
+  @page { margin: 1.5cm; }
+  body > *:not(.print-root) { display: none !important; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  .print-root { display: block; color: #000; background: #fff; font-family: var(--font-sans, sans-serif); }
+  .print-page { display: flex; flex-direction: column; align-items: center; margin: 0; break-after: page; break-inside: avoid; }
+  .print-page:last-child { break-after: auto; }
+  .print-page img { display: block; max-width: 100%; max-height: 23.5cm; object-fit: contain; }
+  .print-caption, .print-footer { margin-top: 4mm; font-size: 8.5pt; color: #333; }
+  .print-title { margin: 0 0 6mm; font-size: 13pt; font-weight: 600; }
+  .print-text { padding-bottom: 1.2cm; font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .print-footer { position: fixed; right: 0; bottom: 0; left: 0; margin: 0; background: #fff; }
+}
+/* Selector segmentado (p. ej. original PDF / texto procesado): la opción activa usa el color de marca. */
+.segmented { display: inline-flex; overflow: hidden; border: 1px solid var(--border-default); border-radius: var(--radius-small); }
+.segmented > button { height: 32px; padding: 0 12px; background: var(--background-primary); color: var(--text-secondary); font-size: 13px; }
+.segmented > button + button { border-left: 1px solid var(--border-default); }
+.segmented > button:hover { color: var(--text-primary); }
+.segmented > button[aria-pressed="true"] { background: var(--nav-active-bg, var(--brand-subtle)); color: var(--nav-active-text); font-weight: 500; }
+.segmented > button:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: -2px; }
+/* Casillas y opciones nativas con el color de marca en ambos temas. */
+input[type="radio"], input[type="checkbox"] { accent-color: var(--brand-strong); }
+/* Ayuda ⓘ flotante: no desplaza el diseño de las tarjetas ni de los filtros. */
+.info-popover { position: absolute; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: min(18rem, 80vw); padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-small); background: var(--background-primary); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); color: var(--text-secondary); font-size: 12px; font-weight: 400; line-height: 1.45; white-space: normal; }
+/* Título de indicador enlazado a su vista de dominio. */
+.kpi-link { color: inherit; text-decoration: none; }
+.kpi-link:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+/* Fuente resaltada al señalar su marca [En] en la respuesta. */
+.source-highlight { border-color: var(--brand) !important; box-shadow: 0 0 0 1px var(--brand); }
+/* La tarjeta con su ayuda abierta queda por encima de las vecinas (la animación de entrada crea capas propias). */
+.kpi-metric:has(.info-popover) { position: relative; z-index: 40; }
+/* Campos de búsqueda con lupa a la izquierda. */
+.search-wrap { position: relative; display: block; }
+.search-wrap > .search-icon { position: absolute; top: 50%; left: 10px; display: inline-flex; color: var(--text-muted); pointer-events: none; transform: translateY(-50%); }
+.search-wrap > input.control { padding-left: 32px; }
+/* Campo corregido distinto del registro rechazado: barra de marca a la izquierda. */
+.field-changed { border-left: 3px solid var(--brand); padding-left: 10px; }
+/* Menú de acciones de fila (portal con posición fija, por encima de tablas y paneles). */
+.action-menu { z-index: 60; overflow: hidden; padding: 4px; border: 1px solid var(--border-default); border-radius: var(--radius-small); background: var(--background-primary); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16); }
+.action-menu-item { display: block; width: 100%; padding: 8px 10px; border-radius: 4px; color: var(--text-primary); font-size: 13px; text-align: left; }
+.action-menu-item:hover, .action-menu-item:focus-visible { background: var(--background-selected); outline: none; }
+.action-menu-item[aria-disabled="true"] { color: var(--text-muted); cursor: not-allowed; }
+.action-menu-item[aria-disabled="true"]:hover { background: transparent; }

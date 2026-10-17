@@ -78,7 +78,7 @@ test.describe('SRS_REQUIRED: catálogo y estados de contratos/litigios', () => {
     await page.goto('/contratos')
     await assertCatalog(page, 'contratos')
     await expect(cards(page).first()).toHaveAttribute('data-state', 'NO_OBSERVATION')
-    await expect(page.getByText(/^Contexto operativo \(1\)$/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
   })
   test('litigios parcial: LI05 cero conserva LI01 ausente', async ({ page }) => {
     await routes(page, [item('KPI-LI-05', { value: '0' })])

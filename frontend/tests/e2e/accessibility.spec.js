@@ -5,7 +5,7 @@
  * No se instala axe-core ni otra biblioteca de accesibilidad sin enmienda.
  */
 import { test, expect } from '@playwright/test'
-import {
+import { showFilters,
   mockSessionTI, mockDashboardEmpty, EMPTY_ANALYSIS_RESPONSE,
   SYNTHETIC_OCR_PAGE, SYNTHETIC_AUDIT_PAGE,
 } from './helpers.js'
@@ -61,23 +61,34 @@ test.describe('Accesibilidad — Encabezados y jerarquía', () => {
 })
 
 test.describe('Accesibilidad — Labels y nombres accesibles', () => {
-  test('el campo de consulta RAG tiene label visible', async ({ page }) => {
+  // Decisión del usuario (DESIGN §21.2): sin rótulo técnico visible; el texto de ejemplo orienta y el campo
+  // conserva su nombre accesible para lectores de pantalla.
+  test('el campo de consulta RAG tiene nombre accesible y texto de ejemplo visible', async ({ page }) => {
     await page.goto('/consulta')
-    const label = page.getByText(/consulta en lenguaje natural/i)
-    await expect(label).toBeVisible({ timeout: 8000 })
+    const field = page.getByRole('textbox', { name: 'Tu consulta' })
+    await expect(field).toBeVisible({ timeout: 8000 })
+    await expect(field).toHaveAttribute('placeholder', /Pregunta sobre cláusulas/)
+    await expect(page.getByText(/consulta en lenguaje natural/i)).toHaveCount(0)
   })
 
   test('los controles de filtro en analítica tienen label', async ({ page }) => {
     await page.goto('/')
+    await showFilters(page)
     await expect(page.getByRole('combobox', { name: 'Periodo', exact: true })).toBeVisible({ timeout: 8000 })
     await expect(page.getByRole('combobox', { name: 'Tipo de riesgo', exact: true })).toBeVisible()
     await page.goto('/tendencias')
+    await showFilters(page)
     await expect(page.getByRole('combobox', { name: /análisis/i })).toBeVisible({ timeout: 8000 })
   })
 
   test('los inputs de administración tienen labels asociados', async ({ page }) => {
     await page.goto('/administracion')
-    await expect(page.getByRole('combobox', { name: /operación administrativa/i })).toBeVisible({ timeout: 8000 })
+    // Los formularios viven en diálogos (DESIGN §22): se comprueban los campos de «Nueva cuenta».
+    await page.getByRole('button', { name: 'Nueva cuenta' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Nueva cuenta' })
+    await expect(dialog.getByRole('textbox', { name: 'Usuario' })).toBeVisible({ timeout: 8000 })
+    await expect(dialog.getByRole('textbox', { name: 'Nombre visible' })).toBeVisible()
+    await expect(dialog.getByLabel('Contraseña nueva')).toBeVisible()
   })
 })
 
@@ -131,8 +142,8 @@ test.describe('Accesibilidad — Modal y drawer', () => {
     )
     await page.goto('/ingesta')
     await expect(page.getByRole('heading', { name: /gestión ocr/i })).toBeVisible({ timeout: 8000 })
-    // Consultar para ver los registros
-    await page.getByRole('button', { name: /consultar estado ocr/i }).click()
+    // Actualizar el estado OCR para ver los registros
+    await page.getByRole('button', { name: 'Actualizar', exact: true }).click()
     const reprocesarBtn = page.getByRole('button', { name: /reprocesar/i }).first()
     if (await reprocesarBtn.isVisible()) {
       await reprocesarBtn.click()
@@ -209,7 +220,6 @@ test.describe('Accesibilidad — Tablas semánticas', () => {
       r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_ANALYSIS_RESPONSE) })
     )
     await page.goto('/')
-    await page.getByText(/^Datos de los indicadores \(\d+\)$/).click()
     const table = page.getByRole('table', { name: 'Datos de los indicadores' })
     await expect(table).toBeVisible({ timeout: 8000 })
     const headers = table.getByRole('columnheader')

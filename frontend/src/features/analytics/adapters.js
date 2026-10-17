@@ -66,8 +66,16 @@ const RULE_LABELS = Object.freeze({
   LI01_STRICT_THREE_MONTH_INCREASE: 'Incremento durante tres meses consecutivos de exposición litigiosa',
   LI05_STRICT_THREE_MONTH_INCREASE: 'Incremento durante tres meses consecutivos de nuevos litigios',
   CN03_STRICT_THREE_MONTH_INCREASE: 'Incremento durante tres meses consecutivos de incidentes',
+  TREND_STRICT_THREE_MONTH: 'Tendencia de tres meses consecutivos',
+  RECURRENCE_THREE_OF_FOUR: 'Recurrencia en 3 de los últimos 4 meses',
 })
 export const ruleLabel = (rule) => RULE_LABELS[rule] || 'Regla persistida de análisis'
+// Forma breve para la tabla de evaluaciones, donde la fila ya nombra el indicador evaluado.
+const RULE_SHORT_LABELS = Object.freeze({
+  RC03_APPEARANCE_OR_INCREASE: 'Aparición o aumento', CN02_APPEARANCE_OR_INCREASE: 'Aparición o aumento',
+  LI01_STRICT_THREE_MONTH_INCREASE: 'Aumento tres meses seguidos', LI05_STRICT_THREE_MONTH_INCREASE: 'Aumento tres meses seguidos', CN03_STRICT_THREE_MONTH_INCREASE: 'Aumento tres meses seguidos',
+})
+export const ruleShortLabel = (rule) => RULE_SHORT_LABELS[rule] || ruleLabel(rule)
 export function adaptAnalysis(data) {
   if (!object(data) || !(data.current_analytic_run_id === null || id(data.current_analytic_run_id)) || !Array.isArray(data.items) || !Number.isSafeInteger(data.alert_count) || data.alert_count < 0) fail()
   const runIds = new Set()

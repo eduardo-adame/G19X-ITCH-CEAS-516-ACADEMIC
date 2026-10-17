@@ -4,7 +4,7 @@
  * No recalcula KPI. No llama a Groq. No usa datos reales.
  */
 import { test, expect } from '@playwright/test'
-import {
+import { showFilters,
   mockSessionTI,
   SYNTHETIC_KPI_ITEM, SYNTHETIC_KPI_RESPONSE, EMPTY_KPI_RESPONSE, EMPTY_ANALYSIS_RESPONSE,
 } from './helpers.js'
@@ -52,6 +52,7 @@ test.describe('Analítica — Resumen ejecutivo', () => {
       const requests = []
       page.on('request', (request) => { if (request.url().includes('/api/dashboard/')) requests.push(new URL(request.url())) })
       await page.goto(route)
+      await showFilters(page)
       await expect(page.getByLabel('Periodo', { exact: true })).toHaveValue('current_month')
       await expect(page.getByLabel('Periodo', { exact: true })).toBeEnabled()
       await expect.poll(() => requests.some((url) => url.pathname.endsWith('/kpis') && url.searchParams.get('period') === 'current_month')).toBe(true)
@@ -66,6 +67,7 @@ test.describe('Analítica — Resumen ejecutivo', () => {
     const requests = []
     page.on('request', (request) => { if (request.url().includes('/api/dashboard/')) requests.push(new URL(request.url())) })
     await page.goto('/tendencias')
+    await showFilters(page)
     await expect(page.getByLabel('Análisis', { exact: true })).toHaveValue('current')
     await page.getByLabel('Análisis', { exact: true }).selectOption('historical')
     await expect.poll(() => requests.some((url) => url.pathname.endsWith('/analysis') && url.searchParams.get('period') === 'last_6_months')).toBe(true)
@@ -88,7 +90,7 @@ test.describe('Analítica — Resumen ejecutivo', () => {
   test('muestra KPI sintético con valor correcto', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '5')])
     await page.goto('/')
-    await expect(page.getByText('5').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('main').getByText('5', { exact: true }).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('distingue null de cero: null muestra No disponible en tabla', async ({ page }) => {
@@ -127,9 +129,12 @@ test.describe('Analítica — Riesgo contractual', () => {
     mockAnalytics(page, [buildKpiItem('KPI-CC-01', '7')])
     await page.goto('/contratos')
     // Cambiar el periodo no convierte las alertas en históricas ni inventa datos
+    await showFilters(page)
     await page.getByLabel('Periodo', { exact: true }).selectOption('last_6_months')
     await expect(page.getByLabel('Periodo', { exact: true })).toHaveValue('last_6_months')
     await expect(page.getByRole('heading', { name: 'Requiere atención', exact: true })).toBeVisible()
+    // El alcance de las alertas se explica en la ayuda de la línea de contexto.
+    await page.getByRole('button', { name: 'Qué muestran las alertas' }).click()
     await expect(page.getByText(/las alertas corresponden al último análisis completado/i)).toBeVisible()
   })
 })
@@ -171,7 +176,8 @@ test.describe('Analítica — Responsive', () => {
   test('redistribución responsive de la cuadrícula KPI según viewport', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '9')])
     await page.goto('/')
-    await expect(page.getByText('9').first()).toBeVisible({ timeout: 8000 })
+    // Solo en el contenido y con coincidencia exacta: el reloj de la barra superior también contiene dígitos.
+    await expect(page.getByRole('main').getByText('9', { exact: true }).first()).toBeVisible({ timeout: 8000 })
     // La cuadrícula KPI debe adaptarse al viewport
     const kpiRow = page.locator('.kpi-row').first()
     await expect(kpiRow).toBeVisible()
@@ -212,7 +218,7 @@ test.describe('Analítica — Tabla alternativa a gráfica', () => {
   test('la tabla de observaciones contiene los datos del KPI sintético', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '42')])
     await page.goto('/')
-    await page.getByText(/^Datos de los indicadores \(\d+\)$/).click()
+    // Los datos se muestran sin desplegar ninguna sección.
     const table = page.getByRole('table', { name: 'Datos de los indicadores' })
     await expect(table).toBeVisible({ timeout: 8000 })
     await expect(table).toContainText('42 contratos')

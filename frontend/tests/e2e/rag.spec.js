@@ -63,7 +63,8 @@ test.describe('RAG — Estado 4: Sin autorización', () => {
     await page.getByRole('button', { name: /consultar/i }).click()
     await expect(page.getByText('Sin autorización', { exact: true })).toBeVisible({ timeout: 10000 })
     // No debe haber fragmentos visibles
-    await expect(page.getByRole('heading', { name: /fragmentos autorizados/i })).toBeHidden()
+    await expect(page.getByRole('region', { name: 'Fuentes citadas' })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: 'Fuentes relacionadas' })).toHaveCount(0)
   })
 })
 
@@ -74,8 +75,8 @@ test.describe('RAG — Fallo técnico / proveedor', () => {
     await page.getByRole('textbox', { name: /consulta/i }).fill('Consulta con fallo de proveedor')
     await page.getByRole('button', { name: /consultar/i }).click()
     await expect(page.getByText(/evidencia insuficiente/i)).toBeVisible({ timeout: 10000 })
-    // Debe ofrecer reintento con la misma operación
-    await expect(page.getByRole('button', { name: /reintentar/i })).toBeVisible({ timeout: 5000 })
+    // Debe ofrecer el reintento junto al error técnico
+    await expect(page.getByRole('alert').getByRole('button', { name: 'Intentar de nuevo' })).toBeVisible({ timeout: 5000 })
   })
 })
 
@@ -93,8 +94,10 @@ test.describe('RAG — Citas y metadata nullable', () => {
     await page.getByRole('textbox', { name: /consulta/i }).fill('Cita con fecha nula')
     await page.getByRole('button', { name: /consultar/i }).click()
     await expect(page.getByText(/evidencia suficiente/i)).toBeVisible({ timeout: 10000 })
-    // En la cita del fragmento, fecha debe ser "No disponible"
-    await expect(page.getByText(/no disponible/i)).toBeVisible({ timeout: 8000 })
+    // La fuente declara la ausencia de fecha sin inventarla; el visor la muestra como No disponible
+    await expect(page.getByRole('region', { name: 'Fuentes citadas' }).getByText(/Sin fecha declarada/)).toBeVisible({ timeout: 8000 })
+    await page.getByRole('link', { name: 'Abrir en el visor' }).click()
+    await expect(page.getByRole('complementary').getByText('No disponible', { exact: true })).toBeVisible()
   })
 })
 
@@ -113,7 +116,7 @@ test.describe('RAG — Ausencia de persistencia', () => {
     await page.getByRole('textbox', { name: /consulta/i }).fill('Consulta que se limpiará')
     await page.getByRole('button', { name: /consultar/i }).click()
     await expect(page.getByText(/evidencia suficiente/i)).toBeVisible({ timeout: 10000 })
-    await page.getByRole('button', { name: /limpiar consulta/i }).click()
+    await page.getByRole('button', { name: 'Nueva consulta' }).click()
     // El resultado no debe persistir
     await expect(page.getByText(/evidencia suficiente/i)).toBeHidden()
   })

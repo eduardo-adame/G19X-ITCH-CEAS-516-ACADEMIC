@@ -10,7 +10,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from app.documents.viewer_models import (
-    ViewerContent, ViewerItem, ViewerNotFound, ViewerPage, ViewerUnavailable,
+    ViewerContent, ViewerItem, ViewerNotFound, ViewerPage, ViewerPrintReceipt, ViewerUnavailable,
     ViewerVersionChanged, validate_document_id,
 )
 from app.security.models import AuditPersistenceError, SecurityError
@@ -135,6 +135,35 @@ class ViewerService:
                 )
             # El contexto confirma INSERT y commit antes de permitir que el transporte entregue bytes.
             return payload
+        except AuditPersistenceError:
+            raise
+        except SecurityError:
+            self._denial(principal, correlation_id)
+            raise
+
+    def register_print(self, document_id, version_id, principal):
+        """Registra la impresión solicitada antes de que el navegador abra su diálogo.
+
+        Se exige la versión impresa y que siga vigente y autorizada: si la auditoría no se
+        confirma, el cliente no imprime (misma regla que la apertura de RF-077).
+        """
+        validate_document_id(document_id)
+        if version_id is None:
+            raise ValueError("La versión es obligatoria")
+        correlation_id, operation_id = uuid4(), uuid4()
+        try:
+            with self.repository.transaction() as connection:
+                current, scope = self._authorize(connection, principal)
+                self._check_version(self.repository.content(connection, scope, document_id), version_id)
+                current, scope = self._authorize(connection, current)
+                self._check_version(self.repository.content(connection, scope, document_id), version_id)
+                self.security.repository.write_audit_event(
+                    connection, actor=current, action="DOCUMENT_PRINT", resource_type="DOCUMENT_VERSION",
+                    resource_identifier=json.dumps([document_id, str(version_id)],
+                                                   ensure_ascii=True, separators=(",", ":")),
+                    result="SUCCESS", correlation_id=correlation_id,
+                )
+            return ViewerPrintReceipt(operation_id=operation_id, correlation_id=correlation_id)
         except AuditPersistenceError:
             raise
         except SecurityError:

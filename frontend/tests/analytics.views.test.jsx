@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
@@ -40,15 +40,39 @@ function fixture({ search = '', view = 'summary', kpis = kpiPage(), analysis = a
   return client
 }
 describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
+  it('ROBUSTNESS: cada indicador tiene su definición y en el resumen abre su vista con el mismo periodo', async () => {
+    fixture({ search: '?period=last_3_months&risk_type=all' })
+    const contracts = await screen.findByRole('link', { name: 'Contratos próximos a vencimiento sin revisión (ver en Riesgo contractual)' })
+    expect(contracts).toHaveAttribute('href', '/contratos?period=last_3_months')
+    expect(screen.getAllByRole('link', { name: /\(ver en Gestión de litigios\)$/ }).map((link) => link.getAttribute('href'))).toEqual(['/litigios?period=last_3_months', '/litigios?period=last_3_months'])
+    // Cumplimiento no tiene vista propia: su título no es enlace.
+    expect(screen.queryByRole('link', { name: /Obligaciones regulatorias/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Qué mide: / })).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Qué mide: Obligaciones regulatorias vencidas sin atender' }))
+    expect(screen.getByRole('note')).toHaveTextContent('fecha límite ya pasó sin evidencia de cumplimiento')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+  it('ROBUSTNESS: «Entidad: No aplicable» explica por qué en su ayuda', async () => {
+    fixture({ view: 'contracts' })
+    const entity = await screen.findByTestId('entity-not-applicable')
+    fireEvent.click(within(entity).getByRole('button', { name: 'Por qué la entidad no aplica' }))
+    expect(screen.getByRole('note')).toHaveTextContent('no se desglosan por entidad')
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
   it.each([['summary', 'Resumen ejecutivo'], ['contracts', 'Riesgo contractual'], ['litigation', 'Gestión de litigios'], ['trends', 'Tendencias y riesgos']])('encabeza %s y usa API física', async (view, title) => {
     const client = fixture({ view }); expect(screen.getByRole('heading', { name: title })).toBeVisible()
     expect(await screen.findByText(/^Sin alertas (en el análisis|de riesgo)/)).toBeVisible()
-    expect(screen.getByText('Análisis completado sin hallazgos.')).not.toBeVisible()
+    // El texto registrado del análisis queda en «Detalle técnico», sin mostrarse como lectura principal (D-UX-1).
+    expect(await screen.findByText('Análisis completado sin hallazgos.')).not.toBeVisible()
+    expect(screen.getByRole('table', { name: 'Evaluaciones del análisis' })).toBeVisible()
     expect(client.acquireRead.mock.calls.every(([path]) => /^\/dashboard\/(kpis|analysis)\?/.test(path))).toBe(true)
   })
   it('muestra KPI/contextos, diferencia cero de no disponible y limita moneda a exposición', async () => {
     fixture({ kpis: kpiPage(Object.keys(KPI_CATALOG).map((code) => observation(code, code === 'KPI-RC-01' ? { availability: 'NO_DISPONIBLE', value: null } : code === 'KPI-LI-01' ? { dimensions: { nivel_severidad: 'alto' }, value: '17.50' } : {}))) })
-    expect(await screen.findByText(/^Contexto operativo \(\d+\)$/)).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Datos de los indicadores' })).toBeVisible()
     expect(screen.getAllByText('No disponible').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 contratos').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/MXN|\$/).length).toBeGreaterThan(0)
@@ -113,7 +137,7 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(await screen.findByText('Sin alertas de riesgo de litigio en el análisis')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Ver todas las alertas' })).toHaveAttribute('href', '/')
     expect(screen.queryByText(/no produjo señales/)).not.toBeInTheDocument()
-    expect(screen.getByText(payload.items[0].executive_summary)).not.toBeVisible()
+    expect(await screen.findByText(payload.items[0].executive_summary)).not.toBeVisible()
   })
   it('el Resumen ignora parámetros antiguos de análisis histórico y muestra las alertas vigentes bajo los KPI', async () => {
     const client = fixture({ search: `?period=last_6_months&analysis_mode=historical&analytic_run_id=${runId}`, analysis: analysisPage(true) })
@@ -124,25 +148,63 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(kpis.compareDocumentPosition(alerts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(alerts.compareDocumentPosition(concentration) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
-  it('una gráfica temporal con un solo periodo muestra historia insuficiente y amplía la selección', async () => {
+  it('la evolución pide sus propios últimos 6 meses aunque el periodo sea el mes en curso', async () => {
     const client = fixture({ view: 'contracts', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
     expect(await screen.findByText('Historia insuficiente para mostrar una evolución')).toBeVisible()
+    expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=contractual')).toBe(true)
+    expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_6_months&risk_type=contractual')).toBe(true)
+    const windows = screen.getByRole('group', { name: 'Ventana de la evolución' })
+    expect(within(windows).getByRole('button', { name: 'Últimos 6 meses' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Meses cerrados: agosto 2029 – enero 2030')).toBeVisible()
     expect(screen.getByText('Solo hay datos de enero 2030: 13.6 días.')).toBeVisible()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
-    await userEvent.click(screen.getByRole('button', { name: 'Ver últimos 6 meses' }))
-    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_6_months&risk_type=contractual')).toBe(true))
   })
-  it('con 12 meses y un solo periodo no ofrece ampliar la selección', async () => {
-    fixture({ view: 'contracts', search: '?period=last_12_months', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+  it('con historia insuficiente en 6 meses la gráfica amplía solo la evolución a 12 meses', async () => {
+    const client = fixture({ view: 'contracts', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver últimos 12 meses' }))
+    await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=last_12_months&risk_type=contractual')).toBe(true))
+    // La ventana de evolución no altera el filtro «Periodo» de la dirección.
+    expect(screen.getByLabelText('Dirección actual').textContent).not.toContain('period=')
     expect(await screen.findByText('No hay más meses con datos dentro de la selección.')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Ver últimos/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Ver últimos 12/ })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Ventana de la evolución' })).getByRole('button', { name: 'Últimos 12 meses' })).toHaveAttribute('aria-pressed', 'true')
+  })
+  it('si la selección ya es de 6 meses la evolución reutiliza la misma lectura', async () => {
+    const client = fixture({ view: 'contracts', search: '?period=last_6_months', kpis: kpiPage([observation('KPI-RC-01', { value: '13.6' })]) })
+    await screen.findByText('Historia insuficiente para mostrar una evolución')
+    expect(client.acquireRead.mock.calls.filter(([path]) => path.startsWith('/dashboard/kpis')).map(([path]) => path)).toEqual(['/dashboard/kpis?period=last_6_months&risk_type=contractual'])
   })
   it('Litigios muestra solo el contexto de asuntos litigiosos y Contratos el contractual', async () => {
     const items = [observation('KPI-RC-01', { value: '5' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Litigio', estado: 'Abierto' }, value: '2' }), observation('KPI-EO-01', { dimensions: { tipo_asunto: 'Contrato', estado: 'Vigente' }, value: '3' })]
     fixture({ view: 'litigation', kpis: kpiPage(items) })
-    expect(await screen.findByText(/^Contexto operativo \(1\)$/)).toBeVisible()
-    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).toHaveTextContent('Tipo de asunto: Litigio')
-    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).not.toHaveTextContent('Tiempo de ciclo')
+    expect(await screen.findByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    const volume = screen.getByRole('table', { name: 'Volumen de asuntos por tipo y estado' })
+    expect(volume).toHaveTextContent('Litigio')
+    expect(volume).not.toHaveTextContent('Contrato')
+    expect(screen.queryByRole('table', { name: 'Datos del contexto operativo' })).not.toBeInTheDocument()
+    expect(document.querySelector('details.data-section')).toBeNull()
+  })
+  it('regresión: un mes en curso (datos al día de hoy) se presenta en la tabla sin romper la vista', async () => {
+    fixture({ kpis: kpiPage([observation('KPI-RC-03', { period_start: '2030-01-01', period_end: '2030-01-31', as_of_date: '2030-01-15', value: '2' })]) })
+    const table = await screen.findByRole('table', { name: 'Datos de los indicadores' })
+    expect(table).toHaveTextContent('enero 2030 (al 15 ene 2030)')
+    expect(screen.getByRole('heading', { name: 'Resumen ejecutivo' })).toBeVisible()
+  })
+  it('evaluaciones: reglas comunes una vez sobre la tabla, regla propia breve por fila y mes único en la ficha', async () => {
+    const payload = analysisPage(true)
+    const base = payload.items[0].evaluations[0]
+    base.rules_applied = ['RC03_APPEARANCE_OR_INCREASE', 'TREND_STRICT_THREE_MONTH', 'RECURRENCE_THREE_OF_FOUR']
+    payload.items[0].evaluations.push({ ...base, id: '66666666-6666-4666-8666-666666666666', kpi_code: 'KPI-LI-05', signal_detected: false, rules_applied: ['LI05_STRICT_THREE_MONTH_INCREASE', 'TREND_STRICT_THREE_MONTH', 'RECURRENCE_THREE_OF_FOUR'] })
+    fixture({ analysis: payload })
+    const table = await screen.findByRole('table', { name: 'Evaluaciones del análisis' })
+    expect(screen.getByText('Reglas aplicadas a todos los indicadores: Tendencia de tres meses consecutivos; Recurrencia en 3 de los últimos 4 meses.')).toBeVisible()
+    expect(within(table).getByRole('columnheader', { name: 'Regla del indicador' })).toBeVisible()
+    expect(within(table).getByText('Aparición o aumento')).toBeVisible()
+    expect(within(table).getByText('Aumento tres meses seguidos')).toBeVisible()
+    expect(within(table).queryByText('Tendencia de tres meses consecutivos')).not.toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: 'Mes' })).not.toBeInTheDocument()
+    // «Mes evaluado» aparece en la tarjeta de la alerta y una vez en la ficha de evaluaciones.
+    expect(within(table.closest('.rounded-panel')).getByText('Mes evaluado', { selector: 'dt' })).toBeVisible()
   })
   it('no presenta link de contexto sin document.query', async () => {
     fixture({ analysis: analysisPage(true), roles: [] })
@@ -154,12 +216,14 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/kpis?period=current_month&risk_type=all')).toBe(true)
     expect(screen.getByLabelText('Periodo')).toBeEnabled()
     expect(screen.queryAllByRole('columnheader', { name: 'Fecha de cálculo' })).toHaveLength(0)
-    expect(screen.getByText(/Actualizado el \d{1,2} (ene|feb) 2030, \d{2}:\d{2}$/)).toBeVisible()
+    expect(screen.getByText(/actualizados el \d{1,2} (ene|feb) 2030, \d{2}:\d{2}$/)).toBeVisible()
   })
   it('Tendencias aplica filtros históricos y back/forward restaura selección', async () => {
     const client = fixture({ view: 'trends' }); await screen.findByText('0 alertas')
     await userEvent.selectOptions(screen.getByLabelText('Análisis'), 'historical')
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('analysis_mode=historical'))
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'last_3_months')
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('period=last_3_months'))
     await userEvent.selectOptions(screen.getByLabelText('Tipo de riesgo'), 'compliance')
     await waitFor(() => expect(client.acquireRead.mock.calls.some(([path]) => path === '/dashboard/analysis?period=last_3_months&risk_type=compliance')).toBe(true))
     await userEvent.click(screen.getByRole('button', { name: 'Atrás de prueba' }))
@@ -198,9 +262,18 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     const client = fixture(); await screen.findByText('0 alertas'); const before = client.acquireRead.mock.calls.length
     await userEvent.selectOptions(screen.getByLabelText('Periodo'), 'custom')
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
-    await userEvent.click(screen.getByRole('button', { name: 'Aplicar rango' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('fechas válidas y ordenadas')
+    // Sin botón «Aplicar»: un rango invertido marca «Hasta» y no consulta.
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2030-02-01' } })
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2030-01-01' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Debe ser igual o posterior a «Desde».')
+    expect(screen.getByLabelText('Hasta')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Hasta')).toHaveAttribute('min', '2030-02-01')
+    await new Promise((resolve) => setTimeout(resolve, 300))
     expect(client.acquireRead).toHaveBeenCalledTimes(before)
+    // Rango válido: se aplica solo, sin botón.
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2030-03-01' } })
+    await waitFor(() => expect(screen.getByLabelText('Dirección actual')).toHaveTextContent('period_start=2030-02-01'))
+    expect(screen.queryByRole('button', { name: 'Aplicar rango' })).not.toBeInTheDocument()
   })
   it('retira parámetros desconocidos con aviso seguro y sin usarlos en API', async () => {
     const client = fixture({ search: '?query=contenido-no-permitido&risk_type=alto' })
@@ -274,7 +347,9 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
   it('contratos con dataset vacío preserva ChartContainer para tiempo de ciclo y muestra EmptyChartState contextual', async () => {
     fixture({ view: 'contracts', kpis: kpiPage([]) })
     expect(await screen.findByText('Tiempo de ciclo del contrato', { selector: 'figcaption' })).toBeVisible()
-    expect(screen.getByLabelText('Cómo se calculan los indicadores contractuales')).toHaveTextContent('vencen entre hoy y los próximos 60 días')
+    // La definición del indicador está en su ayuda ⓘ (DESIGN §21.2), igual que en las demás vistas.
+    fireEvent.click(screen.getByRole('button', { name: 'Qué mide: Contratos próximos a vencimiento sin revisión' }))
+    expect(screen.getByRole('note')).toHaveTextContent('vencen entre hoy y los próximos 60 días')
     expect(screen.getByText('No existen observaciones contractuales para los filtros seleccionados.')).toBeVisible()
     expect(screen.getByLabelText('Tiempo de ciclo del contrato: sin datos disponibles')).toBeInTheDocument()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)
@@ -454,7 +529,8 @@ describe('SRS_REQUIRED: slots estructurales de contratos y litigios', () => {
     expect(slots()).toHaveLength(1)
     expect(slots()[0]).toHaveAttribute('aria-label', KPI_CATALOG['KPI-RC-03'].name)
     expect(slots()[0]).toHaveAttribute('data-state', 'NO_OBSERVATION')
-    expect(screen.getByText(/^Contexto operativo \(1\)$/)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Contexto operativo' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Datos del contexto operativo' })).toHaveTextContent('Tiempo de ciclo')
   })
   it('litigios parcial mantiene LI01 ausente y LI05 cero observado', async () => {
     fixture({ view: 'litigation', kpis: kpiPage([observation('KPI-LI-05')]) })

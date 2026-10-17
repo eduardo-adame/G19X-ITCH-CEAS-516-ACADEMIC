@@ -13,8 +13,8 @@ El sistema integra las siguientes capacidades:
 - **Procesamiento documental:** extracción de texto, OCR con Tesseract para PDF escaneado y preparación del corpus documental.
 - **Indicadores y análisis:** cálculo de KPI y análisis proactivo mediante reglas deterministas.
 - **Consulta documental y RAG:** búsqueda híbrida sobre documentos autorizados y generación de respuestas sustentadas con referencias.
-- **Visor documental:** catálogo y consulta de documentos autorizados, con acceso independiente de las consultas RAG.
-- **Administración y auditoría:** gestión de cuentas, roles, autorizaciones documentales y registro de operaciones.
+- **Visor documental:** catálogo y consulta de documentos autorizados, con acceso independiente de las consultas RAG: navegación por página, zoom, búsqueda en el texto procesado e impresión registrada en auditoría.
+- **Administración y auditoría:** lista de cuentas con búsqueda, gestión de cuentas y roles, consulta y cambio de las autorizaciones documentales vigentes, y registro de operaciones.
 
 El sistema apoya la consulta y el análisis de información. No realiza decisiones jurídicas autónomas ni sustituye la revisión profesional.
 
@@ -100,6 +100,10 @@ SCHEDULED_PROCESS_ACCOUNTS=airflow-ingestion
 ```
 
 Asigna contraseñas propias y diferentes. No dejes valores `CHANGE_ME_...`.
+
+> **Importante:** las contraseñas de las cinco identidades son obligatorias para **cualquier** comando de Compose, incluso si no vas a usar Airflow. Compose valida el archivo completo y, si falta alguna, se detiene con un mensaje como `required variable AIRFLOW_INGESTION_PASSWORD is missing a value`.
+
+La contraseña de cualquier cuenta de la aplicación (la primera cuenta TI, la cuenta de proceso de Airflow y las que se creen después) debe tener **entre 12 y 128 caracteres**; el backend rechaza las demás. Por eso `AIRFLOW_INGESTION_PASSWORD` también debe cumplir esa longitud.
 
 Configura también:
 
@@ -281,16 +285,58 @@ Abre http://localhost:3000 e inicia sesión con la primera cuenta TI.
 
 Una instalación nueva no incorpora automáticamente documentos ni información de negocio. Los indicadores y las consultas dependerán de los datos cargados y de las autorizaciones configuradas.
 
-### 2.7. Configurar e iniciar Airflow
+### 2.7. Conceder acceso a los documentos
+
+La autorización documental es independiente de los roles y **deniega por defecto**: en una instalación nueva ninguna cuenta, ni siquiera la TI, puede ver documentos. Sin este paso el **Visor documental** aparece vacío y la **Consulta documental** responde «Sin autorización».
+
+Con la cuenta TI:
+
+1. Abre **Administración → Permisos concedidos**.
+2. En **Alcance por familia**, pulsa **Dar** en cada combinación de rol y familia documental que deba consultar documentos (por ejemplo, Jurídico y TI en Contratos y documentos y en Litigios) y confirma en el diálogo.
+3. Para casos puntuales, **Nueva excepción** autoriza o deniega un documento concreto a una cuenta o a un rol.
+
+Los cambios se aplican de inmediato y no requieren reiniciar servicios. Para aplicar la nueva autorización, el sistema **cierra las sesiones** de las cuentas afectadas: si das acceso a un rol que tu propia cuenta tiene (por ejemplo, TI), tendrás que iniciar sesión de nuevo.
+
+### 2.8. Cargar información para probar
+
+El repositorio no incluye datos de negocio; quien prueba el sistema aporta sus propios archivos CSV, XLSX, PDF o DOCX (máximo 50 MiB cada uno).
+
+**Opción A — carga manual (recomendada para empezar):**
+
+1. Abre **Operaciones de ingesta** con una cuenta Analista o TI.
+2. Elige la **Ubicación controlada** que corresponde a la familia de los datos. El desplegable **Formato esperado** muestra las columnas obligatorias y opcionales de cada familia (por ejemplo, Litigios: `ID_Litigio`, `Fecha_Apertura`, `Estado`, `Nivel_Severidad`).
+3. Para PDF o DOCX puedes indicar la **Fecha del documento**; si se omite, se procesa sin fecha.
+4. Arrastra el archivo o pulsa **Elegir archivo**, y después **Recibir y procesar**.
+
+El sistema valida cada registro: los válidos se incorporan y recalculan los indicadores; los que no cumplen quedan en **Zona de cuarentena** para corregirlos o descartarlos. Los documentos PDF y DOCX se procesan (con OCR si están escaneados) y se indexan para la consulta.
+
+**Opción B — ubicaciones controladas:** copia los archivos al volumen del backend y procésalos desde la interfaz o con el DAG de Airflow:
+
+```powershell
+# Crear la carpeta de la ubicación (una sola vez por ubicación)
+docker compose exec backend mkdir -p /data/controlled/litigation
+
+# Copiar un archivo
+docker compose cp .\litigios.csv backend:/data/controlled/litigation/
+```
+
+Las carpetas válidas son `contracts-documents`, `litigation`, `compliance` e `internal-audit` (ver la tabla de la sección 2.9). Después pulsa **Procesar pendientes de la ubicación** en **Operaciones de ingesta**, o espera la ejecución del DAG.
+
+> Los indicadores se recalculan al procesar los datos. Las **alertas** del análisis proactivo se generan con el DAG de Airflow (sección 2.9); sin Airflow, el tablero muestra los indicadores pero no alertas nuevas.
+
+### 2.9. Configurar e iniciar Airflow
 
 La cuenta que utiliza Airflow contra la aplicación debe existir antes de ejecutar el DAG.
 
-Desde **Administración**, con una cuenta TI:
+Con una cuenta TI, abre **Administración → Cuentas** y pulsa **Nueva cuenta**:
 
-1. Crea el usuario definido en `AIRFLOW_INGESTION_USERNAME`.
-2. Asigna el rol **Analista**, que dispone de los permisos de ingesta utilizados por el DAG.
-3. Utiliza la misma contraseña configurada en `AIRFLOW_INGESTION_PASSWORD`.
-4. Comprueba que el nombre figure en `SCHEDULED_PROCESS_ACCOUNTS`.
+1. **Usuario:** el valor de `AIRFLOW_INGESTION_USERNAME` (por defecto `airflow-ingestion`).
+2. **Nombre visible:** cualquier nombre descriptivo, por ejemplo `Proceso de ingesta Airflow`.
+3. **Contraseña nueva:** exactamente el valor de `AIRFLOW_INGESTION_PASSWORD` (entre 12 y 128 caracteres).
+4. **Roles activos:** **Analista**, que dispone de los permisos de ingesta utilizados por el DAG.
+5. Pulsa **Crear cuenta**; la cuenta aparece en **Cuentas registradas**.
+
+Comprueba también que ese usuario figure en `SCHEDULED_PROCESS_ACCOUNTS` (con el valor de la sección 2.2 ya figura).
 
 La cuenta de proceso es independiente del administrador web de Airflow.
 
@@ -307,6 +353,12 @@ Habilita el DAG `controlled_ingestion` desde la interfaz o mediante:
 
 ```powershell
 docker compose --profile airflow exec airflow-scheduler airflow dags unpause controlled_ingestion
+```
+
+Para ejecutarlo de inmediato, sin esperar la programación diaria:
+
+```powershell
+docker compose --profile airflow exec airflow-scheduler airflow dags trigger controlled_ingestion
 ```
 
 El DAG se programa diariamente y ejecuta, en orden:
@@ -326,7 +378,7 @@ Las ubicaciones se encuentran dentro de `/data/controlled` del backend:
 
 El volumen es persistente y Airflow lo monta en modo de solo lectura. El DAG invoca la API del backend para realizar el procesamiento.
 
-### 2.8. Disponibilidad de BGE-M3 y Groq
+### 2.10. Disponibilidad de BGE-M3 y Groq
 
 BGE-M3 se carga de forma diferida y se conserva en memoria una vez cargado por el proceso. La primera operación que lo necesita puede requerir la descarga del modelo.
 
@@ -346,7 +398,7 @@ Para obtener respuestas RAG sustentadas se necesitan:
 - Evidencia suficiente para la consulta.
 - Configuración y disponibilidad del proveedor Groq.
 
-### 2.9. Arranques posteriores, parada y persistencia
+### 2.11. Arranques posteriores, parada y persistencia
 
 Después de completar la primera instalación:
 
@@ -377,7 +429,7 @@ Los datos se conservan en volúmenes separados:
 
 La opción `down -v` elimina los volúmenes del entorno y sus datos. No forma parte del procedimiento normal de parada.
 
-### 2.10. Problemas frecuentes
+### 2.12. Problemas frecuentes
 
 | Síntoma | Comprobación |
 |---|---|
@@ -388,7 +440,9 @@ La opción `down -v` elimina los volúmenes del entorno y sus datos. No forma pa
 | El login no funciona | Comprobar bootstrap, cuenta activa y clave JWT válida. |
 | El DAG recibe HTTP 401 | Revisar que la cuenta de proceso exista y que sus credenciales coincidan con `.env`. |
 | Las operaciones programadas reciben HTTP 403 | Revisar permisos y pertenencia a `SCHEDULED_PROCESS_ACCOUNTS`. |
-| No aparecen documentos | Revisar procesamiento, indexación y autorizaciones documentales; el rol funcional no concede acceso documental por sí solo. |
+| El Visor documental aparece vacío o la Consulta responde «Sin autorización» | Conceder el alcance por familia en **Administración → Permisos concedidos** (sección 2.7); el rol funcional no concede acceso documental por sí solo. Revisar además que los documentos se hayan procesado. |
+| Crear una cuenta devuelve un error de datos | Revisar que la contraseña tenga entre 12 y 128 caracteres y que el usuario no exista ya. |
+| El tablero muestra indicadores pero no alertas | Las alertas las genera el análisis proactivo del DAG de Airflow (sección 2.9). |
 | Falla la generación RAG | Revisar clave Groq, disponibilidad del modelo, evidencia y límites del proveedor. |
 
 Al modificar variables que se transmiten al contenedor, vuelve a ejecutar `docker compose up -d` con el perfil correspondiente para aplicar la configuración.
@@ -513,7 +567,7 @@ El frontend dispone de su propio `GET /health`, accesible en http://localhost:30
 | `POST` | `/api/auth/login` | Inicia sesión; devuelve el token de acceso y establece la cookie de refresh. |
 | `POST` | `/api/auth/refresh` | Renueva el acceso utilizando la cookie de refresh. |
 | `POST` | `/api/auth/logout` | Cierra la sesión autenticada. |
-| `GET` | `/api/auth/me` | Devuelve la identidad y los roles de la sesión. |
+| `GET` | `/api/auth/me` | Devuelve la identidad de la sesión: `id`, `username`, `display_name` (nombre asignado, solo para presentación; si falta se usa `username`) y `roles`. |
 
 Login recibe un cuerpo JSON con `username` y `password`. Las solicitudes protegidas presentan el acceso mediante `Authorization: Bearer <token>`.
 
@@ -546,6 +600,7 @@ Las dos operaciones programadas requieren permiso funcional y una identidad incl
 | `GET` | `/api/documents/viewer` | Consulta el catálogo documental autorizado. |
 | `GET` | `/api/documents/viewer/{document_id}` | Obtiene contenido documental autorizado. |
 | `GET` | `/api/documents/viewer/{document_id}/original` | Obtiene el PDF original autorizado; requiere `version_id`. |
+| `POST` | `/api/documents/viewer/{document_id}/print` | Registra en auditoría la impresión solicitada de la versión vigente; requiere `version_id`. Devuelve solo `operation_id` y `correlation_id`. |
 | `POST` | `/api/rag/query` | Ejecuta una consulta RAG. |
 
 La consulta RAG recibe `query` y admite `context_reference_id` y `retry_of_operation_id` opcionales. También admite una cabecera `Idempotency-Key` con UUID.
@@ -554,6 +609,9 @@ La consulta RAG recibe `query` y admite `context_reference_id` y `retry_of_opera
 
 | Método | Ruta | Propósito |
 |---|---|---|
+| `GET` | `/api/security/users` | Lista cuentas en solo lectura (usuario, nombre asignado, estado y roles activos); filtros `q`, `state`, `role`, paginación por `cursor`. Requiere un permiso de administración de cuentas; se audita (`ACCOUNT_LIST`) sin el texto buscado. |
+| `GET` | `/api/security/document-scopes` | Lista los alcances documentales por rol y familia. Requiere `document_acl.manage`; se audita (`DOCUMENT_SCOPE_LIST`). |
+| `GET` | `/api/security/document-exceptions` | Lista las excepciones documentales vigentes (por cuenta o rol, con el identificador del documento); filtros `subject`, `account_id`, `role_id`, `document_id`, paginación por `cursor`. Requiere `document_acl.manage`; se audita (`DOCUMENT_EXCEPTION_LIST`). |
 | `POST` | `/api/security/users` | Crea una cuenta. |
 | `PATCH` | `/api/security/users/{account_id}` | Actualiza su nombre visible. |
 | `POST` | `/api/security/users/{account_id}/activate` | Activa la cuenta. |
@@ -603,6 +661,8 @@ Los cambios de cuenta, roles o autorizaciones invalidan las sesiones afectadas c
 
 Las cuentas se deshabilitan; no se eliminan físicamente. Un TI no puede modificar sus propios roles ni deshabilitar al último TI activo.
 
+La lista de cuentas y la consulta de permisos documentales vigentes son de solo lectura, exclusivas de TI, no exponen contraseñas, hashes ni sesiones y se registran en auditoría sin el texto buscado.
+
 ### Permisos y documentos
 
 Los roles funcionales son **Jurídico**, **Analista** y **TI**. Una cuenta puede tener varios roles activos.
@@ -616,7 +676,7 @@ Denegación explícita por documento
 → Denegación por defecto
 ```
 
-El alcance documental autorizado se aplica antes de recuperar contenido y antes de enviarlo a Groq. Las referencias de contexto del análisis proactivo no conceden permisos ni constituyen evidencia por sí mismas.
+El alcance documental autorizado se aplica antes de recuperar contenido y antes de enviarlo a Groq. Cada apertura de un documento en el visor y cada impresión quedan registradas en auditoría; si la impresión no puede registrarse, no se imprime. Las referencias de contexto del análisis proactivo no conceden permisos ni constituyen evidencia por sí mismas.
 
 ### Auditoría y operación
 
@@ -722,12 +782,15 @@ Para las pruebas de navegador:
 Push-Location frontend
 
 npx playwright install chromium
+# Aísla las pruebas de cualquier backend que esté corriendo en el puerto 8000
+$env:FRONTEND_API_TARGET = 'http://127.0.0.1:9'
 npm run test:e2e
+Remove-Item Env:FRONTEND_API_TARGET
 
 Pop-Location
 ```
 
-Playwright inicia su servidor de prueba en `http://127.0.0.1:5173` y verifica tres tamaños de pantalla.
+Playwright inicia su servidor de prueba en `http://127.0.0.1:5173` y verifica tres tamaños de pantalla. `FRONTEND_API_TARGET` apunta el proxy de la API a un puerto sin servicio, de modo que ninguna petición no simulada llegue a un backend real.
 
 Estas pruebas utilizan fixtures HTTP sintéticos. Verifican la interfaz y sus contratos; no equivalen a una prueba completa contra PostgreSQL, OCR y Groq reales.
 

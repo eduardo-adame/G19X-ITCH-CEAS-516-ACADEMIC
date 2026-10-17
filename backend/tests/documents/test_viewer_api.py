@@ -34,6 +34,10 @@ class Service:
     def read(self, *args, **kwargs):
         if self.error: raise self.error
         return b"%PDF-1.7\nsynthetic"
+    def register_print(self, document_id, version_id, principal):
+        if self.error: raise self.error
+        self.printed = (document_id, version_id)
+        return {"operation_id": str(uuid4()), "correlation_id": str(uuid4())}
 
 
 def authorized(client):
@@ -69,3 +73,28 @@ def test_original_is_authenticated_inline_pdf_and_version_is_required(client):
     assert response.status_code == 200 and response.content.startswith(b"%PDF-")
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["content-disposition"] == 'inline; filename="document.pdf"'
+
+
+def test_print_requires_authentication_and_version(client):
+    response = client.post("/api/documents/viewer/id/print?version_id=" + str(uuid4()))
+    assert response.status_code == 401 and response.headers["cache-control"] == "no-store"
+    authorized(client)
+    assert client.post("/api/documents/viewer/id/print").status_code == 422
+    assert client.get("/api/documents/viewer/id/print?version_id=" + str(uuid4())).status_code in {404, 405, 422}
+
+
+def test_print_returns_only_the_audit_receipt(client):
+    service = authorized(client)
+    version = uuid4()
+    response = client.post(f"/api/documents/viewer/id/print?version_id={version}")
+    assert response.status_code == 200 and set(response.json()) == {"operation_id", "correlation_id"}
+    assert service.printed == ("id", version)
+
+
+@pytest.mark.parametrize("exception, status", [(AuditPersistenceError, 503), (ViewerNotFound, 404),
+    (ViewerVersionChanged, 409), (AuthorizationError, 403)])
+def test_print_errors_are_safe(client, exception, status):
+    service = authorized(client)
+    service.error = exception("internal sensitive sentinel")
+    response = client.post("/api/documents/viewer/id/print?version_id=" + str(uuid4()))
+    assert response.status_code == status and "sentinel" not in response.text

@@ -38,7 +38,8 @@ async function upload(page) {
 }
 async function assertSamePage(page) {
   expect(await page.evaluate(() => window.__refreshTestIdentity)).toBe('misma-pagina')
-  await expect(page.getByLabel('Documento conocido')).toHaveValue('DOC-REF')
+  // El filtro de documento se conserva: visible como filtro activo (también en móvil, con el panel cerrado).
+  await expect(page.locator('[aria-label="Filtros activos"]').first()).toContainText('Documento: DOC-REF')
   expect(new URL(page.url()).searchParams.get('document_id')).toBe('DOC-REF')
 }
 
@@ -76,7 +77,7 @@ test.describe('ROBUSTNESS: refresh acotado y conservación de interacción — B
     const response = page.waitForResponse((r) => r.url().endsWith('/api/coordination/dispatch'))
     await upload(page); await response
     if (dispatch === 503) await expect(page.getByRole('alert')).toContainText('El servicio no está disponible temporalmente')
-    else await expect(page.getByRole('table', { name: 'Recepción y despacho actuales' }).getByText({ PENDING: 'Pendiente', COMPLETED: 'Procesamiento ejecutado' }[dispatch.state], { exact: true })).toHaveCount(1)
+    else await expect(page.getByRole('table', { name: 'Archivos recibidos en esta sesión' }).getByText({ PENDING: 'Pendiente', COMPLETED: 'Procesamiento ejecutado' }[dispatch.state], { exact: true })).toHaveCount(1)
     expect(state.ocr()).toBe(1); expect(state.technical()).toBe(1)
     await expect(page.getByText('50 %', { exact: true })).toBeVisible()
     await assertSamePage(page)

@@ -48,9 +48,12 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     await userEvent.upload(screen.getByLabelText(/Archivo/), file)
     fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
     await waitFor(() => expect(request).toHaveBeenCalled())
-    expect(await screen.findByText(/Archivo recibido; procesamiento pendiente/)).toBeVisible()
-    expect(screen.getByText('Sin confirmación de despacho')).toBeVisible()
-    expect(await screen.findByRole('alert')).toHaveTextContent('conflicto')
+    expect(await screen.findByText('dato.csv')).toBeVisible()
+    expect(screen.getByText('Recibido')).toBeVisible()
+    expect(screen.getByText('Sin confirmación de procesamiento')).toBeVisible()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('No se pudo confirmar el procesamiento')
+    expect(alert).toHaveTextContent('conflicto')
     expect(screen.getByText(/no representa un historial persistente/i)).toBeVisible()
   })
 
@@ -78,6 +81,9 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     await screen.findByText('Falta campo obligatorio')
     await userEvent.click(screen.getByRole('button', { name: 'Corregir' }))
     expect(screen.getByText('Original rechazado — solo lectura')).toBeVisible()
+    expect(screen.getByRole('dialog')).toHaveTextContent('Falta campo obligatorio')
+    expect(screen.getByLabelText('Dato')).toHaveValue('nuevo')
+    await userEvent.click(screen.getByRole('button', { name: 'Editar como JSON' }))
     const editor = screen.getByLabelText('Candidato corregido (JSON)')
     expect(editor).toHaveValue(JSON.stringify({ Dato: 'nuevo' }, null, 2))
     fireEvent.change(editor, { target: { value: '{"Dato":"corregido"}' } })
@@ -95,6 +101,8 @@ describe('SRS_REQUIRED: vistas operativas', () => {
     const submit = screen.getByRole('button', { name: 'Confirmar descarte' }); expect(submit).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Justificación del descarte'), 'Duplicado'); expect(submit).toBeEnabled()
     await userEvent.click(submit); expect(await screen.findByText('Descarte confirmado.')).toBeVisible()
+    expect(screen.getByText('Falta campo obligatorio · fila 2', { selector: 'div' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar aviso' })); expect(screen.queryByText('Descarte confirmado.')).not.toBeInTheDocument()
   })
 
   it('reproceso OCR confirmado con KPI pendiente no se repite', async () => {
@@ -113,10 +121,19 @@ describe('SRS_REQUIRED: vistas operativas', () => {
 
   it('filtros inválidos de cuarentena muestran error seguro y no cambian la consulta', async () => {
     const { client } = mount(<QuarantinePage />); await screen.findByText('Falta campo obligatorio'); const before = client.acquireRead.mock.calls.length
-    await userEvent.type(screen.getByLabelText('Archivo de origen (identificador)'), 'no-es-uuid')
-    await userEvent.tab()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Revisa los datos')
-    expect(client.acquireRead).toHaveBeenCalledTimes(before)
+    await userEvent.click(screen.getByRole('button', { name: /Más filtros/ }))
+    await userEvent.type(screen.getByLabelText('Archivo de origen (identificador)'), 'no-es-uuid{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pega el identificador completo')
+    // Rango invertido: error en «Retenido hasta», sin consultar.
+    fireEvent.change(screen.getByLabelText('Retenido desde'), { target: { value: '2030-02-01' } })
+    await waitFor(() => expect(client.acquireRead.mock.calls.length).toBeGreaterThan(before))
+    const afterFrom = client.acquireRead.mock.calls.length
+    fireEvent.change(screen.getByLabelText('Retenido hasta'), { target: { value: '2030-01-01' } })
+    expect(screen.getByLabelText('Retenido hasta')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Retenido hasta')).toHaveAttribute('min', '2030-02-01')
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent.includes('Debe ser igual o posterior a «Retenido desde»'))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(client.acquireRead).toHaveBeenCalledTimes(afterFrom)
   })
 
   it.each(['TI', 'ANALISTA'])('OCR autorizado para %s separa estados y ofrece únicamente acciones elegibles', async (role) => {
@@ -183,7 +200,7 @@ describe('F-27-A: resultado del procesamiento de ingesta sin implicar validació
     fireEvent.submit(screen.getByRole('button', { name: 'Recibir y procesar' }).closest('form'))
     expect(await screen.findByText('Procesamiento ejecutado')).toBeVisible()
     expect(screen.queryByText('COMPLETED')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Ver resultado en cuarentena' })).toHaveAttribute('href', `/cuarentena?ingest_file_id=${accountId}`)
+    expect(screen.getByRole('link', { name: 'Revisar en cuarentena' })).toHaveAttribute('href', `/cuarentena?ingest_file_id=${accountId}`)
     expect(screen.getByText(/no el resultado de su validación/)).toBeVisible()
   })
 

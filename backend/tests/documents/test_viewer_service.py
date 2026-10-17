@@ -213,3 +213,46 @@ def test_docx_original_not_exposed(setup, principal, row):
     with pytest.raises(ViewerNotFound):
         service.read(row["document_id"], row["document_version_id"], principal, original=True)
     assert not repo.committed
+
+
+def test_print_is_audited_after_revalidation_without_content(setup, principal, row):
+    service, repo, security, _ = setup
+    receipt = service.register_print(row["document_id"], row["document_version_id"], principal)
+    assert security.calls == 2 and len(repo.committed) == 1
+    event = repo.committed[0]
+    assert event["action"] == "DOCUMENT_PRINT" and event["resource_type"] == "DOCUMENT_VERSION"
+    assert event["result"] == "SUCCESS" and event["correlation_id"] == receipt.correlation_id
+    assert event["resource_identifier"] == json.dumps(
+        [row["document_id"], str(row["document_version_id"])], ensure_ascii=True, separators=(",", ":"))
+    assert row["text"] not in str(event) and row["document_name"] not in str(event)
+    assert set(receipt.model_dump()) == {"operation_id", "correlation_id"}
+
+
+def test_print_requires_the_current_version(setup, principal, row):
+    service, repo, _, _ = setup
+    with pytest.raises(ValueError):
+        service.register_print(row["document_id"], None, principal)
+    with pytest.raises(ViewerVersionChanged):
+        service.register_print(row["document_id"], uuid4(), principal)
+    repo.row = None
+    with pytest.raises(ViewerNotFound):
+        service.register_print(row["document_id"], row["document_version_id"], principal)
+    assert not repo.committed
+
+
+@pytest.mark.parametrize("failure", ["insert_fails", "commit_fails"])
+def test_print_audit_failure_is_not_confirmed(setup, principal, row, failure):
+    service, repo, _, _ = setup
+    setattr(repo, failure, True)
+    with pytest.raises(AuditPersistenceError):
+        service.register_print(row["document_id"], row["document_version_id"], principal)
+    assert not repo.committed
+
+
+def test_print_denial_is_audited_generically(setup, principal, row):
+    service, repo, security, _ = setup
+    security.deny_at = 2
+    with pytest.raises(AuthorizationError):
+        service.register_print(row["document_id"], row["document_version_id"], principal)
+    assert [event["action"] for event in repo.committed] == ["AUTHORIZATION_DENIED"]
+    assert repo.committed[0]["resource_identifier"] is None

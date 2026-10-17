@@ -314,3 +314,20 @@ export const SYNTHETIC_AUDIT_PAGE = {
   ],
   next_cursor: null,
 }
+
+/**
+ * Muestra los controles de filtro (DESIGN §19): en móvil abre el panel «Filtros»; con `more` despliega
+ * también «Más filtros» en escritorio. No cambia ningún filtro.
+ */
+export async function showFilters(page, { more = false } = {}) {
+  await page.locator('section[aria-label^="Filtros"]').first().waitFor()
+  // Localizadores por estructura: funcionan aunque un diálogo abierto oculte el fondo al árbol accesible.
+  const toggle = page.locator('section[aria-label^="Filtros"] > button[aria-expanded]').first()
+  if (await toggle.count()) {
+    if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
+    return
+  }
+  if (!more) return
+  const button = page.locator('section[aria-label^="Filtros"] button[aria-expanded]', { hasText: 'Más filtros' }).first()
+  if (await button.getAttribute('aria-expanded') === 'false') await button.click()
+}

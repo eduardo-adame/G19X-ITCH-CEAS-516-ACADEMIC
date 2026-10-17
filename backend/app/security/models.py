@@ -77,6 +77,8 @@ class AuthenticatedPrincipal:
     authorization_version: int
     roles: frozenset[str]
     permissions: frozenset[str]
+    # Nombre asignado a la cuenta para presentarlo en la interfaz; no interviene en la autorización.
+    display_name: str | None = None
 
 
 @dataclass(frozen=True)
