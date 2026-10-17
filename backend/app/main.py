@@ -29,6 +29,7 @@ from app.embeddings import EmbeddingUnavailableError, get_embedding_service
 from app.ingestion.api import router as ingestion_router
 from app.rag.api import router as rag_router
 from app.security.api import require, router as security_router
+from app.security.directory_api import router as security_directory_router
 from app.security.models import AuthenticatedPrincipal
 from app.validation.api import router as validation_router
 
@@ -89,6 +90,7 @@ app.add_middleware(
 )
 
 app.include_router(security_router)
+app.include_router(security_directory_router)
 app.include_router(ingestion_router)
 app.include_router(coordination_router)
 app.include_router(validation_router)

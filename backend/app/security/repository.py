@@ -383,6 +383,77 @@ class SecurityRepository:
         families = SecurityRepository.active_document_scope_families(connection, roles)
         return decisions, set(families), set()
 
+    # --- Consultas administrativas de solo lectura (RF-068, SRS 0.26) ---------------------------
+
+    @staticmethod
+    def _like(value: str) -> str:
+        return "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+    @staticmethod
+    def list_accounts(connection: psycopg.Connection, *, q: str | None, state: str | None, role: str | None,
+                      after: str | None, limit: int) -> list[dict[str, object]]:
+        """Cuentas ordenadas por usuario con sus roles activos; sin datos de credenciales ni sesiones."""
+        conditions, parameters = [], []
+        if q:
+            conditions.append("(u.username ILIKE %s ESCAPE '\\' OR u.display_name ILIKE %s ESCAPE '\\')")
+            parameters += [SecurityRepository._like(q)] * 2
+        if state:
+            conditions.append("u.state = %s"); parameters.append(state)
+        if role:
+            conditions.append("EXISTS (SELECT 1 FROM app.user_role x WHERE x.user_id = u.id AND x.active AND x.role_id = %s)")
+            parameters.append(role)
+        if after is not None:
+            conditions.append("u.username > %s"); parameters.append(after)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""SELECT u.id, u.username, u.display_name, u.state, u.created_at, u.disabled_at,
+                           COALESCE(array_agg(r.role_id ORDER BY r.role_id) FILTER (WHERE r.role_id IS NOT NULL), '{{}}') AS roles
+                    FROM app.user_account u
+                    LEFT JOIN app.user_role r ON r.user_id = u.id AND r.active
+                    {where}
+                    GROUP BY u.id ORDER BY u.username LIMIT %s""",
+                (*parameters, limit),
+            )
+            return list(cursor.fetchall())
+
+    @staticmethod
+    def list_scope_grants(connection: psycopg.Connection) -> list[dict[str, object]]:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT role_id, source_family, active FROM app.document_scope_grant ORDER BY role_id, source_family")
+            return list(cursor.fetchall())
+
+    @staticmethod
+    def list_document_exceptions(connection: psycopg.Connection, *, subject: str | None, account_id: UUID | None,
+                                 role_id: str | None, document_id: str | None, after: tuple[datetime, UUID] | None,
+                                 limit: int) -> list[dict[str, object]]:
+        """Excepciones vigentes (activas), de la más reciente a la más antigua; solo el identificador del documento."""
+        conditions, parameters = ["e.active"], []
+        if subject == "USER":
+            conditions.append("e.user_id IS NOT NULL")
+        elif subject == "ROLE":
+            conditions.append("e.role_id IS NOT NULL")
+        if account_id is not None:
+            conditions.append("e.user_id = %s"); parameters.append(account_id)
+        if role_id is not None:
+            conditions.append("e.role_id = %s"); parameters.append(role_id)
+        if document_id is not None:
+            conditions.append("e.id_documento = %s"); parameters.append(document_id)
+        if after is not None:
+            conditions.append("(e.created_at, e.id) < (%s, %s)"); parameters += list(after)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""SELECT e.id, CASE WHEN e.user_id IS NOT NULL THEN 'USER' ELSE 'ROLE' END AS subject_type,
+                           e.user_id AS account_id, u.username, u.display_name, e.role_id,
+                           e.id_documento AS document_id, e.decision, e.created_at
+                    FROM app.document_exception e
+                    LEFT JOIN app.user_account u ON u.id = e.user_id
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY e.created_at DESC, e.id DESC LIMIT %s""",
+                (*parameters, limit),
+            )
+            return list(cursor.fetchall())
+
     @staticmethod
     def write_audit_event(connection: psycopg.Connection, *, actor: AuthenticatedPrincipal | None, action: str, resource_type: str, resource_identifier: str | None, result: str, correlation_id: UUID, safe_cause_code: str | None = None, process_identifier: str | None = None) -> None:
         if actor is not None:

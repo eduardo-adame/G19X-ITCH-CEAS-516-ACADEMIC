@@ -20,6 +20,10 @@ from app.security.models import (
     KNOWN_ROLES,
     ValidationError,
 )
+from app.security.directory import (
+    ACCOUNT_READ_CAPABILITIES, AccountPage, AccountSummary, DocumentExceptionPage, DocumentExceptionSummary,
+    ScopeGrant, ScopeGrantList, cursor_binding, decode_cursor, encode_cursor,
+)
 from app.security.passwords import PasswordService
 from app.security.repository import SecurityRepository
 from app.security.tokens import JwtService
@@ -373,6 +377,92 @@ class SecurityService:
             impacted = [account_id] if account_id else self.repository.active_accounts_for_role(connection, str(role_id))
             self._invalidate_accounts(connection, actor, [item for item in impacted if item is not None], correlation)
             self.repository.write_audit_event(connection, actor=actor, action="DOCUMENT_EXCEPTION", resource_type="DOCUMENT", resource_identifier=document_id, result="SUCCESS", correlation_id=correlation)
+
+    # --- Consultas administrativas de solo lectura (RF-068, SRS 0.26) ---------------------------
+
+    def _audit_denial(self, actor: AuthenticatedPrincipal, resource: str, correlation: UUID) -> None:
+        with self.repository.transaction() as connection:
+            self.repository.write_audit_event(
+                connection, actor=actor, action="AUTHORIZATION_DENIED", resource_type="CAPABILITY",
+                resource_identifier=resource, result="DENIED", correlation_id=correlation, safe_cause_code="DEFAULT_DENY",
+            )
+
+    def list_accounts(self, actor: AuthenticatedPrincipal, query, correlation_id: UUID | None = None):
+        """Lista de cuentas para elegir sobre cuál operar. Se audita sin el texto buscado."""
+        correlation = correlation_id or uuid4()
+        if not ACCOUNT_READ_CAPABILITIES & actor.permissions:
+            self._audit_denial(actor, "account.directory", correlation)
+            raise AuthorizationError("Acceso no autorizado")
+        try:
+            with self.repository.transaction() as connection:
+                current = self._authoritative_principal(connection, actor)
+                if not ACCOUNT_READ_CAPABILITIES & current.permissions:
+                    raise AuthorizationError("Acceso no autorizado")
+                binding = cursor_binding(current, query)
+                position = decode_cursor(query.cursor, binding, 1)
+                rows = self.repository.list_accounts(
+                    connection, q=query.q, state=query.state, role=query.role,
+                    after=position[0] if position else None, limit=query.limit + 1,
+                )
+                selected = rows[:query.limit]
+                page = AccountPage(
+                    items=[AccountSummary(**{key: row[key] for key in AccountSummary.model_fields}) for row in selected],
+                    next_cursor=encode_cursor([str(selected[-1]["username"])], binding) if len(rows) > query.limit else None,
+                )
+                self.repository.write_audit_event(connection, actor=current, action="ACCOUNT_LIST", resource_type="USER", resource_identifier=None, result="SUCCESS", correlation_id=correlation)
+            return page
+        except AuthorizationError:
+            self._audit_denial(actor, "account.directory", correlation)
+            raise
+
+    def list_scope_grants(self, actor: AuthenticatedPrincipal, correlation_id: UUID | None = None):
+        correlation = correlation_id or uuid4()
+        try:
+            self._require(actor, "document_acl.manage")
+            with self.repository.transaction() as connection:
+                current = self._authoritative_principal(connection, actor, "document_acl.manage")
+                result = ScopeGrantList(items=[ScopeGrant(**row) for row in self.repository.list_scope_grants(connection)])
+                self.repository.write_audit_event(connection, actor=current, action="DOCUMENT_SCOPE_LIST", resource_type="ROLE", resource_identifier=None, result="SUCCESS", correlation_id=correlation)
+            return result
+        except AuthorizationError:
+            self._audit_denial(actor, "document_acl.manage", correlation)
+            raise
+
+    def list_document_exceptions(self, actor: AuthenticatedPrincipal, query, correlation_id: UUID | None = None):
+        correlation = correlation_id or uuid4()
+        try:
+            self._require(actor, "document_acl.manage")
+            return self._document_exception_page(actor, query, correlation)
+        except AuthorizationError:
+            self._audit_denial(actor, "document_acl.manage", correlation)
+            raise
+
+    def _document_exception_page(self, actor: AuthenticatedPrincipal, query, correlation: UUID):
+        with self.repository.transaction() as connection:
+            current = self._authoritative_principal(connection, actor, "document_acl.manage")
+            binding = cursor_binding(current, query)
+            position = decode_cursor(query.cursor, binding, 2)
+            after = None
+            if position:
+                try:
+                    stamp = datetime.fromisoformat(position[0])
+                    after = (stamp, UUID(position[1]))
+                except ValueError:
+                    raise ValueError("Cursor no válido") from None
+                if stamp.utcoffset() is None:
+                    raise ValueError("Cursor no válido")
+            rows = self.repository.list_document_exceptions(
+                connection, subject=query.subject, account_id=query.account_id, role_id=query.role_id,
+                document_id=query.document_id, after=after, limit=query.limit + 1,
+            )
+            selected = rows[:query.limit]
+            last = selected[-1] if selected else None
+            page = DocumentExceptionPage(
+                items=[DocumentExceptionSummary(**{key: row[key] for key in DocumentExceptionSummary.model_fields}) for row in selected],
+                next_cursor=encode_cursor([last["created_at"].isoformat(), str(last["id"])], binding) if len(rows) > query.limit else None,
+            )
+            self.repository.write_audit_event(connection, actor=current, action="DOCUMENT_EXCEPTION_LIST", resource_type="DOCUMENT", resource_identifier=None, result="SUCCESS", correlation_id=correlation)
+        return page
 
     def document_authorization(self, context: AuthorizationContext, *, document_id: str, source_family: str) -> DocumentAuthorizationDecision:
         self._require(context.principal, "document.query")
