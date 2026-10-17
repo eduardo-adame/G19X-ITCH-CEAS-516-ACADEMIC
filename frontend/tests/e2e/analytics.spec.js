@@ -90,7 +90,7 @@ test.describe('Analítica — Resumen ejecutivo', () => {
   test('muestra KPI sintético con valor correcto', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '5')])
     await page.goto('/')
-    await expect(page.getByText('5').first()).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('main').getByText('5', { exact: true }).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('distingue null de cero: null muestra No disponible en tabla', async ({ page }) => {
@@ -176,7 +176,8 @@ test.describe('Analítica — Responsive', () => {
   test('redistribución responsive de la cuadrícula KPI según viewport', async ({ page }) => {
     mockAnalytics(page, [buildKpiItem('KPI-RC-03', '9')])
     await page.goto('/')
-    await expect(page.getByText('9').first()).toBeVisible({ timeout: 8000 })
+    // Solo en el contenido y con coincidencia exacta: el reloj de la barra superior también contiene dígitos.
+    await expect(page.getByRole('main').getByText('9', { exact: true }).first()).toBeVisible({ timeout: 8000 })
     // La cuadrícula KPI debe adaptarse al viewport
     const kpiRow = page.locator('.kpi-row').first()
     await expect(kpiRow).toBeVisible()

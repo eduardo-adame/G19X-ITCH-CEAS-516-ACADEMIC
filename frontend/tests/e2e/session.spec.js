@@ -31,7 +31,7 @@ test.describe('Sesión — credenciales inválidas', () => {
     await page.route('**/api/auth/login', (r) => r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'Credenciales inválidas' }) }))
     await page.goto('/')
     await page.getByRole('textbox', { name: /usuario/i }).fill('usuario-invalido')
-    const passInput = page.getByLabel(/contraseña/i)
+    const passInput = page.getByLabel('Contraseña', { exact: true })
     await passInput.fill('claveInvalida123')
     await page.getByRole('button', { name: /iniciar sesión/i }).click()
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 5000 })

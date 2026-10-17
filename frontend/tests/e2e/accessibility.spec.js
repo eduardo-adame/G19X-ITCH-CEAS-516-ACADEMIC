@@ -61,10 +61,14 @@ test.describe('Accesibilidad — Encabezados y jerarquía', () => {
 })
 
 test.describe('Accesibilidad — Labels y nombres accesibles', () => {
-  test('el campo de consulta RAG tiene label visible', async ({ page }) => {
+  // Decisión del usuario (DESIGN §21.2): sin rótulo técnico visible; el texto de ejemplo orienta y el campo
+  // conserva su nombre accesible para lectores de pantalla.
+  test('el campo de consulta RAG tiene nombre accesible y texto de ejemplo visible', async ({ page }) => {
     await page.goto('/consulta')
-    const label = page.getByText(/consulta en lenguaje natural/i)
-    await expect(label).toBeVisible({ timeout: 8000 })
+    const field = page.getByRole('textbox', { name: 'Tu consulta' })
+    await expect(field).toBeVisible({ timeout: 8000 })
+    await expect(field).toHaveAttribute('placeholder', /Pregunta sobre cláusulas/)
+    await expect(page.getByText(/consulta en lenguaje natural/i)).toHaveCount(0)
   })
 
   test('los controles de filtro en analítica tienen label', async ({ page }) => {
