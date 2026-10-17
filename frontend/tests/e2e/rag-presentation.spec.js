@@ -15,7 +15,7 @@ async function mockRag(page, dto = RAG_SIN_EVIDENCIA, status = 200) {
   return requests
 }
 async function submit(page, query = 'Consulta documental sintética') {
-  const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+  const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
   await expect(textarea).toBeEnabled()
   await textarea.fill(query)
   await page.getByRole('button', { name: 'Consultar', exact: true }).click()
@@ -116,7 +116,7 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
     test(`HTTP${status} sigue siendo error sin presentar un estado funcional inventado`, async ({ page }) => {
       await mockRag(page, {}, status)
       await page.goto('/consulta')
-      await expect(page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })).toBeEnabled()
+      await expect(page.getByRole('textbox', { name: 'Tu consulta' })).toBeEnabled()
       if (status === 401) {
         await page.route('**/api/auth/refresh', (route) => route.fulfill({ status: 401, json: {} }))
       }
@@ -141,7 +141,7 @@ test.describe('BROWSER_CONTRACT_E2E SRS_REQUIRED: presentación canónica y fuen
       await expect(page.getByRole('region', { name: 'Tu consulta enviada' })).toHaveCount(0)
       await expect(page.getByRole('region', { name: 'Resultado de la consulta' })).toHaveCount(0)
       await expect(page.getByRole('status', { name: 'Respuesta local' })).toHaveCount(0)
-      await expect(page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })).toHaveValue(query)
+      await expect(page.getByRole('textbox', { name: 'Tu consulta' })).toHaveValue(query)
       verification.resolve()
       await expect(page.getByRole('region', { name: 'Tu consulta enviada' })).toBeVisible()
       expect(requests).toHaveLength(kind === 'local' ? 0 : 1)

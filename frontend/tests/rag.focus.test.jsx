@@ -32,7 +32,7 @@ function mount(request = vi.fn(async () => RAG_EVIDENCIA_SUFICIENTE)) {
   return { manager, request, view }
 }
 async function submit(text = 'Consulta sintética A') {
-  const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+  const textarea = await screen.findByLabelText('Tu consulta')
   await waitFor(() => expect(textarea).toBeEnabled())
   await userEvent.type(textarea, text)
   await userEvent.click(screen.getByRole('button', { name: 'Consultar' }))
@@ -43,7 +43,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('ROBUSTNESS: conservación de la consulta al cambiar foco', () => {
   it('conserva el borrador y su validación durante blur/hidden/visible sin POST', async () => {
     const { request } = mount()
-    const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+    const textarea = await screen.findByLabelText('Tu consulta')
     await waitFor(() => expect(textarea).toBeEnabled())
     const draft = 'x'.repeat(4097)
     fireEvent.change(textarea, { target: { value: draft } })
@@ -70,7 +70,7 @@ describe('ROBUSTNESS: conservación de la consulta al cambiar foco', () => {
     manager.revalidate.mockImplementation(() => verification.promise)
     visibility('visible'); fireEvent(window, new Event('focus'))
     expect(screen.queryByText(evidence)).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toBe(textarea)
+    expect(screen.getByLabelText('Tu consulta')).toBe(textarea)
     expect(textarea).toHaveValue('Consulta sintética A')
     expect(textarea).toBeDisabled()
     await act(async () => verification.resolve(true))
@@ -147,8 +147,8 @@ describe('ROBUSTNESS: conservación de la consulta al cambiar foco', () => {
     expect(signalA.aborted).toBe(true)
     expect(screen.getByText(/Dejaste de esperar esta consulta/)).toBeVisible()
     // Dejar de esperar conserva el texto para poder reformularlo.
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue('Consulta sintética A')
-    await userEvent.clear(screen.getByLabelText('Consulta en lenguaje natural'))
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue('Consulta sintética A')
+    await userEvent.clear(screen.getByLabelText('Tu consulta'))
     await submit('Consulta sintética B')
     const resultB = { ...RAG_EVIDENCIA_SUFICIENTE, generated_response: 'Respuesta sintética B [E1].' }
     await act(async () => second.resolve(resultB))
@@ -156,7 +156,7 @@ describe('ROBUSTNESS: conservación de la consulta al cambiar foco', () => {
     await act(async () => first.resolve(RAG_EVIDENCIA_SUFICIENTE))
     expect(screen.getByRole('region', { name: 'Respuesta generada' })).toHaveTextContent('Respuesta sintética B [E1].')
     expect(document.body.textContent).not.toContain('Respuesta generada sintética')
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue('Consulta sintética B')
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue('Consulta sintética B')
     expect(request.mock.calls[1][1].headers['Idempotency-Key']).not.toBe(request.mock.calls[0][1].headers['Idempotency-Key'])
   })
 
@@ -168,7 +168,7 @@ describe('ROBUSTNESS: conservación de la consulta al cambiar foco', () => {
     first.view.unmount()
     expect(signal.aborted).toBe(true)
     const next = mount()
-    await screen.findByLabelText('Consulta en lenguaje natural')
+    await screen.findByLabelText('Tu consulta')
     await act(async () => response.resolve(RAG_EVIDENCIA_SUFICIENTE))
     expect(screen.queryByText(evidence)).not.toBeInTheDocument()
     expect(next.request).not.toHaveBeenCalled()
@@ -212,7 +212,7 @@ describe('SRS_REQUIRED: autorización vigente durante retorno al foco', () => {
     const update = change === 'logout' ? { status: 'anonymous', principal: null, generation: 2 }
       : change === 'usuario' ? { principal: { id: 'cuenta-sintetica-b', roles: ['JURIDICO'] } } : { generation: 2 }
     act(() => manager.update(update))
-    const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+    const textarea = await screen.findByLabelText('Tu consulta')
     expect(textarea).toHaveValue('')
     expect(request.mock.calls[0][1].signal.aborted).toBe(true)
     await act(async () => response.resolve(RAG_EVIDENCIA_SUFICIENTE))

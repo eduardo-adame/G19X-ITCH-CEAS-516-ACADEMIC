@@ -18,7 +18,7 @@ function mount({ request = vi.fn(async () => RAG_EVIDENCIA_SUFICIENTE), entry = 
   return { request, manager }
 }
 async function ready() {
-  const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+  const textarea = await screen.findByLabelText('Tu consulta')
   await waitFor(() => expect(textarea).toBeEnabled())
   return textarea
 }
@@ -66,7 +66,7 @@ describe('ROBUSTNESS: compositor de la consulta documental (DESIGN §16.6)', () 
     const button = within(screen.getByRole('region', { name: 'Preguntas sugeridas' })).getAllByRole('button')[0]
     button.focus()
     fireEvent.click(button)
-    expect(screen.getByLabelText('Consulta en lenguaje natural')).toHaveValue(button.textContent)
+    expect(screen.getByLabelText('Tu consulta')).toHaveValue(button.textContent)
     expect(document.activeElement).toBe(button)
     expect(request).not.toHaveBeenCalled()
   })
@@ -118,13 +118,15 @@ describe('ROBUSTNESS: compositor de la consulta documental (DESIGN §16.6)', () 
     expect(screen.queryByRole('region', { name: 'Resultado de la consulta' })).not.toBeInTheDocument()
   })
 
-  it('Reformular consulta conserva el texto y enfoca el compositor', async () => {
+  it('Editar consulta devuelve la pregunta enviada al compositor y lo enfoca', async () => {
     mount({ request: vi.fn(async () => RAG_SIN_EVIDENCIA) })
     const textarea = await ready()
     fireEvent.change(textarea, { target: { value: 'Consulta documental sintética' } })
     fireEvent.click(screen.getByRole('button', { name: 'Consultar' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Reformular consulta' }))
-    expect(textarea).toHaveFocus()
+    const edit = await screen.findByRole('button', { name: 'Editar consulta' })
+    fireEvent.change(textarea, { target: { value: 'Texto distinto escrito después' } })
+    await userEvent.click(edit)
+    await waitFor(() => expect(textarea).toHaveFocus())
     expect(textarea).toHaveValue('Consulta documental sintética')
   })
 })

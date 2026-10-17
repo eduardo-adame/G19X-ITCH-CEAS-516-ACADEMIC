@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Button } from './controls.jsx'
+import { Button, SearchIcon } from './controls.jsx'
 import { Icon } from './Icon.jsx'
 
 const NARROW = '(max-width: 767px)'
@@ -133,7 +133,7 @@ export function SearchField({ label, value = '', validate = () => true, invalidM
   const commit = (text) => { const clean = text.trim(); if (clean && !validate(clean)) { setShowError(true); return } setShowError(false); if (clean !== value) onApply(clean) }
   const schedule = useDebouncedCallback(commit, delay)
   const error = showError ? invalidMessage : null
-  return <div className="field space-y-1"><label htmlFor={id} className="block text-xs font-medium text-secondary">{label}</label><input id={id} type="search" className="control control-compact" value={draft} maxLength={maxLength} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
+  return <div className="field space-y-1"><label htmlFor={id} className="block text-xs font-medium text-secondary">{label}</label><SearchIcon><input id={id} type="search" className="control control-compact" value={draft} maxLength={maxLength} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
     onChange={(event) => { setDraft(event.target.value); setShowError(false); schedule(event.target.value) }}
-    onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); commit(draft) }} />{error && <p id={`${id}-error`} role="alert" className="field-error text-xs text-[var(--critical)]">{error}</p>}</div>
+    onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); commit(draft) }} /></SearchIcon>{error && <p id={`${id}-error`} role="alert" className="field-error text-xs text-[var(--critical)]">{error}</p>}</div>
 }

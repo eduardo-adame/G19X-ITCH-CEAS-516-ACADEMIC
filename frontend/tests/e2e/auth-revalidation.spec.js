@@ -7,8 +7,8 @@ async function initial(page) {
   await mockSessionTI(page); await mockDashboardEmpty(page); await mockLogout(page)
   await page.route('**/api/rag/query', (route) => route.fulfill({ json: RAG_EVIDENCIA_SUFICIENTE }))
   await page.goto('/consulta')
-  await expect(page.getByLabel('Consulta en lenguaje natural')).toBeEnabled()
-  await page.getByLabel('Consulta en lenguaje natural').fill('Consulta sintética de validación de sesión')
+  await expect(page.getByLabel('Tu consulta')).toBeEnabled()
+  await page.getByLabel('Tu consulta').fill('Consulta sintética de validación de sesión')
   await page.getByRole('button', { name: 'Consultar', exact: true }).click()
   await expect(page.getByText(fragment, { exact: true })).toBeVisible()
 }

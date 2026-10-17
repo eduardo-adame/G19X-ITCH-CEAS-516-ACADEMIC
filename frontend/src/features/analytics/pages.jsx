@@ -19,6 +19,8 @@ import { AlertsSkeleton, ChartLoadingState, ExposureEvolutionChart, IncidentsByA
 import { matterVolumePivot } from './viewModels.js'
 import { resolveDomainKpis, resolveExecutiveKpis } from './executiveKpis.js'
 import { describeFinding, evaluatedMonth } from './findingNarrative.js'
+import { KPI_DEFINITIONS, KPI_DOMAIN_VIEWS } from './kpiDefinitions.js'
+import { InfoPopover } from '../../components/help.jsx'
 
 const configs = {
   summary: { title: 'Resumen ejecutivo', risk: 'all', description: 'Estado del riesgo legal y alertas del periodo.' },
@@ -80,7 +82,7 @@ function Filters({ filters, entities, setParams, showAnalysis, defaults }) {
     <Select label="Tipo de riesgo" value={draft.risk_type} onChange={choose('risk_type')} options={RISKS} />
     {entities.length
       ? <Select label="Entidad" value={draft.entity || ''} onChange={choose('entity')} options={[{ value: '', label: 'Todas las aplicables' }, ...entities.map((value) => ({ value, label: value }))]} />
-      : <p className="field text-xs text-secondary" data-testid="entity-not-applicable">Entidad: No aplicable</p>}
+      : <p className="field flex items-center gap-1.5 text-xs text-secondary" data-testid="entity-not-applicable">Entidad: No aplicable<InfoPopover label="Por qué la entidad no aplica">Los indicadores de esta vista no se desglosan por entidad, por eso este filtro no aplica. Se habilita solo cuando los datos incluyen esa información.</InfoPopover></p>}
     {draft.entity && !entities.includes(draft.entity) && <p className="text-xs text-secondary">Entidad seleccionada: {draft.entity}. Sin opciones disponibles en esta lectura.</p>}
   </>
   return <FilterToolbar label="Filtros de la vista" primary={primary} chips={chips} onClearAll={() => setParams('')} />
@@ -99,8 +101,10 @@ function slotDelta(slot, attention) {
   return <span className="text-muted" />
 }
 
-function MetricSlots({ slots, enter = false, attention }) {
-  return <section aria-label="Indicadores principales"><KpiRow>{slots.map((slot, index) => <KpiMetric key={slot.code} label={slot.name} displayValue={slot.displayValue} accessibleValue={slot.accessibleValue} valueKind={slot.valueKind} state={slot.state} entryIndex={enter ? index : undefined} shortContext={slot.shortContext} previousContext={slot.previousContext} delta={slotDelta(slot, attention)} />)}</KpiRow></section>
+// links: en el resumen, cada indicador abre su vista de dominio conservando el periodo seleccionado.
+function MetricSlots({ slots, enter = false, attention, linkSearch = null }) {
+  const linkFor = (code) => linkSearch === null || !KPI_DOMAIN_VIEWS[code] ? undefined : { to: `${KPI_DOMAIN_VIEWS[code].path}${linkSearch ? `?${linkSearch}` : ''}`, label: KPI_DOMAIN_VIEWS[code].label }
+  return <section aria-label="Indicadores principales"><KpiRow>{slots.map((slot, index) => <KpiMetric key={slot.code} help={KPI_DEFINITIONS[slot.code]} link={linkFor(slot.code)} label={slot.name} displayValue={slot.displayValue} accessibleValue={slot.accessibleValue} valueKind={slot.valueKind} state={slot.state} entryIndex={enter ? index : undefined} shortContext={slot.shortContext} previousContext={slot.previousContext} delta={slotDelta(slot, attention)} />)}</KpiRow></section>
 }
 
 function DomainMetricGroup({ data, view, riskType, attention }) {
@@ -108,12 +112,16 @@ function DomainMetricGroup({ data, view, riskType, attention }) {
   return <MetricSlots slots={slots} attention={attention} />
 }
 
+// Solo el periodo viaja a la vista de dominio; el tipo de riesgo lo fija cada vista.
+const PERIOD_KEYS = Object.freeze(['period', 'period_start', 'period_end'])
 function ExecutiveMetricGroup({ data, riskType, entryIdentity, entryLedger, attention }) {
   // La decisión permanece estable durante el montaje; el refetch conserva el registro del padre.
   const [enter] = useState(() => entryLedger.current !== entryIdentity)
   useEffect(() => { entryLedger.current = entryIdentity }, [entryIdentity, entryLedger])
   const slots = resolveExecutiveKpis({ items: data.items, riskType }).filter((slot) => slot.state !== 'NOT_APPLICABLE')
-  return <MetricSlots slots={slots} enter={enter} attention={attention} />
+  const [params] = useSearchParams()
+  const linkSearch = new URLSearchParams([...params].filter(([key]) => PERIOD_KEYS.includes(key))).toString()
+  return <MetricSlots slots={slots} enter={enter} attention={attention} linkSearch={linkSearch} />
 }
 
 // Hallazgo humanizado (DESIGN §16.1): titular y frase desde campos estructurados; texto registrado, regla,
@@ -212,14 +220,6 @@ function ObservationSections({ data, view }) {
   </>
 }
 
-// Regla de los indicadores contractuales en lenguaje llano (SRS RF-031 y RF-030).
-function ContractDefinitions() {
-  return <dl className="grid grid-cols-1 gap-3 rounded-control bg-secondary p-4 text-xs sm:grid-cols-2" aria-label="Cómo se calculan los indicadores contractuales">
-    <div><dt className="font-medium">Contratos próximos a vencimiento sin revisión</dt><dd className="mt-1 text-secondary">Contratos cuya revisión no ha iniciado y que vencen entre hoy y los próximos 60 días.</dd></div>
-    <div><dt className="font-medium">Tiempo de ciclo del contrato</dt><dd className="mt-1 text-secondary">Promedio de días entre la solicitud y la firma, para contratos con ambas fechas válidas.</dd></div>
-  </dl>
-}
-
 // Línea de contexto de los indicadores con la ayuda sobre el alcance de las alertas (desplegable, accesible por teclado).
 function ContextLine({ text, closedOnly, onCurrent }) {
   const [help, setHelp] = useState(false)
@@ -254,7 +254,6 @@ function KpiVisuals({ data, view, riskType, entryIdentity, entryLedger, attentio
   </>
   if (view === 'contracts') return <>
     <DomainMetricGroup data={data} view={view} riskType={riskType} attention={attention} />
-    <ContractDefinitions />
     {alerts}
     {evolution}
   </>
@@ -331,7 +330,7 @@ export function AnalyticsPage({ view = 'summary' }) {
   const alertsInside = can(principal, 'dashboard.read') && (kpisValid || kpis.state === 'loading')
   // El rango tiene el mismo espacio al cargar y al recibir la API para que
   // las métricas no se desplacen al sustituir los skeletons por resultados.
-  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8">{contextLine}<ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} beforeAlerts={view === 'contracts' ? <ContractDefinitions /> : null} alerts={alertsInside ? analysisBlock : null} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} evolution={evolutionBlock} /><ObservationSections data={data} view={view} />{evaluationsBlock}</div>}</ValidatedResource></div>
+  const kpiBlock = !can(principal, 'dashboard.read') ? <ErrorState error={new ApiError(403)} /> : <div className="space-y-8">{contextLine}<ValidatedResource resource={kpis} adapt={adaptKpis} context="los indicadores" loading={<ChartLoadingState label="Cargando…" charts={view === 'summary' || view === 'litigation' ? 2 : 1} showKpis kpiSlots={loadingSlots} alerts={alertsInside ? analysisBlock : null} />}>{(data) => <div className="space-y-8"><KpiVisuals data={data} view={view} riskType={filters.risk_type} entryIdentity={entryIdentity} entryLedger={entryLedger} attention={attention} alerts={alertsInside ? analysisBlock : null} evolution={evolutionBlock} /><ObservationSections data={data} view={view} />{evaluationsBlock}</div>}</ValidatedResource></div>
   return <div className="space-y-8"><PageHeader title={config.title} description={config.description} />{corrected && <p role="status" className="text-xs text-secondary">Se retiraron filtros no válidos de la dirección.</p>}{filterBlock}{trends && <p className="text-xs text-secondary">{filters.analysisMode === 'current' ? 'Se muestran las alertas del último análisis completado.' : 'Se muestran los análisis completados dentro del periodo seleccionado.'}</p>}{trends ? analysisBlock : <>{kpiBlock}{!alertsInside && analysisBlock}</>}</div>
 }
 

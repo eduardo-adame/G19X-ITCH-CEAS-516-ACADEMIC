@@ -44,11 +44,11 @@ export function fullDocumentPath(fragment) {
 }
 
 // Fuente compacta: la marca [En] de la respuesta enlaza con esta tarjeta.
-export function EvidenceCard({ fragment, handle }) {
+export function EvidenceCard({ fragment, handle, highlighted = false }) {
   const [expanded, setExpanded] = useState(false)
   const long = fragment.text.length > 420
   const usage = fragment.usage === 'EVIDENCE' ? ['Evidencia', 'success'] : ['Referencia', 'neutral']
-  return <article id={sourceAnchor(fragment.fragmentId)} tabIndex={-1} aria-label={`${handle ? `Fuente ${handle}: ` : ''}${fragment.documentName}`} className="min-w-0 space-y-3 rounded-panel border border-border bg-surface p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-primary)]">
+  return <article id={sourceAnchor(fragment.fragmentId)} tabIndex={-1} aria-label={`${handle ? `Fuente ${handle}: ` : ''}${fragment.documentName}`} data-highlighted={highlighted || undefined} className={`min-w-0 space-y-3 rounded-panel border border-border bg-surface p-5 transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-primary)]${highlighted ? ' source-highlight' : ''}`}>
     <header className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words text-sm font-semibold">{handle && <span className="mr-1.5 font-mono text-xs text-secondary">[{handle}]</span>}{fragment.documentName}</h3><p className="mt-1 text-xs text-muted">{citationSummary(fragment)}</p></div><Badge variant={usage[1]}>{usage[0]}</Badge></header>
     <blockquote className={`whitespace-pre-wrap break-words border-l-2 border-[var(--text-muted)] bg-secondary p-3 text-[13px] italic ${long && !expanded ? 'line-clamp-4' : ''}`}>{fragment.text}</blockquote>
     <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -61,7 +61,8 @@ export function EvidenceCard({ fragment, handle }) {
 }
 
 // Texto de respuesta con marcas [E1]…[E5] enlazadas a su fuente; solo se enlazan marcas citadas.
-export function AnswerText({ text, citations }) {
+// onHighlight señala la fuente al pasar el cursor o el foco por su marca, sin moverse de la respuesta.
+export function AnswerText({ text, citations, onHighlight }) {
   const byHandle = new Map(citations.map((citation) => [citation.handle, citation]))
   const parts = text.split(/(\[E[1-5]\])/g)
   // El foco desplaza la vista hasta la fuente y la anuncia a lectores de pantalla.
@@ -70,7 +71,7 @@ export function AnswerText({ text, citations }) {
     const handle = /^\[(E[1-5])\]$/.exec(part)?.[1]
     const citation = handle && byHandle.get(handle)
     if (!citation) return <React.Fragment key={index}>{part}</React.Fragment>
-    return <button key={index} type="button" className="mx-0.5 inline-flex items-center rounded-control border border-border bg-secondary px-1 font-mono text-xs font-medium align-baseline hover:bg-[var(--background-selected)]" aria-label={`Ir a la fuente ${handle}: ${citation.documentName}`} onClick={() => focus(citation.fragmentId)}>{part}</button>
+    return <button key={index} type="button" className="mx-0.5 inline-flex items-center rounded-control border border-border bg-secondary px-1 font-mono text-xs font-medium align-baseline hover:bg-[var(--background-selected)]" aria-label={`Ir a la fuente ${handle}: ${citation.documentName}`} onClick={() => focus(citation.fragmentId)} onMouseEnter={() => onHighlight?.(citation.fragmentId)} onMouseLeave={() => onHighlight?.(null)} onFocus={() => onHighlight?.(citation.fragmentId)} onBlur={() => onHighlight?.(null)}>{part}</button>
   })}</p>
 }
 

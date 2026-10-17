@@ -88,6 +88,8 @@ export function RagQueryPage() {
   const [validationError, setValidationError] = useState(null)
   const [abandoned, setAbandoned] = useState(false)
   const textarea = useRef(null)
+  // Fuente señalada desde su marca [En] en la respuesta (se resalta su tarjeta).
+  const [highlighted, setHighlighted] = useState(null)
   const context = readQuery(params.toString(), { context_reference_id: isUuid }).context_reference_id ?? null
   // Nombre del hallazgo de origen, recibido solo en memoria de navegación (nunca en la URL).
   const contextLabel = context && typeof location.state?.contextLabel === 'string' ? location.state.contextLabel.slice(0, 200) : null
@@ -105,6 +107,13 @@ export function RagQueryPage() {
   function submit(event) { event.preventDefault(); send() }
   // Abortar la solicitud no cancela el procesamiento en el servidor (prueba aislada, DESIGN §16.6).
   function stopWaiting() { rag.clear(); setAbandoned(true) }
+  // Devuelve al compositor la pregunta enviada para corregirla, con el cursor al final.
+  function editQuery() {
+    const previous = rag.local?.query ?? rag.submission?.payload.query
+    if (typeof previous === 'string') setQuery(previous)
+    setValidationError(null)
+    setTimeout(() => { const element = textarea.current; if (element) { element.focus(); element.setSelectionRange(element.value.length, element.value.length) } }, 0)
+  }
   function newQuery() { rag.clear(); setQuery(''); setValidationError(null); setAbandoned(false); textarea.current?.focus() }
   // No habilitar la consulta mientras la URL todavía contiene parámetros ajenos al contrato RAG.
   if (canonicalQuery !== params.toString()) return <Loading label="Preparando la consulta segura…" />
@@ -120,7 +129,7 @@ export function RagQueryPage() {
     {context && <section className="flex flex-wrap items-start justify-between gap-3 rounded-control border border-border bg-secondary p-3 text-xs text-secondary"><p>{contextLabel ? <>En relación con: <span className="font-medium text-primary">{contextLabel}</span>. </> : 'Consulta relacionada con un hallazgo del análisis. '}Esta referencia no es evidencia ni selecciona documentos.</p><Button variant="ghost" onClick={() => { rag.clear(); setParams({}, { replace: true }) }}>Quitar referencia</Button></section>}
     <form className="space-y-3" onSubmit={submit}>
       <div className="rounded-panel border border-border bg-surface p-3 focus-within:border-[var(--border-strong)]">
-        <label htmlFor="rag-query" className="mb-1 block px-1 text-xs font-medium text-secondary">Consulta en lenguaje natural</label>
+        {/* Nombre accesible del campo; visualmente basta el texto de ejemplo. */}<label htmlFor="rag-query" className="sr-only">Tu consulta</label>
         <textarea ref={textarea} id="rag-query" required minLength={1} rows={3} value={query} placeholder="Pregunta sobre cláusulas, obligaciones, fechas o asuntos de tus documentos" aria-describedby="rag-query-help"
           onChange={(event) => { setQuery(event.target.value); setValidationError(null) }}
           onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); send() } }}
@@ -143,9 +152,9 @@ export function RagQueryPage() {
       {result.policyResult && <ScopeRestrictionNotice message={result.message} />}
       {result.technicalFailure && <TechnicalFailure result={result} rag={rag} />}
       {explanation && <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{explanation}</p>}
-      {!result.technicalFailure && (result.policyResult || ['EVIDENCIA_INSUFICIENTE', 'SIN_EVIDENCIA'].includes(result.state)) && <Button variant="secondary" onClick={() => textarea.current?.focus()}>Reformular consulta</Button>}
-      {result.response && <section aria-label="Respuesta generada" className="space-y-3 rounded-panel border border-border bg-surface p-5"><AnswerText text={result.response} citations={result.citations} /><p className="text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}
-      {evidence.length > 0 && <section aria-label="Fuentes citadas" className="space-y-3"><h2 className="text-base font-semibold">Fuentes citadas ({evidence.length})</h2>{evidence.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={handleFor(fragment)} />)}</section>}
+      {!result.technicalFailure && <div><Button variant="secondary" onClick={editQuery}>Editar consulta</Button></div>}
+      {result.response && <section aria-label="Respuesta generada" className="space-y-3 rounded-panel border border-border bg-surface p-5"><AnswerText text={result.response} citations={result.citations} onHighlight={setHighlighted} /><p className="text-xs text-muted">La síntesis no sustituye la consulta de las fuentes citadas ni el criterio profesional.</p></section>}
+      {evidence.length > 0 && <section aria-label="Fuentes citadas" className="space-y-3"><h2 className="text-base font-semibold">Fuentes citadas ({evidence.length})</h2>{evidence.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={handleFor(fragment)} highlighted={highlighted === fragment.fragmentId} />)}</section>}
       {references.length > 0 && <section aria-label="Fuentes relacionadas" className="space-y-3"><h2 className="text-base font-semibold">Fuentes relacionadas ({references.length})</h2><p className="text-xs text-secondary">Fragmentos autorizados disponibles como referencia; no sustentan una respuesta.</p>{references.map((fragment) => <EvidenceCard key={fragment.fragmentId} fragment={fragment} handle={handleFor(fragment)} />)}</section>}
     </section>}
   </div>

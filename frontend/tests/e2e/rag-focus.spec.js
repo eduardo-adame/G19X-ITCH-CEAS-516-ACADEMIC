@@ -22,7 +22,7 @@ async function focusCycle(page) {
 }
 async function submit(page) {
   await page.goto('/consulta')
-  const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+  const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
   await expect(textarea).toBeEnabled()
   await textarea.fill(draft)
   await page.getByRole('button', { name: 'Consultar', exact: true }).click()
@@ -38,7 +38,7 @@ test.describe('BROWSER_CONTRACT_E2E ROBUSTNESS: foco de consulta documental', ()
     const posts = []
     await page.route('**/api/rag/query', async (route) => { posts.push(route.request().headers()['idempotency-key']); await route.fulfill({ json: RAG_EVIDENCIA_SUFICIENTE }) })
     await page.goto('/consulta')
-    const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+    const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
     await expect(textarea).toBeEnabled()
     await textarea.fill(draft)
     await focusCycle(page)

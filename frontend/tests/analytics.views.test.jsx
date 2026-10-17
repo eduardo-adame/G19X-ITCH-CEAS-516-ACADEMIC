@@ -40,6 +40,27 @@ function fixture({ search = '', view = 'summary', kpis = kpiPage(), analysis = a
   return client
 }
 describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
+  it('ROBUSTNESS: cada indicador tiene su definición y en el resumen abre su vista con el mismo periodo', async () => {
+    fixture({ search: '?period=last_3_months&risk_type=all' })
+    const contracts = await screen.findByRole('link', { name: 'Contratos próximos a vencimiento sin revisión (ver en Riesgo contractual)' })
+    expect(contracts).toHaveAttribute('href', '/contratos?period=last_3_months')
+    expect(screen.getAllByRole('link', { name: /\(ver en Gestión de litigios\)$/ }).map((link) => link.getAttribute('href'))).toEqual(['/litigios?period=last_3_months', '/litigios?period=last_3_months'])
+    // Cumplimiento no tiene vista propia: su título no es enlace.
+    expect(screen.queryByRole('link', { name: /Obligaciones regulatorias/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Qué mide: / })).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Qué mide: Obligaciones regulatorias vencidas sin atender' }))
+    expect(screen.getByRole('note')).toHaveTextContent('fecha límite ya pasó sin evidencia de cumplimiento')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+  it('ROBUSTNESS: «Entidad: No aplicable» explica por qué en su ayuda', async () => {
+    fixture({ view: 'contracts' })
+    const entity = await screen.findByTestId('entity-not-applicable')
+    fireEvent.click(within(entity).getByRole('button', { name: 'Por qué la entidad no aplica' }))
+    expect(screen.getByRole('note')).toHaveTextContent('no se desglosan por entidad')
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
   it.each([['summary', 'Resumen ejecutivo'], ['contracts', 'Riesgo contractual'], ['litigation', 'Gestión de litigios'], ['trends', 'Tendencias y riesgos']])('encabeza %s y usa API física', async (view, title) => {
     const client = fixture({ view }); expect(screen.getByRole('heading', { name: title })).toBeVisible()
     expect(await screen.findByText(/^Sin alertas (en el análisis|de riesgo)/)).toBeVisible()
@@ -326,7 +347,9 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
   it('contratos con dataset vacío preserva ChartContainer para tiempo de ciclo y muestra EmptyChartState contextual', async () => {
     fixture({ view: 'contracts', kpis: kpiPage([]) })
     expect(await screen.findByText('Tiempo de ciclo del contrato', { selector: 'figcaption' })).toBeVisible()
-    expect(screen.getByLabelText('Cómo se calculan los indicadores contractuales')).toHaveTextContent('vencen entre hoy y los próximos 60 días')
+    // La definición del indicador está en su ayuda ⓘ (DESIGN §21.2), igual que en las demás vistas.
+    fireEvent.click(screen.getByRole('button', { name: 'Qué mide: Contratos próximos a vencimiento sin revisión' }))
+    expect(screen.getByRole('note')).toHaveTextContent('vencen entre hoy y los próximos 60 días')
     expect(screen.getByText('No existen observaciones contractuales para los filtros seleccionados.')).toBeVisible()
     expect(screen.getByLabelText('Tiempo de ciclo del contrato: sin datos disponibles')).toBeInTheDocument()
     expect(screen.queryAllByTestId('chart')).toHaveLength(0)

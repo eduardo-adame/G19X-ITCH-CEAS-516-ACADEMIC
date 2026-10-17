@@ -143,3 +143,16 @@ mark.search-hit-current { background: var(--brand); color: var(--brand-on); box-
 .segmented > button:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: -2px; }
 /* Casillas y opciones nativas con el color de marca en ambos temas. */
 input[type="radio"], input[type="checkbox"] { accent-color: var(--brand-strong); }
+/* Ayuda ⓘ flotante: no desplaza el diseño de las tarjetas ni de los filtros. */
+.info-popover { position: absolute; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: min(18rem, 80vw); padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-small); background: var(--background-primary); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); color: var(--text-secondary); font-size: 12px; font-weight: 400; line-height: 1.45; white-space: normal; }
+/* Título de indicador enlazado a su vista de dominio. */
+.kpi-link { color: inherit; text-decoration: none; }
+.kpi-link:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+/* Fuente resaltada al señalar su marca [En] en la respuesta. */
+.source-highlight { border-color: var(--brand) !important; box-shadow: 0 0 0 1px var(--brand); }
+/* La tarjeta con su ayuda abierta queda por encima de las vecinas (la animación de entrada crea capas propias). */
+.kpi-metric:has(.info-popover) { position: relative; z-index: 40; }
+/* Campos de búsqueda con lupa a la izquierda. */
+.search-wrap { position: relative; display: block; }
+.search-wrap > .search-icon { position: absolute; top: 50%; left: 10px; display: inline-flex; color: var(--text-muted); pointer-events: none; transform: translateY(-50%); }
+.search-wrap > input.control { padding-left: 32px; }

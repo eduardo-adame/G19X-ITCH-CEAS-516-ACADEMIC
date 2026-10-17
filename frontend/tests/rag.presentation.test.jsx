@@ -24,7 +24,7 @@ function mount(dto = RAG_SIN_EVIDENCIA, request = vi.fn(async () => dto)) {
   return { request, manager }
 }
 async function submit(query = 'Consulta documental sintética') {
-  const textarea = await screen.findByLabelText('Consulta en lenguaje natural')
+  const textarea = await screen.findByLabelText('Tu consulta')
   await waitFor(() => expect(textarea).toBeEnabled())
   fireEvent.change(textarea, { target: { value: query } })
   await userEvent.click(screen.getByRole('button', { name: 'Consultar', exact: true }))
@@ -125,7 +125,7 @@ describe('SRS_REQUIRED: estados canónicos, referencias y límites de exposició
     expect(within(sources).queryByText(/\[E1\]/)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Fuentes citadas' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Respuesta generada' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Reformular consulta' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Editar consulta' })).toBeVisible()
     await userEvent.click(within(sources).getByRole('link', { name: 'Abrir en el visor' }))
     expect(await screen.findByRole('heading', { name: 'Visor documental' })).toBeVisible()
     expect(screen.getByText(referenceDto().fragments[0].fragment_text)).toBeVisible()
@@ -139,7 +139,8 @@ describe('SRS_REQUIRED: estados canónicos, referencias y límites de exposició
     expect(within(sources).getByRole('heading', { name: 'Fuentes citadas (1)' })).toBeVisible()
     expect(sources).toHaveTextContent('[E1]')
     expect(within(sources).getByText('Evidencia', { exact: true })).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Reformular consulta' })).not.toBeInTheDocument()
+    // «Editar consulta» se ofrece en cualquier resultado que no sea un fallo técnico.
+    expect(screen.getByRole('button', { name: 'Editar consulta' })).toBeVisible()
     expect(screen.queryByText(explanations.EVIDENCIA_INSUFICIENTE)).not.toBeInTheDocument()
   })
 
@@ -176,8 +177,8 @@ describe('SRS_REQUIRED: estados canónicos, referencias y límites de exposició
     expect(screen.queryByRole('region', { name: 'Respuesta generada' })).not.toBeInTheDocument()
     // F-14: tras un fallo técnico el reintento crea una operación nueva (la fallida no se reutiliza).
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeVisible()
-    // Reformular no remedia un fallo técnico; solo se ofrece el reintento.
-    expect(screen.queryByRole('button', { name: 'Reformular consulta' })).not.toBeInTheDocument()
+    // Editar no remedia un fallo técnico; solo se ofrece el reintento.
+    expect(screen.queryByRole('button', { name: 'Editar consulta' })).not.toBeInTheDocument()
   })
 
   it.each(['local', 'RAG'])('gate de foco oculta pregunta enviada y respuesta de %s sin borrar borrador', async (kind) => {

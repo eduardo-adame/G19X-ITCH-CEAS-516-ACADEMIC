@@ -17,7 +17,7 @@ async function observe(page, dto = RAG_SIN_EVIDENCIA) {
   return requests
 }
 async function submit(page, query) {
-  const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+  const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
   await expect(textarea).toBeEnabled()
   await textarea.fill(query)
   await page.getByRole('button', { name: 'Consultar', exact: true }).click()
@@ -45,7 +45,7 @@ test.describe('BROWSER_CONTRACT_E2E ROBUSTNESS: interacción local guiada', () =
     await page.goto('/consulta')
     const region = page.getByRole('region', { name: 'Preguntas sugeridas' })
     await expect(region.getByRole('button')).toHaveCount(4)
-    const textarea = page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })
+    const textarea = page.getByRole('textbox', { name: 'Tu consulta' })
     for (const suggestion of suggestions) {
       await region.getByRole('button', { name: suggestion, exact: true }).click()
       await expect(textarea).toHaveValue(suggestion)
@@ -70,7 +70,7 @@ test.describe('BROWSER_CONTRACT_E2E ROBUSTNESS: interacción local guiada', () =
     await expect(button).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(button).toBeFocused()
-    await expect(page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })).toHaveValue(suggestions[0])
+    await expect(page.getByRole('textbox', { name: 'Tu consulta' })).toHaveValue(suggestions[0])
     expect(requests).toHaveLength(0)
   })
 
@@ -122,7 +122,7 @@ test.describe('BROWSER_CONTRACT_E2E ROBUSTNESS: interacción local guiada', () =
       document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus'))
     })
     await expect(page.getByRole('status', { name: 'Respuesta local' })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })).toHaveValue('hola')
+    await expect(page.getByRole('textbox', { name: 'Tu consulta' })).toHaveValue('hola')
     await page.getByRole('button', { name: 'Nueva consulta' }).click()
     await expect(page.getByRole('region', { name: 'Preguntas sugeridas' }).getByRole('button')).toHaveCount(4)
     await expect(page.getByRole('status', { name: 'Respuesta local' })).toHaveCount(0)
@@ -153,7 +153,7 @@ test.describe('BROWSER_CONTRACT_E2E ROBUSTNESS: interacción local guiada', () =
     await page.reload()
     await expect(page.getByRole('region', { name: 'Preguntas sugeridas' })).toBeVisible()
     await expect(page.getByRole('status', { name: 'Respuesta local' })).toHaveCount(0)
-    await expect(page.getByRole('textbox', { name: 'Consulta en lenguaje natural' })).toHaveValue('')
+    await expect(page.getByRole('textbox', { name: 'Tu consulta' })).toHaveValue('')
     expect(requests).toHaveLength(0)
   })
 })

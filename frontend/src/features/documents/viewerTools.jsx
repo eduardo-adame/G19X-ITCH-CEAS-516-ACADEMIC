@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Button } from '../../components/controls.jsx'
+import { Button, SearchIcon } from '../../components/controls.jsx'
 import { Icon } from '../../components/Icon.jsx'
 import { findMatches, foldedIndex, MAX_MATCHES, MIN_SEARCH_LENGTH, segments } from './textSearch.js'
 
@@ -61,9 +61,9 @@ export function SearchableText({ text }) {
   return <div className="viewer-body space-y-3">
     <p className="text-xs text-muted">Texto completo procesado; no reproduce la maquetación original.</p>
     <div className="flex flex-wrap items-end gap-2" role="search" aria-label="Buscar en el texto">
-      <div className="field space-y-1"><label htmlFor="viewer-search" className="block text-xs font-medium text-secondary">Buscar en el texto</label><input id="viewer-search" type="search" className="control control-compact w-64 max-w-full" value={draft} maxLength={200} autoComplete="off" aria-describedby="viewer-search-status"
+      <div className="field space-y-1"><label htmlFor="viewer-search" className="block text-xs font-medium text-secondary">Buscar en el texto</label><SearchIcon><input id="viewer-search" type="search" className="control control-compact w-64 max-w-full" value={draft} maxLength={200} autoComplete="off" aria-describedby="viewer-search-status"
         onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (draft !== query) setQuery(draft); else move(event.shiftKey ? -1 : 1) } }} /></div>
+        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (draft !== query) setQuery(draft); else move(event.shiftKey ? -1 : 1) } }} /></SearchIcon></div>
       <Button variant="secondary" className="h-8 px-2" aria-label="Coincidencia anterior" disabled={matches.length < 2} onClick={() => move(-1)}><Icon name="up" size={16} /></Button>
       <Button variant="secondary" className="h-8 px-2" aria-label="Coincidencia siguiente" disabled={matches.length < 2} onClick={() => move(1)}><Icon name="down" size={16} /></Button>
       <span id="viewer-search-status" role="status" aria-live="polite" className="pb-2 text-xs tabular-nums text-secondary">{status}</span>
