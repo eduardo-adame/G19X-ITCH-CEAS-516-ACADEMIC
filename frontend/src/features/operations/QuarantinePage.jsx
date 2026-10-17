@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSession } from '../../auth/SessionProvider.jsx'
 import { can } from '../../auth/permissions.js'
 import { ApiError } from '../../api/errors.js'
 import { PageHeader, Modal } from '../../components/layout.jsx'
-import { Button, Input, Select, Tabs } from '../../components/controls.jsx'
+import { Button, Select, Tabs } from '../../components/controls.jsx'
 import { CursorPager, DateRangeFields, FilterToolbar, RefreshButton, ResultsSummary, SearchField, useCursorHistory, useDebouncedCallback } from '../../components/filters.jsx'
 import { DataTable, StatusBadge, TechnicalDetails } from '../../components/data.jsx'
 import { ActionNotice, ResourceState, ErrorState } from '../../components/feedback.jsx'
@@ -33,6 +33,9 @@ function QuarantineWorkspace({ principal }) {
   const [params, setParams] = useSearchParams(); const filters = readFilters(params.toString(), 'quarantine')
   const [editing, setEditing] = useState(null); const [discarding, setDiscarding] = useState(null); const [justification, setJustification] = useState(''); const [notice, setNotice] = useState(null)
   const [filterError, setFilterError] = useState(null)
+  // Elementos ya reinyectados en esta sesión: «Corregir siguiente pendiente» no vuelve a ofrecerlos.
+  const handled = useRef(new Set())
+  const nextPending = (current) => can(principal, 'quarantine.reinject') ? resource.data?.items.find((row) => row.id !== current.id && row.canCorrect && !handled.current.has(row.id)) ?? null : null
   const resource = useOperationsRead(queryPath('quarantine', filters), quarantinePage); const mutation = useOperation()
   const activeTab = STATE_TABS.find((tab) => tab.state === (filters.state || '')) ?? STATE_TABS[0]
   function change(patch) {
@@ -61,7 +64,7 @@ function QuarantineWorkspace({ principal }) {
       primary={<>
         <Select label="Familia" value={filters.source_family || ''} onChange={(e) => schedule({ source_family: e.target.value })} options={[{ value: '', label: 'Todas' }, ...families.map((v) => ({ value: v, label: familyLabel(v) }))]} />
         <Select label="Regla infringida" value={filters.cause_code || ''} onChange={(e) => schedule({ cause_code: e.target.value })} options={[{ value: '', label: 'Todas' }, ...quarantineCauses.map((v) => ({ value: v, label: quarantineCauseLabel(v) }))]} />
-        <DateRangeFields fromLabel="Retenido desde" toLabel="Retenido hasta" from={from} to={to} onChange={(range) => change({ rejected_from: localDayBoundary(range.from), rejected_to: localDayBoundary(range.to, { end: true }) })} />
+        <DateRangeFields quick fromLabel="Retenido desde" toLabel="Retenido hasta" from={from} to={to} onChange={(range) => change({ rejected_from: localDayBoundary(range.from), rejected_to: localDayBoundary(range.to, { end: true }) })} />
       </>}
       secondary={<SearchField label="Archivo de origen (identificador)" value={filters.ingest_file_id || ''} validate={uuid} invalidMessage="Pega el identificador completo (36 caracteres, p. ej. 1a2b3c4d-…)." onApply={(value) => change({ ingest_file_id: value })} />}
       secondaryActive={filters.ingest_file_id ? 1 : 0} />
@@ -77,7 +80,7 @@ function QuarantineWorkspace({ principal }) {
       onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'quarantine')) }}
       onPrevious={() => { const previous = pages.pop(); setParams(filterQuery(previous ? { ...withoutCursor(filters), cursor: previous } : withoutCursor(filters), 'quarantine')) }}
       onFirst={() => setParams(filterQuery(withoutCursor(filters), 'quarantine'))} /></div>}</ResourceState></div>
-    {editing && !resource.error && <QuarantineEditor key={editing.id} item={editing} onClose={() => setEditing(null)} onConfirmed={(result) => { setNotice({ title: result.message, detail: affected(editing) }); resource.reload() }} />}
-    <Modal open={Boolean(discarding) && !resource.error} title="Confirmar descarte" onClose={() => { setDiscarding(null); setJustification('') }}><form onSubmit={discard} className="space-y-4"><Input label="Justificación del descarte" value={justification} required disabled={mutation.busy} onChange={(e) => setJustification(e.target.value)} /><p className="text-sm text-secondary">El registro se excluirá de futuras reinyecciones. El original se conserva.</p>{mutation.error && <ErrorState error={mutation.error} title={mutation.error.status === 403 ? undefined : 'No se pudo descartar el registro'} />}<Button type="submit" variant="danger" busy={mutation.busy} disabled={!justification.trim() || Boolean(mutation.error)}>Confirmar descarte</Button></form></Modal>
+    {editing && !resource.error && <QuarantineEditor key={editing.id} item={editing} onClose={() => setEditing(null)} onConfirmed={(result) => { handled.current.add(editing.id); setNotice({ title: result.message, detail: affected(editing) }); resource.reload() }} nextPending={() => nextPending(editing)} onNext={(row) => setEditing(row)} />}
+    <Modal open={Boolean(discarding) && !resource.error} title="Confirmar descarte" onClose={() => { setDiscarding(null); setJustification('') }}><form onSubmit={discard} className="space-y-4"><div className="field space-y-1"><label htmlFor="discard-justification" className="block text-xs font-medium text-secondary">Justificación del descarte</label><textarea id="discard-justification" className="control min-h-24 resize-y py-2" value={justification} required disabled={mutation.busy} aria-describedby="discard-justification-help" onChange={(e) => setJustification(e.target.value)} /><p id="discard-justification-help" className="flex justify-between gap-3 text-xs text-muted"><span>Explica por qué se descarta; queda registrada junto con el descarte.</span><span className="tabular-nums" aria-live="off">{Array.from(justification).length.toLocaleString('es-MX')} caracteres</span></p></div><p className="text-sm text-secondary">El registro se excluirá de futuras reinyecciones. El original se conserva.</p>{mutation.error && <ErrorState error={mutation.error} title={mutation.error.status === 403 ? undefined : 'No se pudo descartar el registro'} />}<Button type="submit" variant="danger" busy={mutation.busy} disabled={!justification.trim() || Boolean(mutation.error)}>Confirmar descarte</Button></form></Modal>
   </>
 }

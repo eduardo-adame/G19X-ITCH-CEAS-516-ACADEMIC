@@ -1,6 +1,6 @@
-import React, { useEffect, useId, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/SessionProvider.jsx'
 import { can } from '../auth/permissions.js'
 import { Button } from './controls.jsx'
@@ -26,6 +26,20 @@ class ViewBoundary extends React.Component {
     if (!this.state.failed) return this.props.children
     return <section role="alert" className="rounded-panel border border-[var(--critical-border)] bg-[var(--critical-subtle)] p-5"><h2 className="text-sm font-semibold">No se pudo mostrar esta vista</h2><p className="mt-1 text-secondary">Ocurrió un error al presentar la información. Los datos no se modificaron.</p><Button className="mt-3" variant="secondary" onClick={() => window.location.reload()}>Recargar la página</Button></section>
   }
+}
+
+// Aviso al salir de una vista con una operación en curso: al recargar o cerrar la pestaña (diálogo del navegador)
+// y al cambiar de vista desde el menú (confirmación propia).
+const LeaveGuardContext = createContext(null)
+export function useLeaveGuard(active, message) {
+  const guard = useContext(LeaveGuardContext)
+  useEffect(() => {
+    if (!active) return undefined
+    const beforeUnload = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', beforeUnload)
+    const release = guard?.register(message)
+    return () => { window.removeEventListener('beforeunload', beforeUnload); release?.() }
+  }, [active, message, guard])
 }
 
 export function PageHeader({ title, description, actions }) { return <header className="flex flex-wrap items-end justify-between gap-4 pb-4"><div><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-1 text-[13px] text-secondary">{description}</p>}</div>{actions}</header> }
@@ -67,12 +81,21 @@ export function AppShell({ navigation }) {
   const location = useLocation(); const main = useRef(null)
   useEffect(() => { setDrawer(false); main.current?.focus() }, [location.pathname])
   const links = navigation.filter((item) => can(principal, item.capability))
+  const navigate = useNavigate()
+  const guardMessage = useRef(null)
+  const guard = useMemo(() => ({ register(message) { guardMessage.current = message; return () => { if (guardMessage.current === message) guardMessage.current = null } } }), [])
+  const [leaveTo, setLeaveTo] = useState(null)
+  const stayRef = useRef(null)
+  function follow(event, path) {
+    if (guardMessage.current && path !== location.pathname) { event.preventDefault(); setDrawer(false); setLeaveTo({ path, message: guardMessage.current }); return }
+    setDrawer(false)
+  }
   usePageTitle(links.find((item) => item.path === '/' ? location.pathname === '/' : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))?.label)
-  const menu = <nav aria-label="Navegación principal" className="space-y-1">{links.map((item) => <NavLink key={item.id} to={item.path} end={item.path === '/'} className="nav-link" onClick={() => setDrawer(false)}><Icon name={navigationIcon(item.path)} size={16} />{item.label}</NavLink>)}</nav>
+  const menu = <nav aria-label="Navegación principal" className="space-y-1">{links.map((item) => <NavLink key={item.id} to={item.path} end={item.path === '/'} className="nav-link" onClick={(event) => follow(event, item.path)}><Icon name={navigationIcon(item.path)} size={16} />{item.label}</NavLink>)}</nav>
   // El cierre que pide la persona se confirma; el cierre por vencimiento o revocación sigue siendo inmediato.
   const [confirming, setConfirming] = useState(false); const [leaving, setLeaving] = useState(false); const [logoutError, setLogoutError] = useState(null)
   function exit() { setLogoutError(null); setDrawer(false); setConfirming(true) }
   async function confirmExit() { setLeaving(true); setLogoutError(null); try { await logout() } catch (cause) { setLogoutError(cause); setLeaving(false) } }
   const cancelRef = useRef(null)
-  return <div className="flex h-dvh w-full overflow-hidden bg-page font-sans text-primary antialiased"><a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-surface focus:p-3">Ir al contenido</a><aside className="hidden w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border bg-surface md:flex"><div className="flex h-[var(--topbar-height)] items-center px-5 text-sm font-semibold">Riesgo Legal</div><div className="flex-1 overflow-y-auto p-3">{menu}</div><div className="border-t border-border p-3"><Button variant="ghost" className="w-full justify-start text-[var(--critical)]" onClick={exit}><Icon name="logout" size={16} />Cerrar sesión</Button></div></aside><div className="flex min-w-0 flex-1 flex-col"><div className="flex h-[var(--topbar-height)] shrink-0 items-center justify-between border-b border-border bg-surface px-4 md:justify-end md:px-6"><Button variant="ghost" className="md:hidden" aria-label="Abrir navegación" aria-expanded={drawer} onClick={() => setDrawer(true)}><Icon name="menu" size={16} /></Button><div className="flex min-w-0 items-center gap-3"><Clock /><span aria-hidden="true" className="hidden h-5 w-px bg-[var(--border-default)] md:block" /><ThemeToggle /><span aria-hidden="true" className="hidden h-5 w-px bg-[var(--border-default)] md:block" /><div className="hidden md:block"><UserBadge principal={principal} /></div><div className="md:hidden"><UserBadge principal={principal} compact /></div><Button variant="ghost" className="md:hidden" aria-label="Cerrar sesión" onClick={exit}><Icon name="logout" /></Button></div></div><main id="contenido" ref={main} tabIndex={-1} className="relative min-w-0 flex-1 overflow-y-auto overscroll-contain p-6 sm:p-8"><OfflineNotice className="mx-auto max-w-[var(--content-width-standard)]" /><div className="mx-auto max-w-[var(--content-width-standard)] space-y-8">{error && <ErrorState error={error} />}<ViewBoundary resetKey={location.pathname}><Outlet /></ViewBoundary></div></main></div><Modal open={drawer} title="Riesgo Legal" drawer onClose={() => setDrawer(false)}><div className="mb-4 border-b border-border pb-4"><UserBadge principal={principal} /></div>{menu}</Modal><Modal open={confirming} title="¿Cerrar sesión?" initialFocus={cancelRef} onClose={() => { if (!leaving) setConfirming(false) }}><div className="space-y-4"><p className="text-[13px] text-secondary">Se cerrará tu sesión en este navegador. Las consultas y resultados en pantalla no se conservan.</p>{logoutError && <ErrorState error={logoutError} title="No se pudo cerrar la sesión" />}<div className="flex flex-wrap justify-end gap-3"><Button ref={cancelRef} variant="secondary" disabled={leaving} onClick={() => setConfirming(false)}>Cancelar</Button><Button variant="danger" busy={leaving} onClick={confirmExit}>Cerrar sesión</Button></div></div></Modal></div>
+  return <div className="flex h-dvh w-full overflow-hidden bg-page font-sans text-primary antialiased"><a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-surface focus:p-3">Ir al contenido</a><aside className="hidden w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border bg-surface md:flex"><div className="flex h-[var(--topbar-height)] items-center px-5 text-sm font-semibold">Riesgo Legal</div><div className="flex-1 overflow-y-auto p-3">{menu}</div><div className="border-t border-border p-3"><Button variant="ghost" className="w-full justify-start text-[var(--critical)]" onClick={exit}><Icon name="logout" size={16} />Cerrar sesión</Button></div></aside><div className="flex min-w-0 flex-1 flex-col"><div className="flex h-[var(--topbar-height)] shrink-0 items-center justify-between border-b border-border bg-surface px-4 md:justify-end md:px-6"><Button variant="ghost" className="md:hidden" aria-label="Abrir navegación" aria-expanded={drawer} onClick={() => setDrawer(true)}><Icon name="menu" size={16} /></Button><div className="flex min-w-0 items-center gap-3"><Clock /><span aria-hidden="true" className="hidden h-5 w-px bg-[var(--border-default)] md:block" /><ThemeToggle /><span aria-hidden="true" className="hidden h-5 w-px bg-[var(--border-default)] md:block" /><div className="hidden md:block"><UserBadge principal={principal} /></div><div className="md:hidden"><UserBadge principal={principal} compact /></div><Button variant="ghost" className="md:hidden" aria-label="Cerrar sesión" onClick={exit}><Icon name="logout" /></Button></div></div><main id="contenido" ref={main} tabIndex={-1} className="relative min-w-0 flex-1 overflow-y-auto overscroll-contain p-6 sm:p-8"><OfflineNotice className="mx-auto max-w-[var(--content-width-standard)]" /><div className="mx-auto max-w-[var(--content-width-standard)] space-y-8">{error && <ErrorState error={error} />}<ViewBoundary resetKey={location.pathname}><LeaveGuardContext.Provider value={guard}><Outlet /></LeaveGuardContext.Provider></ViewBoundary></div></main></div><Modal open={drawer} title="Riesgo Legal" drawer onClose={() => setDrawer(false)}><div className="mb-4 border-b border-border pb-4"><UserBadge principal={principal} /></div>{menu}</Modal><Modal open={Boolean(leaveTo)} title="¿Salir de esta vista?" initialFocus={stayRef} onClose={() => setLeaveTo(null)}><div className="space-y-4"><p className="text-[13px] text-secondary">{leaveTo?.message}</p><div className="flex flex-wrap justify-end gap-3"><Button ref={stayRef} variant="secondary" onClick={() => setLeaveTo(null)}>Quedarme</Button><Button variant="danger" onClick={() => { const path = leaveTo.path; setLeaveTo(null); navigate(path) }}>Salir de todos modos</Button></div></div></Modal><Modal open={confirming} title="¿Cerrar sesión?" initialFocus={cancelRef} onClose={() => { if (!leaving) setConfirming(false) }}><div className="space-y-4"><p className="text-[13px] text-secondary">Se cerrará tu sesión en este navegador. Las consultas y resultados en pantalla no se conservan.</p>{logoutError && <ErrorState error={logoutError} title="No se pudo cerrar la sesión" />}<div className="flex flex-wrap justify-end gap-3"><Button ref={cancelRef} variant="secondary" disabled={leaving} onClick={() => setConfirming(false)}>Cancelar</Button><Button variant="danger" busy={leaving} onClick={confirmExit}>Cerrar sesión</Button></div></div></Modal></div>
 }

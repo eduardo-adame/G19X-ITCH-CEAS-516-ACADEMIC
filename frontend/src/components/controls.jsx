@@ -37,6 +37,13 @@ export const PasswordInput = forwardRef(function PasswordInput({ label, error, i
     {caps && <p id={`${id}-caps`} className="text-xs text-[var(--warning)]">Bloq Mayús está activado.</p>}
     {error && <p id={`${id}-error`} role="alert" className="field-error text-xs text-[var(--critical)]">{error}</p>}</div>
 })
+// Copia un identificador al portapapeles y lo confirma junto al botón (sin aviso flotante).
+export function CopyButton({ value, label = 'Copiar' }) {
+  const [state, setState] = useState(null)
+  useEffect(() => { if (!state) return undefined; const timer = setTimeout(() => setState(null), 2500); return () => clearTimeout(timer) }, [state])
+  async function copy() { try { await navigator.clipboard.writeText(value); setState('ok') } catch { setState('error') } }
+  return <span className="inline-flex items-center gap-1 align-middle"><button type="button" className="inline-flex items-center rounded p-0.5 text-muted hover:text-primary" aria-label={label} title={label} onClick={copy}><Icon name="copy" size={13} /></button><span role="status" className="text-[11px] text-secondary">{state === 'ok' ? 'Copiado' : state === 'error' ? 'No se pudo copiar' : ''}</span></span>
+}
 export function Select({ label, options, id: provided, compact = true, ...props }) {
   const generated = useId(); const id = provided || generated
   return <div className="field space-y-1"><label htmlFor={id} className="block text-xs font-medium text-secondary">{label}</label><select {...props} id={id} className={`control ${compact ? 'control-compact' : ''}`}>{options.map(({ value, label: text }) => <option key={value} value={value}>{text}</option>)}</select></div>

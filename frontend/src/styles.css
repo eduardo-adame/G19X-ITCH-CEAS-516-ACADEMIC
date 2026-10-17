@@ -83,12 +83,15 @@
   .data-section > summary { cursor: pointer; list-style: revert; }
   /* Barra de filtros compacta (DESIGN §19): etiqueta visible en línea a la izquierda de cada control. */
   .filter-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 20px; row-gap: 8px; }
-  .filter-row > .field { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px; }
-  .filter-row > .field > * + * { margin-top: 0; }
-  .filter-row > .field > label { white-space: nowrap; }
-  .filter-row > .field > .control { width: auto; min-width: 8.5rem; max-width: 13rem; }
-  .filter-row > .field > input[type="date"].control { min-width: 0; }
-  .filter-row > .field > .field-error { flex-basis: 100%; }
+  /* Un rango de fechas (con su rango rápido) salta de línea completo, nunca partido. */
+  .filter-row > .filter-group { display: flex; flex-wrap: nowrap; align-items: center; column-gap: 20px; }
+  .filter-stack > .filter-group { display: grid; gap: 14px; }
+  .filter-row > .field, .filter-row > .filter-group > .field { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px; }
+  .filter-row > .field > * + *, .filter-row > .filter-group > .field > * + * { margin-top: 0; }
+  .filter-row > .field > label, .filter-row > .filter-group > .field > label { white-space: nowrap; }
+  .filter-row > .field > .control, .filter-row > .filter-group > .field > .control { width: auto; min-width: 8.5rem; max-width: 13rem; }
+  .filter-row > .field > input[type="date"].control, .filter-row > .filter-group > .field > input[type="date"].control { min-width: 0; }
+  .filter-row > .field > .field-error, .filter-row > .filter-group > .field > .field-error { flex-basis: 100%; }
   /* En línea, el prefijo repetido de la segunda fecha solo se lee (lectores de pantalla), no se ve. */
   .filter-row .inline-prefix { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   /* Panel de filtros en móvil: controles apilados a todo el ancho y objetivos táctiles de 44 px. */
@@ -156,3 +159,5 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--brand-strong);
 .search-wrap { position: relative; display: block; }
 .search-wrap > .search-icon { position: absolute; top: 50%; left: 10px; display: inline-flex; color: var(--text-muted); pointer-events: none; transform: translateY(-50%); }
 .search-wrap > input.control { padding-left: 32px; }
+/* Campo corregido distinto del registro rechazado: barra de marca a la izquierda. */
+.field-changed { border-left: 3px solid var(--brand); padding-left: 10px; }

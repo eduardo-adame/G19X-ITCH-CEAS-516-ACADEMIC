@@ -104,6 +104,18 @@ export function localDayBoundary(date, { end = false } = {}) {
 }
 
 // Día local (AAAA-MM-DD) de una marca de tiempo, para volver a mostrarla en el selector de fecha.
+// Rangos rápidos en días locales del navegador; «Últimos 7 días» incluye hoy.
+export function quickRanges(now = new Date()) {
+  const day = (date) => `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}`
+  const back = (days) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - days)
+  const today = day(now)
+  return [
+    { value: 'today', label: 'Hoy', from: today, to: today },
+    { value: 'last_7', label: 'Últimos 7 días', from: day(back(6)), to: today },
+    { value: 'last_30', label: 'Últimos 30 días', from: day(back(29)), to: today },
+    { value: 'this_month', label: 'Este mes', from: day(new Date(now.getFullYear(), now.getMonth(), 1)), to: today },
+  ]
+}
 export function localDayOf(value) {
   if (!validTimestamp(value)) return ''
   const { year, month, day } = zonedParts(value, undefined)

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Button, SearchIcon } from './controls.jsx'
+import { Button, SearchIcon, Select } from './controls.jsx'
+import { quickRanges } from '../shared/presentation.js'
 import { Icon } from './Icon.jsx'
 
 const NARROW = '(max-width: 767px)'
@@ -94,7 +95,8 @@ export function RefreshButton({ onClick, busy = false, label = 'Actualizar' }) {
 
 // Rango de fechas con validación en el propio campo: «Hasta» no puede ser anterior a «Desde» (atributos
 // min/max para el calendario y mensaje enlazado). Solo notifica rangos válidos; cada extremo es opcional.
-export function DateRangeFields({ fromLabel = 'Desde', toLabel = 'Hasta', from = '', to = '', onChange }) {
+// quick: añade «Rango rápido» (Hoy, Últimos 7 y 30 días, Este mes) que rellena ambas fechas.
+export function DateRangeFields({ fromLabel = 'Desde', toLabel = 'Hasta', from = '', to = '', onChange, quick = false }) {
   const [draft, setDraft] = useState({ from, to })
   useEffect(() => { setDraft({ from, to }) }, [from, to])
   const inverted = Boolean(draft.from && draft.to && draft.from > draft.to)
@@ -103,10 +105,19 @@ export function DateRangeFields({ fromLabel = 'Desde', toLabel = 'Hasta', from =
     setDraft(next)
     if (!(next.from && next.to && next.from > next.to)) onChange(next)
   }
-  return <>
+  const ranges = quick ? quickRanges() : []
+  const matched = ranges.find((range) => range.from === draft.from && range.to === draft.to)?.value ?? (draft.from || draft.to ? 'custom' : 'any')
+  const options = [{ value: 'any', label: 'Cualquier fecha' }, ...ranges.map(({ value, label }) => ({ value, label })), ...(matched === 'custom' ? [{ value: 'custom', label: 'Personalizado' }] : [])]
+  function choose(value) {
+    if (value === 'any') update({ from: '', to: '' })
+    const range = ranges.find((item) => item.value === value)
+    if (range) update({ from: range.from, to: range.to })
+  }
+  return <div className="filter-group">
+    {quick && <Select label="Rango rápido" value={matched} options={options} onChange={(event) => choose(event.target.value)} />}
     <InputField label={fromLabel} sharedPrefix={sharedPrefix(fromLabel, toLabel)} leading value={draft.from} max={draft.to || undefined} onChange={(value) => update({ from: value })} />
     <InputField label={toLabel} sharedPrefix={sharedPrefix(fromLabel, toLabel)} value={draft.to} min={draft.from || undefined} error={inverted ? `Debe ser igual o posterior a «${fromLabel}».` : null} onChange={(value) => update({ to: value })} />
-  </>
+  </div>
 }
 // Palabras iniciales comunes a ambas etiquetas («Retenido desde» / «Retenido hasta» → «Retenido»).
 function sharedPrefix(from, to) {
