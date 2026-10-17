@@ -44,8 +44,9 @@ export function useOnline() {
   return online
 }
 
-// La región anunciada existe siempre (vacía con conexión) para que el cambio se anuncie y no desplace la vista.
+// La región viva existe siempre (vacía con conexión) para que el cambio se anuncie y no desplace la vista; el rol de
+// estado solo lo tiene el aviso, así una región vacía no se confunde con un estado de la vista.
 export function OfflineNotice({ className = '' }) {
   const online = useOnline()
-  return <div role="status" aria-live="polite" className={className}>{!online && <p className="mb-6 flex items-center gap-2 rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] px-4 py-2.5 text-[13px]"><span className="text-[var(--warning)]"><Icon name="offline" size={16} /></span>Sin conexión de red. No se podrán cargar datos ni enviar operaciones hasta que se restablezca.</p>}</div>
+  return <div aria-live="polite" className={className}>{!online && <p role="status" className="mb-6 flex items-center gap-2 rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] px-4 py-2.5 text-[13px]"><span className="text-[var(--warning)]"><Icon name="offline" size={16} /></span>Sin conexión de red. No se podrán cargar datos ni enviar operaciones hasta que se restablezca.</p>}</div>
 }

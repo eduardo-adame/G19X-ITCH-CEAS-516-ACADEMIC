@@ -112,23 +112,25 @@ describe('ROBUSTNESS: ingesta con zona de carga y seguimiento (UX-037/038/047)',
 })
 
 describe('ROBUSTNESS: administración por secciones y copia del identificador (UX-044)', () => {
-  it('separa Cuentas y Permisos documentales', async () => {
+  it('separa Cuentas y Permisos concedidos', async () => {
     mount(<AdministrationPage />)
     const tabs = screen.getByRole('tablist', { name: 'Secciones de administración' })
-    expect(within(screen.getByLabelText('Operación administrativa')).queryByRole('option', { name: 'Alcance por familia' })).toBeNull()
-    await userEvent.click(within(tabs).getByRole('tab', { name: 'Permisos documentales' }))
-    expect(screen.getByLabelText('Operación administrativa')).toHaveValue('scope')
-    expect(within(screen.getByLabelText('Operación administrativa')).queryByRole('option', { name: 'Crear cuenta' })).toBeNull()
+    expect(await screen.findByRole('heading', { name: 'Cuentas registradas' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Alcance por familia' })).not.toBeInTheDocument()
+    await userEvent.click(within(tabs).getByRole('tab', { name: 'Permisos concedidos' }))
+    expect(await screen.findByRole('heading', { name: 'Alcance por familia' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Cuentas registradas' })).not.toBeInTheDocument()
   })
   it('tras crear una cuenta ofrece copiar su identificador', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     mount(<AdministrationPage />, { request: vi.fn(async () => ({ id: otherId })) })
+    await userEvent.click(await screen.findByRole('button', { name: 'Nueva cuenta' }))
     await userEvent.type(screen.getByLabelText('Usuario'), 'nuevo')
     await userEvent.type(screen.getByLabelText('Nombre visible'), 'Cuenta nueva')
     await userEvent.type(screen.getByLabelText('Contraseña nueva'), 'Temporal-123')
     await userEvent.click(screen.getByRole('checkbox', { name: 'Jurídico' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Aplicar operación' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Copiar identificador' }))
     expect(writeText).toHaveBeenCalledWith(otherId)
     expect(await screen.findByText('Identificador copiado.')).toBeVisible()

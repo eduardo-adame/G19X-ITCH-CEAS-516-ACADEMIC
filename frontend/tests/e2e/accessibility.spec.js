@@ -83,7 +83,12 @@ test.describe('Accesibilidad — Labels y nombres accesibles', () => {
 
   test('los inputs de administración tienen labels asociados', async ({ page }) => {
     await page.goto('/administracion')
-    await expect(page.getByRole('combobox', { name: /operación administrativa/i })).toBeVisible({ timeout: 8000 })
+    // Los formularios viven en diálogos (DESIGN §22): se comprueban los campos de «Nueva cuenta».
+    await page.getByRole('button', { name: 'Nueva cuenta' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Nueva cuenta' })
+    await expect(dialog.getByRole('textbox', { name: 'Usuario' })).toBeVisible({ timeout: 8000 })
+    await expect(dialog.getByRole('textbox', { name: 'Nombre visible' })).toBeVisible()
+    await expect(dialog.getByLabel('Contraseña nueva')).toBeVisible()
   })
 })
 

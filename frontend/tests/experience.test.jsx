@@ -28,11 +28,13 @@ describe('ROBUSTNESS: título de la pestaña por vista', () => {
 describe('ROBUSTNESS: aviso sin conexión', () => {
   it('aparece al perder la red y desaparece al recuperarla', () => {
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    render(<OfflineNotice />)
-    const region = screen.getByRole('status')
+    const { container } = render(<OfflineNotice />)
+    const region = container.querySelector('[aria-live="polite"]')
     expect(region).toBeEmptyDOMElement()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     online.mockReturnValue(false); act(() => window.dispatchEvent(new Event('offline')))
     expect(region).toHaveTextContent('Sin conexión de red.')
+    expect(screen.getByRole('status')).toHaveTextContent('Sin conexión de red.')
     online.mockReturnValue(true); act(() => window.dispatchEvent(new Event('online')))
     expect(region).toBeEmptyDOMElement()
   })
