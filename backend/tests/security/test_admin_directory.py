@@ -204,3 +204,79 @@ def test_exception_sql_lists_only_active_rows_without_document_names():
     assert "WHERE e.active" in statement and "e.role_id IS NOT NULL" in statement
     assert "app.document " not in statement and "document_name" not in statement
     assert parameters == ("ANALISTA", "DOC-1", 26)
+
+
+# ------------------------------------------------------------------ Códigos de error de administración (O-2)
+class EditableRepository(DirectoryRepository):
+    def update_account(self, connection, account_id, display_name):
+        if account_id not in self.accounts:
+            return False
+        self.accounts[account_id]["display_name"] = display_name
+        return True
+
+
+@pytest.fixture()
+def editable(monkeypatch):
+    repository = EditableRepository()
+    service = make_service(repository)
+    monkeypatch.setattr(app.state, "security_service", service, raising=False)
+
+    def sign_in(username, roles):
+        account_id = repository.add_account(username, roles=roles)
+        repository.accounts[account_id]["password_hash"] = service.passwords.hash(PASSWORD)
+        access, _ = service.login(username, PASSWORD)
+        return account_id, {"Authorization": f"Bearer {access}"}
+
+    return repository, sign_in
+
+
+def test_disabling_the_last_active_ti_is_409_with_its_reason_and_changes_nothing(editable):
+    repository, sign_in = editable
+    ti_id, ti = sign_in("ti-unica", frozenset({"TI"}))
+    with TestClient(app) as client:
+        response = client.post(f"/api/security/users/{ti_id}/disable", headers=ti)
+    assert response.status_code == 409
+    assert response.json() == {"detail": "La operación dejaría el sistema sin ninguna cuenta TI activa."}
+    assert repository.accounts[ti_id]["state"] == "ACTIVE"
+    assert "ACCOUNT_DISABLE" not in actions(repository)
+
+
+def test_invalid_account_data_is_422_while_unknown_accounts_stay_403(editable):
+    repository, sign_in = editable
+    _, ti = sign_in("ti-admin", frozenset({"TI"}))
+    target = repository.add_account("objetivo", roles=frozenset({"JURIDICO"}))
+    with TestClient(app) as client:
+        blank = client.patch(f"/api/security/users/{target}", headers=ti, json={"display_name": "   "})
+        unknown_role = client.put(f"/api/security/users/{target}/roles", headers=ti, json={"roles": ["ADMIN"]})
+        missing = client.patch(f"/api/security/users/{uuid4()}", headers=ti, json={"display_name": "Nadie"})
+        renamed = client.patch(f"/api/security/users/{target}", headers=ti, json={"display_name": "Nombre nuevo"})
+    assert blank.status_code == 422 and blank.json() == {"detail": "Datos de cuenta no válidos"}
+    assert unknown_role.status_code == 422 and repository.roles[target] == frozenset({"JURIDICO"})
+    # Una cuenta inexistente no se distingue de una sin permiso: no se revela si existe.
+    assert missing.status_code == 403 and missing.json() == {"detail": "Acceso no autorizado"}
+    assert renamed.status_code == 204 and repository.accounts[target]["display_name"] == "Nombre nuevo"
+
+
+def test_changing_own_roles_is_still_403(editable):
+    _, sign_in = editable
+    ti_id, ti = sign_in("ti-admin", frozenset({"TI"}))
+    with TestClient(app) as client:
+        response = client.put(f"/api/security/users/{ti_id}/roles", headers=ti, json={"roles": ["TI", "JURIDICO"]})
+    assert response.status_code == 403
+
+
+def test_unconfirmed_audit_is_503_not_403(editable, monkeypatch):
+    repository, sign_in = editable
+    _, ti = sign_in("ti-admin", frozenset({"TI"}))
+    target = repository.add_account("objetivo", roles=frozenset({"JURIDICO"}))
+    from app.security.models import AuditPersistenceError
+
+    def fail(connection, **event):
+        if event["action"] == "ACCOUNT_UPDATE":
+            raise AuditPersistenceError("no confirmada")
+        repository.audit.append(event)
+
+    monkeypatch.setattr(repository, "write_audit_event", fail)
+    with TestClient(app) as client:
+        response = client.patch(f"/api/security/users/{target}", headers=ti, json={"display_name": "Nombre nuevo"})
+    assert response.status_code == 503 and response.json() == {"detail": "Operación no confirmada"}

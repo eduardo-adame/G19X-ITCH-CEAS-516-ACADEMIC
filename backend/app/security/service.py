@@ -19,6 +19,7 @@ from app.security.models import (
     KNOWN_FAMILIES,
     KNOWN_ROLES,
     ValidationError,
+    LastActiveTiError,
 )
 from app.security.directory import (
     ACCOUNT_READ_CAPABILITIES, AccountPage, AccountSummary, DocumentExceptionPage, DocumentExceptionSummary,
@@ -313,7 +314,7 @@ class SecurityService:
         with self.repository.transaction() as connection:
             actor = self._authoritative_principal(connection, actor, "user.disable")
             if self.repository.is_last_active_ti(connection, account_id):
-                raise ValidationError("La operación no está permitida")
+                raise LastActiveTiError("La operación no está permitida")
             if not self.repository.set_account_state(connection, account_id, "DISABLED"):
                 raise AuthorizationError("Acceso no autorizado")
             self._invalidate_accounts(connection, actor, [account_id], correlation)
@@ -341,15 +342,18 @@ class SecurityService:
 
     def assign_roles(self, actor: AuthenticatedPrincipal, account_id: UUID, roles: frozenset[str], correlation_id: UUID | None = None) -> None:
         self._require(actor, "role.assign")
-        if actor.account_id == account_id or not roles or not roles.issubset(KNOWN_ROLES):
+        # Cambiar los roles propios es una denegación (RF-068); unos roles inexistentes son datos inválidos.
+        if actor.account_id == account_id:
             raise AuthorizationError("Acceso no autorizado")
+        if not roles or not roles.issubset(KNOWN_ROLES):
+            raise ValidationError("Roles no válidos")
         correlation = correlation_id or uuid4()
         with self.repository.transaction() as connection:
             actor = self._authoritative_principal(connection, actor, "role.assign")
             if self.repository.account_by_id(connection, account_id, lock=True) is None:
                 raise AuthorizationError("Acceso no autorizado")
             if "TI" not in roles and self.repository.is_last_active_ti(connection, account_id):
-                raise ValidationError("La operación no está permitida")
+                raise LastActiveTiError("La operación no está permitida")
             self.repository.set_roles(connection, account_id, roles)
             self._invalidate_accounts(connection, actor, [account_id], correlation)
             self.repository.write_audit_event(connection, actor=actor, action="ROLE_ASSIGNMENT", resource_type="USER", resource_identifier=str(account_id), result="SUCCESS", correlation_id=correlation)
