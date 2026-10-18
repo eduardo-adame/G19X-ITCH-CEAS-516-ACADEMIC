@@ -31,5 +31,5 @@ export function formatTimestamp(value) {
   const parts = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/)
   if (!parts || !validDate(parts[1]) || Number(parts[2]) > 23 || Number(parts[3]) > 59 || Number(parts[4]) > 59 || (parts[5] !== 'Z' && (Number(parts[7]) > 23 || Number(parts[8]) > 59))) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.valueOf()) ? '—' : `${new Intl.DateTimeFormat('es-MX', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }).format(date)} UTC`
+  return Number.isNaN(date.valueOf()) ? '—' : `${new Intl.DateTimeFormat('es-MX', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Mexico_City' }).format(date)} (hora de la Ciudad de México)`
 }

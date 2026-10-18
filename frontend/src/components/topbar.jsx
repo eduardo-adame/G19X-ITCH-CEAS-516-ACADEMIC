@@ -16,7 +16,7 @@ export function useNow() {
   return now
 }
 
-// Fecha y hora del navegador (USER_TIMESTAMP, sin «UTC»). No es una región anunciada: el lector de
+// Fecha y hora de la Ciudad de México (USER_TIMESTAMP, sin zona visible). No es una región anunciada: el lector de
 // pantalla no la repite cada minuto.
 export function Clock() {
   const clock = formatClock(useNow())
