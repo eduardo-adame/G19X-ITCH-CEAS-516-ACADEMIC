@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.analytics.api_models import AnalysisItem, AnalysisPage, ContextReferenceItem, DashboardFilters, EvaluationItem, FindingItem, KpiItem, KpiPage, TechnicalKpi
 from app.analytics.models import ProactiveAnalysisQuery
+from app.business_time import business_date, business_today
 
 
 CATALOG = {
@@ -58,7 +59,7 @@ def _dto_values(item):
 
 
 class DashboardService:
-    def __init__(self, kpi_query, analysis_query, *, today=date.today):
+    def __init__(self, kpi_query, analysis_query, *, today=business_today):
         self.kpi_query = kpi_query
         self.analysis_query = analysis_query
         self.today = today
@@ -103,14 +104,14 @@ class DashboardService:
         def read(values, *, current_run_id):
             if not values:
                 return AnalysisPage(current_analytic_run_id=current_run_id, items=[], alert_count=0)
-            reference = values[0][0]["window_end"].date()
+            reference = business_date(values[0][0]["window_end"])
             start, end = period_bounds(filters, reference, self.today())
             if not historical and analytic_run_id is None:
                 values = values[:1]
                 start, end = None, None
             items = []
             for run, read_result, dates in values:
-                if historical and (start is None or run["window_end"].date() < start or run["window_start"].date() > end):
+                if historical and (start is None or business_date(run["window_end"]) < start or business_date(run["window_start"]) > end):
                     continue
                 def allowed(code, dimensions, first, last):
                     return _matches(code, dimensions, filters) and (start is None or last >= start) and (end is None or first <= end)

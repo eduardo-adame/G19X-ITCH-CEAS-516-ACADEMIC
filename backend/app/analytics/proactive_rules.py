@@ -10,6 +10,8 @@ import re
 from typing import Any, Iterable, Mapping, Sequence
 from uuid import UUID, uuid5
 
+from app.business_time import day_end, day_start
+
 from app.analytics.models import (
     ProactiveEvaluationResult,
     ProactiveFindingResult,
@@ -347,11 +349,11 @@ def _month_end(value: date) -> date:
 
 
 def _at_start(value: date) -> datetime:
-    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    return day_start(value)
 
 
 def _at_end(value: date) -> datetime:
-    return datetime(value.year, value.month, value.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
+    return day_end(value)
 
 
 def _utc_iso(value: datetime) -> str:

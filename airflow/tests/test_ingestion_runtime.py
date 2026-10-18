@@ -30,6 +30,12 @@ def test_airflow_graph_is_ingestion_then_kpi_then_proactive() -> None:
     assert runtime.dag.get_task("request_scheduled_proactive_analysis").upstream_task_ids == {"request_scheduled_kpi_recalculation"}
 
 
+def test_daily_cycle_runs_at_mexico_city_midnight() -> None:
+    runtime = _module()
+    assert runtime.dag.timezone.name == "America/Mexico_City"
+    assert runtime.dag.start_date.in_timezone("America/Mexico_City").hour == 0
+
+
 def test_interval_correlation_is_stable() -> None:
     runtime = _module()
     interval = {

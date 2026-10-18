@@ -19,7 +19,7 @@ def _result(*, entity_type: str = "CONTRATO", business_id: str = "C-1") -> Proje
 
 def test_contract_without_fecha_firma_does_not_create_rc01_request(monkeypatch) -> None:
     result = _result()
-    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, tzinfo=UTC)}))
+    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, 18, tzinfo=UTC)}))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(lambda *_args, **_kwargs: None))
     requests = canonical_requests_for_projection(object(), (result,))
     assert [request.kpi_codes for request in requests] == [("KPI-RC-03",)]
@@ -27,7 +27,7 @@ def test_contract_without_fecha_firma_does_not_create_rc01_request(monkeypatch) 
 
 def test_contract_without_fecha_firma_still_creates_rc03_snapshot_request(monkeypatch) -> None:
     result = _result()
-    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, tzinfo=UTC)}))
+    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, 18, tzinfo=UTC)}))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(lambda *_args, **_kwargs: None))
     request = canonical_requests_for_projection(object(), (result,))[0]
     assert request.period_start == date(2026, 4, 1)
@@ -37,7 +37,7 @@ def test_contract_without_fecha_firma_still_creates_rc03_snapshot_request(monkey
 
 def test_multi_record_same_period_deduplicates_canonical_request(monkeypatch) -> None:
     results = (_result(business_id="C-1"), _result(business_id="C-2"))
-    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, tzinfo=UTC)}))
+    monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 5, 18, tzinfo=UTC)}))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(lambda *_args, **_kwargs: date(2026, 4, 5)))
     requests = canonical_requests_for_projection(object(), results)
     assert len(requests) == 1
@@ -46,7 +46,7 @@ def test_multi_record_same_period_deduplicates_canonical_request(monkeypatch) ->
 
 def test_multi_record_different_periods_keep_distinct_canonical_requests(monkeypatch) -> None:
     results = (_result(business_id="C-1"), _result(business_id="C-2"))
-    values = iter((datetime(2026, 4, 5, tzinfo=UTC), datetime(2026, 5, 5, tzinfo=UTC)))
+    values = iter((datetime(2026, 4, 5, 18, tzinfo=UTC), datetime(2026, 5, 5, 18, tzinfo=UTC)))
     monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(lambda *_args, **_kwargs: {"applied_at": next(values)}))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(lambda *_args, **_kwargs: date(2026, 1, 15)))
     requests = canonical_requests_for_projection(object(), results)
@@ -77,7 +77,7 @@ def test_monthly_request_uses_durable_cut_without_changing_business_period(
     """SRS_REQUIRED: una incorporación tardía debe actualizar su observación mensual."""
     result = _result(entity_type=entity_type)
     monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(
-        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, tzinfo=UTC)}
+        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, 18, tzinfo=UTC)}
     ))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(
         lambda *_args, **_kwargs: business_date
@@ -89,10 +89,13 @@ def test_monthly_request_uses_durable_cut_without_changing_business_period(
     assert request.period_start <= request.as_of_date <= request.period_end
 
 
-def test_durable_cut_uses_utc_calendar_day(monkeypatch) -> None:
-    """ROBUSTNESS: un offset local no cambia el día UTC de la aplicación."""
+@pytest.mark.parametrize("applied_at", [
+    datetime(2026, 4, 9, 23, 30, tzinfo=timezone(timedelta(hours=-6))),
+    datetime(2026, 4, 10, 5, 30, tzinfo=UTC),
+])
+def test_durable_cut_uses_mexico_city_calendar_day(monkeypatch, applied_at) -> None:
+    """ROBUSTNESS: el corte es el día de la Ciudad de México en que se aplicó, sin importar el offset recibido."""
     result = _result(entity_type="LITIGIO")
-    applied_at = datetime(2026, 4, 9, 23, 30, tzinfo=timezone(timedelta(hours=-6)))
     monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(
         lambda *_args, **_kwargs: {"applied_at": applied_at}
     ))
@@ -102,7 +105,7 @@ def test_durable_cut_uses_utc_calendar_day(monkeypatch) -> None:
     requests = canonical_requests_for_projection(object(), (result,))
     assert len(requests) == 1
     assert requests[0].kpi_codes == ("KPI-LI-01", "KPI-LI-05")
-    assert requests[0].as_of_date == date(2026, 4, 10)
+    assert requests[0].as_of_date == date(2026, 4, 9)
 
 
 def test_different_business_days_share_one_durable_monthly_cut(monkeypatch) -> None:
@@ -110,7 +113,7 @@ def test_different_business_days_share_one_durable_monthly_cut(monkeypatch) -> N
     results = (_result(entity_type="LITIGIO", business_id="L-1"),
                _result(entity_type="LITIGIO", business_id="L-2"))
     monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(
-        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, tzinfo=UTC)}
+        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, 18, tzinfo=UTC)}
     ))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(
         lambda *_args, business_id, **_kwargs: date(2026, 4, 5 if business_id == "L-1" else 7)
@@ -140,7 +143,7 @@ def test_projection_without_relevant_change_does_not_request_kpis(monkeypatch) -
 def test_snapshot_kpi_preserves_application_month_and_cut(monkeypatch, entity_type, snapshot_code) -> None:
     """SRS_REQUIRED: las métricas snapshot conservan su corte de aplicación."""
     monkeypatch.setattr(KpiIntegrationRepository, "projection_reference", staticmethod(
-        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, tzinfo=UTC)}
+        lambda *_args, **_kwargs: {"applied_at": datetime(2026, 4, 10, 18, tzinfo=UTC)}
     ))
     monkeypatch.setattr(KpiIntegrationRepository, "business_temporal_value", staticmethod(
         lambda *_args, **_kwargs: date(2026, 1, 5)

@@ -14,6 +14,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
+from app.business_time import business_date
 from app.analytics.models import (
     ProactiveAnalysisContext,
     ProactiveAnalysisError,
@@ -458,8 +459,9 @@ def test_mixed_evaluation_outcomes_keep_run_reason_null_and_deterministic_window
     result = _service(conninfo).execute(_context(_job(engine)))
     assert {item.outcome for item in result.evaluations} == {"EVALUATED", "INSUFFICIENT_HISTORY"}
     run = _rows(engine, "SELECT window_start, window_end, kpi_codes, not_evaluated_reason FROM app.analytic_run WHERE id=:id", id=result.analytic_run_id)[0]
-    assert run["window_start"].date() == date(2025, 10, 1)
-    assert run["window_end"].date() == date(2026, 3, 31)
+    # La ventana cubre días completos de la Ciudad de México.
+    assert business_date(run["window_start"]) == date(2025, 10, 1)
+    assert business_date(run["window_end"]) == date(2026, 3, 31)
     assert run["kpi_codes"] == ["KPI-LI-05", "KPI-RC-03"]
     assert run["not_evaluated_reason"] is None
 

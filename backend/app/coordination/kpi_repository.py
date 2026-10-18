@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime
 import json
 from typing import Iterator
 from uuid import UUID, uuid4
 
 import psycopg
 from psycopg.rows import dict_row
+
+from app.business_time import day_end, day_start
 
 # KPI agregados por fecha de negocio (RF-030, RF-033, RF-035, RF-036): fuente,
 # columna de fecha y dimensiones de agrupación conocidas.
@@ -152,8 +154,8 @@ class KpiIntegrationRepository:
 
 
 def _start(value: date | None) -> datetime | None:
-    return None if value is None else datetime.combine(value, time.min, tzinfo=UTC)
+    return None if value is None else day_start(value)
 
 
 def _end(value: date | None) -> datetime | None:
-    return None if value is None else datetime.combine(value, time.max, tzinfo=UTC)
+    return None if value is None else day_end(value)
