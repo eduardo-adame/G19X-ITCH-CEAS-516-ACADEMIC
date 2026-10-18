@@ -91,3 +91,24 @@ describe('ROBUSTNESS: la marca [En] señala su fuente', () => {
     fireEvent.blur(mark); expect(card).not.toHaveClass('source-highlight')
   })
 })
+
+describe('ROBUSTNESS: aviso en el acceso tras cambiar los propios permisos (certificación O-4)', () => {
+  it('la marca caduca a los dos minutos y se consume una sola vez', async () => {
+    const { notePermissionChange, consumePermissionChange } = await import('../src/auth/sessionNotice.js')
+    notePermissionChange(1000); expect(consumePermissionChange(1000 + 119000)).toBe(true); expect(consumePermissionChange(1000 + 119000)).toBe(false)
+    notePermissionChange(1000); expect(consumePermissionChange(1000 + 121000)).toBe(false)
+  })
+  it('la pantalla de acceso explica el cierre y el aviso desaparece al volver a entrar', async () => {
+    const { notePermissionChange } = await import('../src/auth/sessionNotice.js')
+    const { LoginPage } = await import('../src/auth/LoginPage.jsx')
+    notePermissionChange()
+    const snapshot = { status: 'anonymous', principal: null, generation: 2 }
+    const manager = { client: { request: vi.fn(), acquireRead: vi.fn(), abortAll: vi.fn() }, getSnapshot: () => snapshot, subscribe: () => () => {}, restore: vi.fn(), revalidate: vi.fn(), login: vi.fn(async () => { throw new Error('x') }) }
+    // En modo estricto React repite los inicializadores: el aviso debe sobrevivir a esa repetición.
+    render(<React.StrictMode><SessionProvider manager={manager}><MemoryRouter><LoginPage /></MemoryRouter></SessionProvider></React.StrictMode>)
+    expect(screen.getByText(/Tu sesión se cerró porque cambiaste permisos que también se aplican a tu cuenta/)).toBeVisible()
+    await userEvent.type(screen.getByLabelText('Usuario'), 'ti'); await userEvent.type(screen.getByLabelText('Contraseña', { exact: true }), 'Contrasena-larga')
+    await userEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
+    expect(screen.queryByText(/Tu sesión se cerró porque cambiaste permisos/)).not.toBeInTheDocument()
+  })
+})
