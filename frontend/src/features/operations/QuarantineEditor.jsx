@@ -4,7 +4,7 @@ import { Modal } from '../../components/layout.jsx'
 import { Badge } from '../../components/data.jsx'
 import { ErrorState } from '../../components/feedback.jsx'
 import { ApiError } from '../../api/errors.js'
-import { object } from './adapters.js'
+import { object, recordLocation } from './adapters.js'
 import { newOperationId, useOperation } from './api.js'
 
 // El formulario solo se ofrece cuando todos los valores son texto o nulos: así reproduce exactamente
@@ -70,7 +70,7 @@ export function QuarantineEditor({ item, onClose, onConfirmed, nextPending, onNe
     if (result) { setCandidate(''); onConfirmed(result) }
   }
   return <Modal open title="Corregir registro pendiente" onClose={onClose}><form onSubmit={submit} className="space-y-4">
-    <div className="space-y-1 rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] p-3"><Badge variant="warning">Causa</Badge><p className="text-[13px]">{item.cause_description}</p>{item.row_number !== null && item.row_number !== undefined && <p className="text-xs text-secondary">Fila {item.row_number} del archivo de origen.</p>}</div>
+    <div className="space-y-1 rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] p-3"><Badge variant="warning">Causa</Badge><p className="text-[13px]">{item.cause_description}</p>{recordLocation(item) && <p className="text-xs text-secondary">{recordLocation(item).replace(/^./, (letter) => letter.toUpperCase())} del archivo de origen.</p>}</div>
     <details className="technical-details"><summary>Original rechazado — solo lectura</summary><div className="technical-details-body">{object(item.original_payload) ? <dl>{Object.entries(item.original_payload).map(([key, value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{shown(value)}</dd></React.Fragment>)}</dl> : <p>Sin registro original disponible.</p>}</div></details>
     {mode === 'form' ? <fieldset className="space-y-3" disabled={locked}><legend className="text-xs font-medium text-secondary">Valores corregidos</legend>{Object.keys(fields).map((key) => <div key={key} className={changed?.includes(key) ? 'field-changed' : undefined}><Input label={key} value={fields[key]} placeholder={base[key] === null ? 'Sin valor' : undefined} onChange={(event) => setFields({ ...fields, [key]: event.target.value })} />{changed?.includes(key) && <p className="mt-1 text-xs text-secondary"><span className="font-medium text-[var(--brand-ink)]">Modificado</span> · Original: {Object.hasOwn(original, key) ? shown(original[key]) : 'No existía'}</p>}</div>)}</fieldset>
       : <div className="space-y-1"><label htmlFor="corrected-candidate" className="block text-xs font-medium text-secondary">Candidato corregido (JSON)</label><textarea id="corrected-candidate" className="control min-h-48 resize-y py-2 font-mono text-xs" required disabled={locked} value={candidate} onChange={(e) => setCandidate(e.target.value)} /></div>}

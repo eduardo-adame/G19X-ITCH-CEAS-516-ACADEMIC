@@ -61,9 +61,32 @@ export function quarantinePage(data) {
   assert(object(data) && Array.isArray(data.items) && nullable(data.next_cursor))
   const items = data.items.map((row) => {
     assert(object(row) && uuid(row.id) && nullable(row.ingest_file_id, uuid) && nullable(row.source_record_id, uuid) && nullable(row.row_number, Number.isInteger) && nullable(row.source_family, (v) => families.includes(v)) && timestamp(row.created_at) && quarantineCauses.includes(row.cause_code) && text(row.cause_description) && quarantineStates.includes(row.state) && nullable(row.original_payload, object) && nullable(row.candidate_payload, object) && nullable(row.discard_justification))
-    return { ...row, canAct: row.state === 'Pendiente', canCorrect: row.state === 'Pendiente' && object(row.original_payload), createdLabel: formatUserTimestamp(row.created_at), createdAudit: formatAuditTimestamp(row.created_at) }
+    assert(nullable(row.source_sheet ?? null))
+    // Un conflicto de identidad no se resuelve corrigiendo (SRS 5.5.9): solo admite descarte.
+    const isConflict = row.cause_code === 'IDENTITY_CONFLICT'
+    return { ...row, source_sheet: row.source_sheet ?? null, isConflict, canAct: row.state === 'Pendiente', canCorrect: row.state === 'Pendiente' && !isConflict && object(row.original_payload), createdLabel: formatUserTimestamp(row.created_at), createdAudit: formatAuditTimestamp(row.created_at) }
   })
   return { items, next_cursor: data.next_cursor }
+}
+// Dato vigente frente al recibido de un conflicto de identidad, con los nombres de campo del registro
+// recibido. El vigente se conserva con los nombres de columna del almacenamiento (en minúsculas), así que
+// se empareja sin distinguir mayúsculas; los campos técnicos del almacenamiento no se muestran.
+export function conflictComparison(row) {
+  if (!object(row?.candidate_payload)) return []
+  const current = object(row.original_payload) ? row.original_payload : {}
+  const byLower = new Map(Object.keys(current).map((key) => [key.toLowerCase(), key]))
+  return Object.keys(row.candidate_payload).map((field) => {
+    const key = Object.hasOwn(current, field) ? field : byLower.get(field.toLowerCase())
+    const vigente = key === undefined ? null : current[key]
+    const recibido = row.candidate_payload[field]
+    const comparable = (value) => value === null || value === undefined || value === '' ? null : String(value)
+    return { field, current: vigente ?? null, received: recibido ?? null, differs: comparable(vigente) !== comparable(recibido) }
+  })
+}
+// Ubicación del registro en el archivo de origen: hoja (solo XLSX) y fila.
+export function recordLocation(row) {
+  const rowText = row?.row_number !== null && row?.row_number !== undefined ? `fila ${row.row_number}` : null
+  return [row?.source_sheet ? `hoja «${row.source_sheet}»` : null, rowText].filter(Boolean).join(', ')
 }
 export function discardResult(data) { assert(object(data) && uuid(data.id) && data.state === 'Descartado' && text(data.discard_justification)); return data }
 export function reinjectionResult(data) {
