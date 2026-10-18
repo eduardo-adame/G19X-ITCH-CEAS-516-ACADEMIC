@@ -36,6 +36,20 @@ def reconstruct_headers(connection: psycopg.Connection, file_id: UUID) -> tuple[
     return tuple(headers)
 
 
+def reconstruct_sheet_headers(connection: psycopg.Connection, file_id: UUID) -> tuple[tuple[str, tuple[object, ...]], ...]:
+    """Encabezados de cada hoja tal como se extrajeron (un XLSX puede traer varias)."""
+    row = connection.execute(
+        "SELECT extraction_metadata FROM app.ingest_file WHERE id = %s",
+        (file_id,),
+    ).fetchone()
+    if row is None or row["extraction_metadata"] is None:
+        return ()
+    metadata = row["extraction_metadata"]
+    if isinstance(metadata, str):
+        metadata = json.loads(metadata)
+    return tuple((str(sheet), tuple(headers)) for sheet, headers in metadata.get("sheet_headers") or [])
+
+
 def reconstruct_records(connection: psycopg.Connection, file_id: UUID) -> tuple[TabularRecord, ...]:
     """Reconstruye los registros tabulares preservando ``source_record_id``.
 
@@ -62,6 +76,7 @@ def reconstruct_records(connection: psycopg.Connection, file_id: UUID) -> tuple[
                 source_record_id=row["id"],
                 values_by_name=dict(payload),
                 width=len(payload),
+                sheet=row["source_sheet"],
             )
         )
     return tuple(records)

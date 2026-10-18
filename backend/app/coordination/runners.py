@@ -13,6 +13,7 @@ from app.coordination.reconstruction import (
     reconstruct_family,
     reconstruct_headers,
     reconstruct_records,
+    reconstruct_sheet_headers,
 )
 from app.validation.repository import ValidationRepository
 from app.validation.service import ValidationContext, ValidationService
@@ -31,6 +32,7 @@ def make_validation_runner(*, conninfo: str, security, kpi_integration=None):
         with repository.transaction() as connection:
             family = reconstruct_family(connection, file_id)
             headers = reconstruct_headers(connection, file_id)
+            sheet_headers = reconstruct_sheet_headers(connection, file_id)
             records = reconstruct_records(connection, file_id)
         if family is None or not records:
             return None
@@ -39,6 +41,7 @@ def make_validation_runner(*, conninfo: str, security, kpi_integration=None):
             family=family,
             headers=headers,
             records=records,
+            sheet_headers=sheet_headers,
             context=ValidationContext(
                 operation_id=context.operation_id,
                 correlation_id=context.correlation_id,

@@ -19,7 +19,7 @@ from app.security.service import SecurityService
 from app.validation.quarantine import QuarantineError
 from app.validation.repository import ValidationRepository
 from app.validation.service import ValidationContext, ValidationService
-from app.validation.models import QuarantineCause, QuarantineState
+from app.validation.models import QuarantineCause, QuarantineState, ValidationInvocationError
 from app.ingestion.models import SourceFamily
 
 
@@ -76,7 +76,8 @@ def reinject(
         )
     except SecurityError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso no autorizado") from None
-    except QuarantineError:
+    except (QuarantineError, ValidationInvocationError):
+        # Procedencia no corregible o inconsistente: se rechaza sin efectos, nunca como error interno.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La reinyección no puede confirmarse") from None
     except KpiIntegrationError:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="La reinyección fue confirmada; el recálculo sigue pendiente") from None
@@ -123,6 +124,8 @@ class QuarantineResponse(BaseModel):
     ingest_file_id: UUID | None
     source_record_id: UUID | None
     row_number: int | None
+    # Hoja del XLSX de origen; nula en CSV y en elementos de archivo.
+    source_sheet: str | None = None
     source_family: SourceFamily | None
     created_at: AwareDatetime
     cause_code: QuarantineCause
@@ -213,7 +216,8 @@ def list_quarantine(
     except (psycopg.Error, RuntimeError):
         raise HTTPException(status_code=503, detail="La consulta no puede confirmarse") from None
     items = [QuarantineResponse(
-        **{key: row[key] for key in QuarantineResponse.model_fields if key != "cause_description"},
+        **{key: row[key] for key in QuarantineResponse.model_fields if key not in ("cause_description", "source_sheet")},
+        source_sheet=row.get("source_sheet"),
         cause_description=_CAUSE_DESCRIPTIONS[QuarantineCause(row["cause_code"])],
     ) for row in rows]
     return QuarantinePageResponse(items=items, next_cursor=_encode_cursor(rows[-1]) if has_more else None)

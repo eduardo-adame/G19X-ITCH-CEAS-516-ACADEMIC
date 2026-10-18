@@ -28,11 +28,12 @@ class NativePage:
 
 def consolidate(
     pages: Sequence[NativePage],
-    ocr_text_by_page: dict[int, tuple[str, float | None]],
+    ocr_text_by_page: dict[int, tuple],
 ) -> ConsolidatedText:
     """Combina texto nativo y OCR ``Exitoso`` preservando el orden de páginas.
 
-    ``ocr_text_by_page`` asocia número de página con ``(texto, confianza)``.
+    ``ocr_text_by_page`` asocia número de página con ``(texto, confianza)`` y,
+    opcionalmente, sus confianzas por palabra como tercer elemento.
     Una página que requiere OCR solo aporta texto cuando su confianza es
     suficiente; en caso contrario se omite del texto consolidado.
     """
@@ -45,7 +46,7 @@ def consolidate(
             ocr = ocr_text_by_page.get(page.page_number)
             if ocr is None:
                 continue
-            ocr_text, confidence = ocr
+            ocr_text, confidence = ocr[0], ocr[1]
             if confidence is None or confidence < LOW_CONFIDENCE_THRESHOLD:
                 continue
             text = ocr_text
