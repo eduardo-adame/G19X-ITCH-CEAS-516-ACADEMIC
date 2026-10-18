@@ -25,5 +25,6 @@ export function chartAxisConfig(unit, values = []) {
   if (unit === AXIS_UNITS.COUNT) return { ...niceScale(maximum, 1), allowDecimals: false, tickFormatter: (value) => formatDecimal(String(value)) }
   if (unit === AXIS_UNITS.PERCENTAGE) return { domain: [0, 100], allowDecimals: true, tickFormatter: formatPercentage }
   if (unit === AXIS_UNITS.DAYS) return { ...niceScale(maximum, 1, { coarse: true }), allowDecimals: true, tickFormatter: (value) => `${formatDecimal(roundDecimal(String(value)))} d` }
-  return { ...(maximum > 0 ? niceScale(maximum, maximum / 100, { coarse: true }) : { domain: [0, 1] }), allowDecimals: true, tickFormatter: formatCompactCurrencyMXN }
+  // Sin importes positivos basta una marca en cero: con un dominio 0–1 MXN todas las marcas se leían «$0 M».
+  return { ...(maximum > 0 ? niceScale(maximum, maximum / 100, { coarse: true }) : { domain: [0, 1], ticks: [0] }), allowDecimals: true, tickFormatter: formatCompactCurrencyMXN }
 }

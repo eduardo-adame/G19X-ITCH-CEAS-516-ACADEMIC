@@ -1,8 +1,27 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { safeError } from '../api/errors.js'
 import { Button } from './controls.jsx'
 import { Icon } from './Icon.jsx'
-export function Loading({ label = 'Cargando…' }) { return <div role="status" aria-live="polite" className="border border-border bg-secondary p-5 text-secondary">{label}</div> }
+import { APP_NAME } from '../shared/brand.js'
+export function Loading({ label = 'Cargando…' }) { return <div role="status" aria-live="polite" className="flex items-center gap-3 border border-border bg-secondary p-5 text-secondary"><span aria-hidden="true" className="loading-track loading-track-compact" /><span>{label}</span></div> }
+
+// Comprobación inicial de la sesión: marca con una barra dorada indeterminada. Solo aparece si la comprobación tarda
+// más de 300 ms (sin parpadeo) y a los 8 s ofrece reintentar. Con «reducir movimiento» la barra queda quieta.
+export function SessionLoading({ label = 'Comprobando tu sesión…', delay = 300, slowAfter = 8000, onRetry = () => window.location.reload() }) {
+  const [phase, setPhase] = useState(delay > 0 ? 'waiting' : 'visible')
+  useEffect(() => {
+    const show = setTimeout(() => setPhase((current) => current === 'waiting' ? 'visible' : current), delay)
+    const slow = setTimeout(() => setPhase('slow'), slowAfter)
+    return () => { clearTimeout(show); clearTimeout(slow) }
+  }, [delay, slowAfter])
+  if (phase === 'waiting') return <div role="status" aria-live="polite" className="sr-only">{label}</div>
+  return <main className="flex min-h-dvh items-center justify-center bg-page p-6"><div role="status" aria-live="polite" className="grid justify-items-center gap-4 text-center">
+    <p className="flex items-center gap-2 text-lg font-semibold text-primary"><span className="text-[var(--brand)]"><Icon name="litigation" size={20} /></span>{APP_NAME}</p>
+    <span aria-hidden="true" className="loading-track" />
+    <p className="text-[13px] text-secondary">{label}</p>
+    {phase === 'slow' && <div className="grid justify-items-center gap-2"><p className="text-xs text-secondary">Está tardando más de lo habitual.</p><Button variant="secondary" onClick={onRetry}>Reintentar</Button></div>}
+  </div></main>
+}
 // Esqueleto con la geometría de una tabla (cabecera + filas) para que la carga no desplace el diseño.
 export function TableSkeleton({ label = 'Cargando…', columns = 4, rows = 5 }) {
   return <div role="status" aria-live="polite"><span className="sr-only">{label}</span><div aria-hidden="true" className="table-scroll"><div className="flex gap-4 bg-secondary px-4 py-3">{Array.from({ length: columns }, (_, index) => <div key={index} className="skeleton h-3 flex-1" />)}</div>{Array.from({ length: rows }, (_, row) => <div key={row} className="flex h-[var(--table-row-height)] items-center gap-4 border-t border-border px-4">{Array.from({ length: columns }, (_, index) => <div key={index} className="skeleton h-2.5 flex-1" style={{ maxWidth: `${92 - ((row + index) % 3) * 14}%` }} />)}</div>)}</div></div>

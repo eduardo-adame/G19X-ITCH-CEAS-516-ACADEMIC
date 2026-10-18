@@ -6,7 +6,7 @@ test('el indicador del resumen abre su vista con el periodo y explica qué mide'
   await mockSessionTI(page); await mockDashboardEmpty(page)
   await page.route('**/api/dashboard/kpis**', (route) => route.fulfill({ json: SYNTHETIC_KPI_RESPONSE }))
   await page.goto('/?period=last_3_months')
-  await expect(page).toHaveTitle('Resumen ejecutivo · Riesgo Legal')
+  await expect(page).toHaveTitle('Resumen ejecutivo · Legaltech')
   await page.getByRole('button', { name: 'Qué mide: Obligaciones regulatorias vencidas sin atender' }).click()
   const note = page.getByRole('note')
   await expect(note).toContainText('fecha límite ya pasó')
@@ -16,7 +16,7 @@ test('el indicador del resumen abre su vista con el periodo y explica qué mide'
   await expect(note).toHaveCount(0)
   await page.getByRole('link', { name: /Contratos próximos a vencimiento sin revisión \(ver en Riesgo contractual\)/ }).click()
   await expect(page).toHaveURL(/\/contratos\?period=last_3_months$/)
-  await expect(page).toHaveTitle('Riesgo contractual · Riesgo Legal')
+  await expect(page).toHaveTitle('Riesgo contractual · Legaltech')
 })
 
 test('sin red se avisa y el aviso desaparece al recuperarla', async ({ page, context }) => {

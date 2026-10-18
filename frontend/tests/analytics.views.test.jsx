@@ -16,7 +16,7 @@ vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>
   const Graph = ({ data, children }) => <div data-testid="chart" data-points={JSON.stringify(data)}>{children}</div>
   const Plot = ({ data, dataKey, connectNulls, type }) => <span data-testid="plot" data-points={data ? JSON.stringify(data) : undefined} data-key={dataKey} data-connect={String(connectNulls)} data-type={type} />
-  return { ResponsiveContainer: Container, BarChart: Graph, LineChart: Graph, PieChart: Graph, Pie: Plot, Cell: () => null, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Line: Plot, Bar: Plot }
+  return { ResponsiveContainer: Container, BarChart: Graph, LineChart: Graph, PieChart: Graph, Pie: Plot, Cell: () => null, LabelList: () => null, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Line: Plot, Bar: Plot }
 })
 const runId = '11111111-1111-4111-8111-111111111111'
 const contextId = '44444444-4444-4444-8444-444444444444'
@@ -337,8 +337,9 @@ describe('SRS_REQUIRED: cuatro vistas analíticas', () => {
     expect(screen.getAllByText('Bajo').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/\$200,000 MXN/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/63\.49 %/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('$315,000 MXN').length).toBeGreaterThan(0)
-    expect(JSON.parse(screen.getByTestId('plot').dataset.points).map(({ name, value }) => ({ name, value }))).toEqual([
+    expect(screen.getByText(/Total: \$315,000 MXN\./)).toBeVisible()
+    expect(screen.getByTestId('plot').dataset.key).toBe('value')
+    expect(JSON.parse(screen.getByTestId('chart').dataset.points).map(({ name, value }) => ({ name, value }))).toEqual([
       { name: 'Alto', value: 200000 },
       { name: 'Medio', value: 90000 },
       { name: 'Bajo', value: 25000 },
@@ -399,7 +400,7 @@ describe('SRS_REQUIRED: certificación visual de partición y hallazgos', () => 
   it('NO_DISPONIBLE en todas las severidades del periodo muestra «No disponible», no «Sin observaciones»', () => {
     const items = adaptKpis(kpiPage(['alto', 'medio', 'bajo'].map((level) => observation('KPI-LI-01', { dimensions: { nivel_severidad: level }, availability: 'NO_DISPONIBLE', value: null })))).items
     render(<SeverityChart items={items} />)
-    expect(screen.getByText(/^No disponible: las observaciones de severidad/)).toBeVisible()
+    expect(screen.getByLabelText('Composición por severidad: no disponible')).toHaveTextContent('Las observaciones de severidad del último periodo no tienen valor disponible.')
     expect(screen.queryByText(/Sin observaciones de severidad/)).not.toBeInTheDocument()
   })
   it('la tabla de exposición conserva los periodos No disponible sin fabricar cero ni ocultarlos', () => {
