@@ -41,6 +41,16 @@ test('ROBUSTNESS: límite multipart y presupuestos largos permanecen acotados', 
   assert.match(nginx, /client_max_body_size 64m/); assert.match(nginx, /proxy_read_timeout 420s/); assert.match(nginx, /proxy_send_timeout 420s/)
   assert.equal(apiProxy().proxyTimeout, 420000); assert.equal(apiProxy().timeout, 420000)
 })
+test('ROBUSTNESS: el documento se revalida en cada carga y los archivos con huella se guardan como inmutables', () => {
+  const nginx = read('nginx.conf')
+  const block = (pattern) => { const at = nginx.search(pattern); assert.ok(at >= 0, `falta ${pattern}`); return nginx.slice(at, nginx.indexOf('}', at)) }
+  // Sin no-cache en el documento, el navegador conserva el index.html anterior y ejecuta la versión previa tras un despliegue.
+  const documentBlock = block(/location \/ \{/)
+  assert.match(documentBlock, /Cache-Control "no-cache" always/)
+  for (const assets of [block(/location \/assets\/ \{/), block(/location ~ \^\/assets\/\.\*\\.mjs\$ \{/)]) assert.match(assets, /Cache-Control "public, max-age=31536000, immutable" always/)
+  // add_header dentro de un location anula los del servidor: cada bloque repite el endurecimiento.
+  for (const each of [documentBlock, block(/location \/assets\/ \{/)]) for (const header of ['X-Content-Type-Options "nosniff"', 'X-Frame-Options "DENY"', 'Referrer-Policy "no-referrer"']) assert.ok(each.includes(header), header)
+})
 test('ROBUSTNESS: servidores dev/test locales sin browser o interfaz de pruebas', () => {
   assert.equal(config.server.host, '127.0.0.1'); assert.equal(config.preview.host, '127.0.0.1')
   assert.equal(config.test.browser, undefined); assert.equal(config.test.api, undefined)
