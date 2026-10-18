@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from app.business_time import day_end, day_start
 from app.analytics.api import dashboard_service_for, router
 from app.analytics.api_models import DashboardFilters
 from app.analytics.dashboard_service import DashboardService, period_bounds
@@ -198,7 +199,7 @@ class AnalysisQuery:
 
 def analysis_run(month):
     identity = uuid4()
-    run = dict(id=identity, completed_at=datetime(2026, month, 20, tzinfo=UTC), window_start=datetime(2026, month, 1, tzinfo=UTC), window_end=datetime(2026, month, 28, tzinfo=UTC))
+    run = dict(id=identity, completed_at=datetime(2026, month, 20, tzinfo=UTC), window_start=day_start(date(2026, month, 1)), window_end=day_end(date(2026, month, 28)))
     result = ProactiveAnalysisReadResult(ProactiveAnalysisResult("COMPLETED", "a" * 64, identity, uuid4(), executive_summary="Resumen persistido."))
     return run, result, {}
 

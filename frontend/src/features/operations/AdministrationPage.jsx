@@ -12,6 +12,7 @@ import { ActionMenu } from '../../components/menu.jsx'
 import { families, uuid } from './adapters.js'
 import { familyLabel, roleLabel } from '../../shared/labels.js'
 import { useOperation, useOperationsRead } from './api.js'
+import { clearPermissionChange, notePermissionChange } from '../../auth/sessionNotice.js'
 import { ACCOUNT_READ_CAPABILITIES, accountPage, accountsPath, exceptionPage, exceptionsPath, ROLES, SCOPES_PATH, scopeList } from './directory.js'
 
 // Cada operación se abre en un diálogo sobre la lista desde la que se eligió (DESIGN §22): la lista sigue a la
@@ -46,6 +47,24 @@ function doneMessage(action, fields, account) {
     scope: `Alcance actualizado: ${roleLabel(fields.role_id)} ${fields.active ? 'con' : 'sin'} acceso a ${familyLabel(fields.source_family)}.`,
     'user-exception': `Excepción de ${fields.document_id} ${fields.active ? 'guardada' : 'retirada'}.`, 'role-exception': `Excepción de ${fields.document_id} ${fields.active ? 'guardada' : 'retirada'}.`,
   }[action]
+}
+
+// Motivo concreto de un rechazo (409/422) en lugar del mensaje genérico; 403 y fallos técnicos conservan el seguro.
+const LAST_TI = 'El sistema quedaría sin ninguna cuenta TI activa. Asigna el rol TI a otra cuenta activa antes de hacer este cambio.'
+export function failureReason(action, error) {
+  if (error?.status === 409) return { disable: LAST_TI, roles: LAST_TI, create: 'Ya existe una cuenta con ese usuario. Elige otro nombre de usuario.' }[action] ?? null
+  if (error?.status === 422) return {
+    create: 'Revisa los datos: el usuario y el nombre visible no pueden quedar vacíos y la contraseña debe tener entre 12 y 128 caracteres.',
+    reset: 'La contraseña debe tener entre 12 y 128 caracteres.', update: 'El nombre visible no puede quedar vacío ni superar 256 caracteres.',
+    roles: 'Elige al menos uno de los roles disponibles.', scope: 'El rol o la familia documental no son válidos.',
+    'user-exception': 'Revisa el identificador del documento: debe corresponder a un documento existente.', 'role-exception': 'Revisa el identificador del documento: debe corresponder a un documento existente.',
+  }[action] ?? null
+  return null
+}
+function AdminFailure({ action, label, error }) {
+  const reason = failureReason(action, error)
+  if (!reason) return <ErrorState error={error} title={error.status === 403 ? undefined : `No se pudo completar «${label}»`} />
+  return <section role="alert" className="rounded-panel border border-[var(--critical-border)] bg-[var(--critical-subtle)] p-5"><h2 className="text-sm font-semibold">No se pudo completar «{label}»</h2><p className="mt-1 text-secondary">{reason}</p></section>
 }
 
 export function AdministrationPage() {
@@ -203,6 +222,7 @@ function OperationDialog({ principal, request, onClose, onDone }) {
   const [subject, setSubject] = useState(initialSubject ?? 'USER')
   const [step, setStep] = useState('form'); const [pending, setPending] = useState(null); const [error, setError] = useState(null); const [created, setCreated] = useState(null)
   const formRef = useRef(null); const backRef = useRef(null)
+  const [roleChoice, setRoleChoice] = useState(ROLES[0])
   const mutation = useOperation()
   const action = requested === 'exception' ? (subject === 'ROLE' ? 'role-exception' : 'user-exception') : requested
   const capability = actionOf(requested).capability
@@ -211,6 +231,12 @@ function OperationDialog({ principal, request, onClose, onDone }) {
   const blocked = mutation.busy || Boolean(mutation.error && ![403, 409, 422].includes(mutation.error.status))
   // Una excepción elegida en su tabla conserva a quién aplica y su documento.
   const fixedException = Boolean(values.document_id)
+  // Cambios que también cierran la sesión de quien los hace (RF-069): se advierte antes y se anota para el acceso.
+  const ownAccount = Boolean(account) && account.id.toLowerCase() === principal.id.toLowerCase()
+  const affectsSelf = (action === 'scope' && principal.roles.includes(values.role_id))
+    || (action === 'role-exception' && principal.roles.includes(fixedException ? values.role_id : roleChoice))
+    || (['user-exception', 'reset', 'disable'].includes(action) && ownAccount)
+  const selfWarning = affectsSelf && <p role="note" className="rounded-control border border-[var(--warning-border)] bg-[var(--warning-subtle)] px-3 py-2 text-[13px]">Este cambio también se aplica a tu cuenta: al confirmarlo se cerrará tu sesión y tendrás que volver a iniciar sesión.</p>
   const title = requested === 'exception' ? (fixedException ? `Excepción de ${values.document_id}` : initialAccount ? `Excepción documental · ${initialAccount.displayName}` : 'Nueva excepción') : requested === 'scope' ? `${values.active ? 'Dar' : 'Quitar'} acceso` : initialAccount ? `${actionOf(requested).label} · ${initialAccount.displayName}` : actionOf(requested).label
   // El foco va al primer campo (el diálogo enfoca antes su botón de cierre).
   useEffect(() => { const timer = setTimeout(() => formRef.current?.querySelector('input:not([type="hidden"]), select, textarea, button[type="submit"]')?.focus(), 0); return () => clearTimeout(timer) }, [])
@@ -218,10 +244,13 @@ function OperationDialog({ principal, request, onClose, onDone }) {
 
   async function perform(fields) {
     setError(null)
+    // Se anota antes de enviar: la sesión puede cerrarse en cuanto el servidor confirma el cambio.
+    if (affectsSelf) notePermissionChange()
     const result = await mutation.execute(capability, (api) => api.administer(action, fields))
     if (Object.hasOwn(fields, 'password')) fields.password = ''
     if (formRef.current?.elements.password) formRef.current.elements.password.value = ''
-    if (!result) { setStep('form'); setPending(null); return }
+    // Si el cambio no se confirmó, la sesión sigue abierta y el aviso ya no corresponde.
+    if (!result) { if (affectsSelf) clearPermissionChange(); setStep('form'); setPending(null); return }
     if (action === 'create') { setCreated({ id: result.id, username: fields.username }); onDone(`Cuenta ${fields.username} creada.`, { close: false }); return }
     onDone(doneMessage(action, fields, account), { close: true })
   }
@@ -245,7 +274,7 @@ function OperationDialog({ principal, request, onClose, onDone }) {
   }
   const failure = error || mutation.error
   const close = () => { if (!mutation.busy) onClose() }
-  const failureView = failure && <ErrorState error={failure} title={failure.status === 403 ? undefined : `No se pudo completar «${actionOf(requested).label}»`} />
+  const failureView = failure && <AdminFailure action={action} label={actionOf(requested).label} error={failure} />
   return <Modal open title={title} onClose={close}><div className="space-y-4">
     {created ? <>
       <ActionNotice title={`Cuenta ${created.username} creada.`}><CreatedIdentifier id={created.id} /></ActionNotice>
@@ -256,18 +285,20 @@ function OperationDialog({ principal, request, onClose, onDone }) {
         {needsAccount && (account ? <><input type="hidden" name="account_id" value={account.id} /><SelectedAccount account={account} onChange={initialAccount ? null : () => setAccount(null)} /></> : <AccountPicker onPick={setAccount} />)}
         {action === 'create' && <Input label="Usuario" name="username" required maxLength={256} autoComplete="off" disabled={blocked} />}
         {['create', 'update'].includes(action) && <Input label="Nombre visible" name="display_name" required maxLength={256} disabled={blocked} defaultValue={action === 'update' ? account?.displayName : undefined} />}
-        {requiresPassword && <PasswordInput label="Contraseña nueva" name="password" autoComplete="new-password" minLength={1} maxLength={128} required disabled={blocked} />}
+        {requiresPassword && <div className="space-y-1"><PasswordInput label="Contraseña nueva" name="password" autoComplete="new-password" minLength={12} maxLength={128} required disabled={blocked} aria-describedby="password-rule" /><p id="password-rule" className="text-xs text-muted">Entre 12 y 128 caracteres.</p></div>}
         {['create', 'roles'].includes(action) && <fieldset className="space-y-2"><legend className="text-xs font-medium text-secondary">Roles activos</legend>{ROLES.map((value) => <label key={value} className="mr-4 inline-flex items-center gap-2 text-sm"><input type="checkbox" name="roles" value={value} disabled={blocked} defaultChecked={action === 'roles' && Boolean(account?.roles.includes(value))} />{roleLabel(value)}</label>)}</fieldset>}
         {action === 'activate' && <p className="text-[13px] text-secondary">La cuenta podrá volver a iniciar sesión con sus roles actuales.</p>}
         {action === 'scope' && <><input type="hidden" name="role_id" value={values.role_id} /><input type="hidden" name="source_family" value={values.source_family} /><input type="hidden" name="active" value={String(Boolean(values.active))} /><p className="text-[13px] text-secondary">El rol <span className="font-medium text-primary">{roleLabel(values.role_id)}</span> {values.active ? 'podrá consultar' : 'dejará de consultar'} los documentos de <span className="font-medium text-primary">{familyLabel(values.source_family)}</span>. Las sesiones abiertas de las cuentas con ese rol se cerrarán para aplicar el cambio.</p></>}
-        {action === 'role-exception' && (fixedException ? <><input type="hidden" name="role_id" value={values.role_id} /><p className="text-[13px] text-secondary">Aplica al rol <span className="font-medium text-primary">{roleLabel(values.role_id)}</span>.</p></> : <Select label="Rol" name="role_id" options={ROLES.map((v) => ({ value: v, label: roleLabel(v) }))} disabled={blocked} />)}
+        {action === 'role-exception' && (fixedException ? <><input type="hidden" name="role_id" value={values.role_id} /><p className="text-[13px] text-secondary">Aplica al rol <span className="font-medium text-primary">{roleLabel(values.role_id)}</span>.</p></> : <Select label="Rol" name="role_id" value={roleChoice} onChange={(event) => setRoleChoice(event.target.value)} options={ROLES.map((v) => ({ value: v, label: roleLabel(v) }))} disabled={blocked} />)}
         {['user-exception', 'role-exception'].includes(action) && <p className="text-[13px] text-secondary">Al guardar se cerrarán las sesiones abiertas de {action === 'user-exception' ? 'la cuenta' : 'las cuentas con ese rol'} para aplicar el cambio.</p>}
         {['user-exception', 'role-exception'].includes(action) && <><Input label="Identificador del documento" name="document_id" required maxLength={256} disabled={blocked} readOnly={fixedException} defaultValue={values.document_id} /><Select label="Decisión documental" name="decision" defaultValue={values.decision} options={[{ value: 'DENY', label: 'Denegar' }, { value: 'ALLOW', label: 'Autorizar' }]} disabled={blocked} /><Select label="Vigencia" name="active" defaultValue={values.active === false ? 'false' : 'true'} options={[{ value: 'true', label: 'Vigente' }, { value: 'false', label: 'Retirada' }]} disabled={blocked} /></>}
+        {selfWarning}
         {failureView}
         {blocked && !mutation.busy && <p className="text-sm">Resultado incierto. Revisa Auditoría antes de realizar otra operación.</p>}
         <div className="flex flex-wrap justify-end gap-3"><Button variant="secondary" disabled={mutation.busy} onClick={close}>Cancelar</Button><Button type="submit" busy={mutation.busy} disabled={blocked || needsAccount && !account}>{REVIEW[action] ? 'Revisar' : action === 'scope' ? (values.active ? 'Dar acceso' : 'Quitar acceso') : action === 'create' ? 'Crear cuenta' : action === 'activate' ? 'Activar cuenta' : 'Guardar'}</Button></div>
       </form>
       {step === 'review' && pending && <div className="space-y-4" role="group" aria-label="Revisión"><p className="text-sm text-secondary">{REVIEW[action].text(pending, account)}</p>
+        {selfWarning}
         {failureView}
         <div className="flex flex-wrap justify-end gap-3"><Button ref={backRef} variant="secondary" disabled={mutation.busy} onClick={() => { setStep('form'); setPending(null) }}>Volver</Button><Button variant={REVIEW[action].variant} busy={mutation.busy} onClick={confirm}>{REVIEW[action].button}</Button></div></div>}
     </>}

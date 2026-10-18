@@ -258,13 +258,15 @@ class DocumentsRepository:
         granularity: str | None,
         operation_id: UUID,
         correlation_id: UUID,
+        samples: Sequence[float] = (),
     ) -> None:
-        connection.execute(
+        run = connection.execute(
             """INSERT INTO app.ocr_run
                (id, document_version_id, attempt_number, estado_ocr, confianza_agregada,
                 total_page_count, ocr_processed_page_count, granularity, is_final,
                 operation_id, correlation_id)
-               VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, true, %s, %s)""",
+               VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, true, %s, %s)
+               RETURNING id""",
             (
                 document_version_id,
                 attempt_number,
@@ -276,7 +278,16 @@ class DocumentsRepository:
                 operation_id,
                 correlation_id,
             ),
-        )
+        ).fetchone()
+        # Valores de confianza conservados en la granularidad del motor (RF-020, RF-026).
+        if samples:
+            unit_type = granularity or "WORD"
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """INSERT INTO app.ocr_confidence_sample (ocr_run_id, unit_number, unit_type, confidence)
+                       VALUES (%s, %s, %s, %s)""",
+                    [(run["id"], number, unit_type, value) for number, value in enumerate(samples, start=1)],
+                )
 
     @staticmethod
     def list_ocr_operations(connection, *, query, after=None) -> list[dict]:

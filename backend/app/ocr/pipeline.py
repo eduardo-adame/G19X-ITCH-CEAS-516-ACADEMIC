@@ -35,7 +35,7 @@ def _locator(conninfo: str, file_id: UUID) -> str | None:
 def make_ocr_pipeline(*, conninfo: str, storage_root: str, engine=None):
     """Construye un pipeline que reconoce sólo las páginas que requieren OCR."""
 
-    def run(file_id: UUID, candidate: DocumentCandidate) -> dict[int, tuple[str, float | None]]:
+    def run(file_id: UUID, candidate: DocumentCandidate) -> dict[int, tuple[str, float | None, tuple[float, ...]]]:
         locator = _locator(conninfo, file_id)
         if locator is None:
             raise RuntimeError("objeto almacenado no encontrado")
@@ -43,7 +43,7 @@ def make_ocr_pipeline(*, conninfo: str, storage_root: str, engine=None):
         ocr_engine = engine or TesseractOcrEngine(language="spa")
         required = [page.page_number for page in candidate.pages if page.requires_ocr]
 
-        results: dict[int, tuple[str, float | None]] = {}
+        results: dict[int, tuple[str, float | None, tuple[float, ...]]] = {}
         # Recurso temporal controlado: se elimina al salir del contexto, en éxito o error.
         with tempfile.TemporaryDirectory(prefix="ocr-") as temporary:
             temp_pdf = Path(temporary) / "document.pdf"
@@ -52,7 +52,7 @@ def make_ocr_pipeline(*, conninfo: str, storage_root: str, engine=None):
             for page_number in required:
                 for rasterized in rasterize_pdf(temp_pdf, first_page=page_number, last_page=page_number):
                     page_result = ocr_engine.recognize(rasterized.image, page_number=rasterized.page_number)
-                    results[rasterized.page_number] = (page_result.text, page_result.confidence)
+                    results[rasterized.page_number] = (page_result.text, page_result.confidence, page_result.samples)
         return results
 
     return run

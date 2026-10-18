@@ -12,9 +12,11 @@ from pydantic import BaseModel, Field
 from app.config import Settings, get_settings
 from app.security.models import (
     AccountConflictError,
+    AuditPersistenceError,
     AuthenticatedPrincipal,
     AuthenticationError,
     AuthorizationError,
+    LastActiveTiError,
     SecurityError,
     ValidationError,
 )
@@ -25,6 +27,7 @@ from app.security.tokens import JwtService
 
 router = APIRouter(prefix="/api", tags=["security"])
 ACCOUNT_CONFLICT_DETAIL = "No fue posible crear el usuario porque los datos entran en conflicto con un registro existente."
+LAST_TI_DETAIL = "La operación dejaría el sistema sin ninguna cuenta TI activa."
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -114,6 +117,25 @@ def require(capability: str):
     return dependency
 
 
+def admin_error(exc: SecurityError, invalid_detail: str) -> HTTPException:
+    """Traduce el error de una operación administrativa sin revelar si una cuenta existe.
+
+    La cuenta inexistente y la falta de permiso siguen siendo 403; los datos inválidos son 422, dejar el
+    sistema sin TI activo es 409 y una auditoría no confirmada es 503.
+    """
+    if isinstance(exc, AuthenticationError):
+        return unauthenticated()
+    if isinstance(exc, LastActiveTiError):
+        return HTTPException(status_code=409, detail=LAST_TI_DETAIL)
+    if isinstance(exc, AccountConflictError):
+        return HTTPException(status_code=409, detail=ACCOUNT_CONFLICT_DETAIL)
+    if isinstance(exc, ValidationError):
+        return HTTPException(status_code=422, detail=invalid_detail)
+    if isinstance(exc, AuditPersistenceError):
+        return HTTPException(status_code=503, detail="Operación no confirmada")
+    return unauthorized()
+
+
 def set_refresh_cookie(response: Response, token: str, settings: Settings) -> None:
     response.set_cookie(
         key=settings.security_refresh_cookie_name,
@@ -170,13 +192,9 @@ def me(principal: AuthenticatedPrincipal = Depends(current_principal)) -> dict[s
 def create_user(payload: AccountCreateRequest, principal: AuthenticatedPrincipal = Depends(require("user.create")), service: SecurityService = Depends(service_for)) -> dict[str, str]:
     try:
         account_id = service.create_account(principal, username=payload.username, display_name=payload.display_name, password=payload.password, roles=frozenset(payload.roles))
-    except AuthorizationError:
-        raise unauthorized() from None
-    except AccountConflictError:
+    except SecurityError as exc:
         # Conflicto de identidad única: mensaje genérico que no confirma qué dato existe.
-        raise HTTPException(status_code=409, detail=ACCOUNT_CONFLICT_DETAIL) from None
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Datos de cuenta no válidos") from None
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return {"id": str(account_id)}
 
 
@@ -184,8 +202,8 @@ def create_user(payload: AccountCreateRequest, principal: AuthenticatedPrincipal
 def update_user(account_id: UUID, payload: AccountUpdateRequest, principal: AuthenticatedPrincipal = Depends(require("user.update")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.update_account(principal, account_id, payload.display_name)
-    except SecurityError:
-        raise unauthorized() from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return Response(status_code=204)
 
 
@@ -193,8 +211,8 @@ def update_user(account_id: UUID, payload: AccountUpdateRequest, principal: Auth
 def activate_user(account_id: UUID, principal: AuthenticatedPrincipal = Depends(require("user.update")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.activate_account(principal, account_id)
-    except SecurityError:
-        raise unauthorized() from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return Response(status_code=204)
 
 
@@ -202,8 +220,8 @@ def activate_user(account_id: UUID, principal: AuthenticatedPrincipal = Depends(
 def disable_user(account_id: UUID, principal: AuthenticatedPrincipal = Depends(require("user.disable")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.disable_account(principal, account_id)
-    except SecurityError:
-        raise unauthorized() from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return Response(status_code=204)
 
 
@@ -211,10 +229,8 @@ def disable_user(account_id: UUID, principal: AuthenticatedPrincipal = Depends(r
 def reset_access(account_id: UUID, payload: PasswordRequest, principal: AuthenticatedPrincipal = Depends(require("user.reset_access")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.reset_access(principal, account_id, payload.password)
-    except AuthorizationError:
-        raise unauthorized() from None
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Datos de cuenta no válidos") from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return Response(status_code=204)
 
 
@@ -222,8 +238,8 @@ def reset_access(account_id: UUID, payload: PasswordRequest, principal: Authenti
 def replace_roles(account_id: UUID, payload: RolesRequest, principal: AuthenticatedPrincipal = Depends(require("role.assign")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.assign_roles(principal, account_id, frozenset(payload.roles))
-    except SecurityError:
-        raise unauthorized() from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Datos de cuenta no válidos") from None
     return Response(status_code=204)
 
 
@@ -231,10 +247,8 @@ def replace_roles(account_id: UUID, payload: RolesRequest, principal: Authentica
 def update_scope(role_id: str, source_family: str, payload: ScopeGrantRequest, principal: AuthenticatedPrincipal = Depends(require("document_acl.manage")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.set_scope_grant(principal, role_id, source_family, payload.active)
-    except AuthorizationError:
-        raise unauthorized() from None
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Ámbito documental no válido") from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Ámbito documental no válido") from None
     return Response(status_code=204)
 
 
@@ -242,10 +256,8 @@ def update_scope(role_id: str, source_family: str, payload: ScopeGrantRequest, p
 def update_user_exception(account_id: UUID, document_id: str, payload: ExceptionRequest, principal: AuthenticatedPrincipal = Depends(require("document_acl.manage")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.set_document_exception(principal, account_id=account_id, role_id=None, document_id=document_id, decision=payload.decision, active=payload.active)
-    except AuthorizationError:
-        raise unauthorized() from None
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Excepción documental no válida") from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Excepción documental no válida") from None
     return Response(status_code=204)
 
 
@@ -253,8 +265,6 @@ def update_user_exception(account_id: UUID, document_id: str, payload: Exception
 def update_role_exception(role_id: str, document_id: str, payload: ExceptionRequest, principal: AuthenticatedPrincipal = Depends(require("document_acl.manage")), service: SecurityService = Depends(service_for)) -> Response:
     try:
         service.set_document_exception(principal, account_id=None, role_id=role_id, document_id=document_id, decision=payload.decision, active=payload.active)
-    except AuthorizationError:
-        raise unauthorized() from None
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Excepción documental no válida") from None
+    except SecurityError as exc:
+        raise admin_error(exc, "Excepción documental no válida") from None
     return Response(status_code=204)

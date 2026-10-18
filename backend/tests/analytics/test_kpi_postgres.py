@@ -15,6 +15,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
+from app.business_time import day_start
 from app.analytics.models import KpiCalculationError, KpiObservationResult, KpiQuery, KpiRecalculationContext, KpiRecalculationRequest, ProactiveAnalysisContext
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.service import KPIRecalculationService, KpiQueryService, ProactiveAnalysisService, derive_run_operation_id
@@ -559,7 +560,8 @@ def test_snapshot_del_periodo_abierto_se_recalcula_y_el_cierre_lo_finaliza(datab
 @pytest.mark.requires_db
 def test_snapshot_excluye_registros_ingresados_despues_del_corte(database) -> None:
     engine, conninfo = database
-    after_cutoff = datetime(2026, 2, 1, 0, 0, 1, tzinfo=UTC)
+    # El corte de enero termina a la medianoche de la Ciudad de México (06:00 UTC del 1 de febrero).
+    after_cutoff = day_start(date(2026, 2, 1)) + timedelta(seconds=1)
     for at in (INGESTED_AT, after_cutoff):
         _contract(engine, expiry=date(2026, 2, 15), created_at=at)
         _litigation(engine, "medio", Decimal("10"), None, created_at=at)
@@ -569,6 +571,20 @@ def test_snapshot_excluye_registros_ingresados_despues_del_corte(database) -> No
     values = {(row["kpi_code"], row["dimensions"].get("nivel_severidad")): row["value"] for row in rows}
     assert values[("KPI-RC-03", None)] == 1 and values[("KPI-CN-02", None)] == 1
     assert values[("KPI-LI-01", "medio")] == Decimal("10")
+
+
+@pytest.mark.requires_db
+def test_snapshot_incluye_lo_ingresado_la_ultima_noche_del_mes_en_hora_de_mexico(database) -> None:
+    """31 ene 23:00 en la Ciudad de México ya es 1 feb en UTC, pero pertenece al corte de enero."""
+    engine, conninfo = database
+    last_night = datetime(2026, 2, 1, 5, 0, tzinfo=UTC)
+    for at in (INGESTED_AT, last_night):
+        _contract(engine, expiry=date(2026, 2, 15), created_at=at)
+        _compliance(engine, created_at=at)
+    _service(conninfo).recalculate(_month(1, codes=("KPI-RC-03", "KPI-CN-02")), _context())
+    rows = _rows(engine, "SELECT kpi_code, value FROM app.kpi_observation")
+    values = {row["kpi_code"]: row["value"] for row in rows}
+    assert values["KPI-RC-03"] == 2 and values["KPI-CN-02"] == 2
 
 
 @pytest.mark.requires_db

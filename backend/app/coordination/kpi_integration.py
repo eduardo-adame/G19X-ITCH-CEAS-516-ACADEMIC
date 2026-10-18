@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 from typing import Iterable
 from uuid import UUID, uuid5
 
 from app.analytics.models import KpiRecalculationContext, KpiRecalculationRequest
+from app.business_time import business_date
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.service import KPIRecalculationService, requested_kpis_for_projection
 from app.projection.models import ProjectionContext, ProjectionResult
@@ -112,7 +113,7 @@ class KpiIntegrationService:
                 if row is None or not row["is_final"] or row["estado_ocr"] not in _FINAL_OCR_STATES:
                     outcome = self._create_job(connection, operation_id, correlation_id, (), "OCR")
                 else:
-                    reference = _as_utc_date(row["processed_at"])
+                    reference = business_date(row["processed_at"])
                     request = self.analytics.request_for_final_ocr(
                         period_start=_month_start(reference),
                         period_end=_month_end(reference),
@@ -262,7 +263,7 @@ def canonical_requests_for_projection(connection, results: Iterable[ProjectionRe
         )
         if application is None:
             raise KpiIntegrationError("aplicación analítica no encontrada")
-        snapshot_reference = _as_utc_date(application["applied_at"])
+        snapshot_reference = business_date(application["applied_at"])
         for code in codes:
             reference = snapshot_reference if code in _SNAPSHOT_CODES else repository.business_temporal_value(
                 connection, entity_type=result.entity_type, business_id=result.business_id
@@ -272,7 +273,7 @@ def canonical_requests_for_projection(connection, results: Iterable[ProjectionRe
                     continue
                 raise KpiIntegrationError("referencia temporal analítica inexistente")
             if isinstance(reference, datetime):
-                reference = _as_utc_date(reference)
+                reference = business_date(reference)
             period_start, period_end = _month_start(reference), _month_end(reference)
             # El mes pertenece a la fecha de negocio, pero el corte representa
             # la incorporación durable; una reinyección tardía no es un cálculo viejo.
@@ -315,7 +316,3 @@ def _month_start(value: date) -> date:
 
 def _month_end(value: date) -> date:
     return (_month_start(value).replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-
-
-def _as_utc_date(value: datetime) -> date:
-    return value.astimezone(UTC).date()

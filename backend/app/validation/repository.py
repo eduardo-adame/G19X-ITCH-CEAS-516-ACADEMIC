@@ -245,7 +245,8 @@ class ValidationRepository:
             f"""SELECT q.id, q.ingest_file_id, q.source_record_id, q.cause_code, q.state,
                        q.original_payload, q.candidate_payload, q.discard_justification,
                        q.operation_id, q.correlation_id, q.created_at,
-                       f.source_family, r.row_number
+                       f.source_family, r.row_number,
+                       CASE WHEN f.exchange_format = 'XLSX' THEN r.source_sheet END AS source_sheet
                   FROM app.quarantine_item q
                   LEFT JOIN app.ingest_file f ON f.id = q.ingest_file_id
                   LEFT JOIN app.source_record r ON r.id = q.source_record_id

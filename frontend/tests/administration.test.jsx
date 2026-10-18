@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { SessionProvider } from '../src/auth/SessionProvider.jsx'
 import { ApiError } from '../src/api/errors.js'
-import { AdministrationPage } from '../src/features/operations/AdministrationPage.jsx'
+import { AdministrationPage, failureReason } from '../src/features/operations/AdministrationPage.jsx'
+import { consumePermissionChange } from '../src/auth/sessionNotice.js'
 
 const ownId = '11111111-1111-4111-8111-111111111111'
 const otherId = '22222222-2222-4222-8222-222222222222'
@@ -82,10 +83,11 @@ describe('SRS_REQUIRED: administración TI', () => {
     expect(screen.getByText('Cuenta de Ana Martínez deshabilitada.')).toBeVisible()
   })
 
-  it('presenta conflicto del último TI como respuesta segura dentro del diálogo', async () => {
+  it('dejar el sistema sin TI activo se explica con su motivo dentro del diálogo', async () => {
     const request = vi.fn(async () => { throw new ApiError(409) }); mount({ request }); const dialog = await pick('Ana Martínez', 'Deshabilitar cuenta')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Revisar' })); await userEvent.click(within(dialog).getByRole('button', { name: 'Deshabilitar cuenta' }))
-    expect(await within(dialog).findByText(/conflicto/)).toBeVisible()
+    expect(await within(dialog).findByText(/El sistema quedaría sin ninguna cuenta TI activa/)).toBeVisible()
+    expect(within(dialog).queryByText('Acceso no autorizado.')).not.toBeInTheDocument()
   })
 
   it('una revocación durante revalidación impide la mutación', async () => {
@@ -175,5 +177,55 @@ describe('ROBUSTNESS: permisos concedidos (SRS 0.26)', () => {
     await userEvent.click(within(dialog).getByRole('radio', { name: 'Un rol' }))
     expect(within(dialog).getByLabelText('Rol')).toBeVisible()
     expect(within(dialog).queryByRole('group', { name: 'Cuenta seleccionada' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ROBUSTNESS: motivos de rechazo y cierre de la propia sesión (certificación O-2 y O-4)', () => {
+  const permissionReads = (path) => path.startsWith('/security/document-scopes') ? { items: [] } : path.startsWith('/security/document-exceptions') ? { items: [], next_cursor: null } : ACCOUNTS
+  it('cada rechazo 409/422 tiene su motivo; 403 y fallos técnicos conservan el mensaje seguro', () => {
+    expect(failureReason('roles', new ApiError(409))).toMatch('sin ninguna cuenta TI activa')
+    expect(failureReason('create', new ApiError(409))).toMatch('Ya existe una cuenta con ese usuario')
+    expect(failureReason('reset', new ApiError(422))).toBe('La contraseña debe tener entre 12 y 128 caracteres.')
+    expect(failureReason('update', new ApiError(422))).toMatch('nombre visible no puede quedar vacío')
+    expect(failureReason('user-exception', new ApiError(422))).toMatch('documento existente')
+    expect(failureReason('disable', new ApiError(403))).toBeNull()
+    expect(failureReason('disable', new ApiError(503))).toBeNull()
+  })
+  it('un nombre inválido se explica en el diálogo de edición', async () => {
+    mount({ request: vi.fn(async () => { throw new ApiError(422) }) })
+    const dialog = await pick('Ana Martínez', 'Editar nombre')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
+    expect(await within(dialog).findByText(/El nombre visible no puede quedar vacío/)).toBeVisible()
+  })
+  it('la contraseña exige entre 12 y 128 caracteres antes de enviar', async () => {
+    mount(); await userEvent.click(await screen.findByRole('button', { name: 'Nueva cuenta' }))
+    const field = within(screen.getByRole('dialog')).getByLabelText('Contraseña nueva')
+    expect(field).toHaveAttribute('minlength', '12'); expect(field).toHaveAttribute('maxlength', '128')
+    expect(field.getAttribute('aria-describedby')).toContain('password-rule')
+    expect(screen.getByText('Entre 12 y 128 caracteres.')).toBeVisible()
+  })
+  it('darse alcance al propio rol advierte del cierre de sesión y lo anota para la pantalla de acceso', async () => {
+    consumePermissionChange()
+    const request = vi.fn(async () => null)
+    mount({ request, reads: permissionReads })
+    await userEvent.click(screen.getByRole('tab', { name: 'Permisos concedidos' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Dar acceso a TI en Litigios' }))
+    const dialog = screen.getByRole('dialog', { name: 'Dar acceso' })
+    expect(within(dialog).getByRole('note')).toHaveTextContent('se cerrará tu sesión')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Dar acceso' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('/security/document-scopes/TI/LITIGIOS', { method: 'PUT', body: { active: true } }))
+    expect(consumePermissionChange()).toBe(true)
+  })
+  it('un cambio que no afecta a la propia cuenta no advierte ni anota nada', async () => {
+    consumePermissionChange()
+    const request = vi.fn(async () => null)
+    mount({ request, reads: permissionReads })
+    await userEvent.click(screen.getByRole('tab', { name: 'Permisos concedidos' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Dar acceso a Jurídico en Litigios' }))
+    const dialog = screen.getByRole('dialog', { name: 'Dar acceso' })
+    expect(within(dialog).queryByRole('note')).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Dar acceso' }))
+    await waitFor(() => expect(request).toHaveBeenCalled())
+    expect(consumePermissionChange()).toBe(false)
   })
 })

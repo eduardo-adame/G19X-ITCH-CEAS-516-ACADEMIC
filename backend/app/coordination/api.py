@@ -12,6 +12,7 @@ from uuid import UUID, uuid4, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.business_time import business_date
 from app.config import Settings, get_settings
 from app.coordination.repository import CoordinationRepository
 from app.coordination.windows import ScheduledWindowError, validate_scheduled_window
@@ -192,7 +193,7 @@ def scheduled_kpi_recalculation(
         outcome = integration.schedule(
             operation_id=operation_id,
             correlation_id=correlation_id,
-            reference=payload.data_interval_start.date(),
+            reference=business_date(payload.data_interval_start),
         )
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="El recálculo no pudo confirmarse") from None

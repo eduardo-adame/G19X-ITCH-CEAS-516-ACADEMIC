@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAuditTimestamp, formatDocumentDate, formatMonth, formatPeriodRange, formatQuantity, formatUserTimestamp, localDayBoundary, localDayOf } from '../src/shared/presentation.js'
+import { formatAuditTimestamp, formatDocumentDate, formatMonth, formatPeriodRange, formatQuantity, formatUserTimestamp, localDayBoundary, localDayOf, quickRanges, formatClock } from '../src/shared/presentation.js'
 import { auditActionLabel, familyLabel, quarantineCauseLabel, roleLabel, statusPresentation } from '../src/shared/labels.js'
 import { describeFinding, evaluatedMonth, recurrenceText } from '../src/features/analytics/findingNarrative.js'
 
@@ -24,7 +24,9 @@ describe('SRS_REQUIRED: política de fechas DESIGN §16.2', () => {
   it('USER_TIMESTAMP sin «UTC» visible y AUDIT_TIMESTAMP con segundos y zona explícita', () => {
     expect(formatUserTimestamp('2026-10-13T04:06:12Z')).toMatch(/^\d{1,2} [a-z]{3} \d{4}, \d{2}:\d{2}$/)
     expect(formatUserTimestamp('2026-10-13T04:06:12Z')).not.toContain('UTC')
-    expect(formatAuditTimestamp('2026-10-13T04:06:12Z')).toBe('13 oct 2026, 04:06:12 UTC')
+    // 04:06 UTC del 13 de octubre son las 22:06 del 12 de octubre en la Ciudad de México.
+    expect(formatUserTimestamp('2026-10-13T04:06:12Z')).toBe('12 oct 2026, 22:06')
+    expect(formatAuditTimestamp('2026-10-13T04:06:12Z')).toBe('12 oct 2026, 22:06:12 (hora de la Ciudad de México)')
     expect(formatUserTimestamp('no-es-fecha')).toBe('—')
   })
   it('filtros de fecha: el día local viaja con zona explícita y vuelve al mismo día', () => {
@@ -102,5 +104,22 @@ describe('ROBUSTNESS: rótulos de valores internos sin inventar', () => {
     expect(statusPresentation('audit', 'DENIED')).toEqual({ label: 'Denegado', variant: 'critical' })
     expect(statusPresentation('processing', 'LISTA')).toEqual({ label: 'Listo', variant: 'success' })
     expect(statusPresentation('audit', 'OTRO')).toEqual({ label: 'OTRO', variant: 'neutral' })
+  })
+})
+
+describe('SRS_REQUIRED: hora de la Ciudad de México en toda la interfaz (decisión del usuario, 2026-10-17)', () => {
+  it('los filtros envían los límites del día con el desplazamiento de la Ciudad de México', () => {
+    expect(localDayBoundary('2026-10-31')).toBe('2026-10-31T00:00:00-06:00')
+    expect(localDayBoundary('2026-10-31', { end: true })).toBe('2026-10-31T23:59:59-06:00')
+    expect(localDayOf('2026-11-01T02:00:00Z')).toBe('2026-10-31')
+  })
+  it('«Hoy» y «Este mes» se calculan con el día de la Ciudad de México aunque en UTC ya sea otro día', () => {
+    const ranges = Object.fromEntries(quickRanges(new Date('2026-11-01T05:30:00Z')).map((range) => [range.value, range]))
+    expect(ranges.today).toMatchObject({ from: '2026-10-31', to: '2026-10-31' })
+    expect(ranges.this_month).toMatchObject({ from: '2026-10-01', to: '2026-10-31' })
+    expect(ranges.last_7).toMatchObject({ from: '2026-10-25', to: '2026-10-31' })
+  })
+  it('el reloj de la barra superior muestra la hora de la Ciudad de México', () => {
+    expect(formatClock(new Date('2026-10-18T05:17:00Z'))).toEqual({ long: 'sábado, 17 oct 2026 · 23:17', short: '17 oct, 23:17', iso: '2026-10-17T23:17' })
   })
 })

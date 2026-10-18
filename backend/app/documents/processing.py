@@ -33,6 +33,20 @@ def _ocr_estado(aggregate: float | None) -> str:
     return "Exitoso" if aggregate >= LOW_CONFIDENCE_THRESHOLD else "Rechazado por baja confianza"
 
 
+def _document_confidence(page_results) -> tuple[float | None, str | None, tuple[float, ...]]:
+    """Confianza_Agregada del documento según RF-020.
+
+    Con confianzas por palabra en todas las páginas reconocidas, la agregada es el
+    promedio de todas las palabras del documento (no el promedio de los promedios
+    por página) y esas muestras se conservan. Si el motor solo entrega una
+    confianza por página, se promedian las páginas y se registra esa granularidad.
+    """
+    if page_results and all(len(result) > 2 for result in page_results):
+        samples = tuple(float(value) for result in page_results for value in result[2] if 0 <= float(value) <= 1)
+        return aggregate_confidence(samples), "WORD", samples
+    return aggregate_confidence([result[1] for result in page_results]), "PAGE", ()
+
+
 def process_candidate(
     *,
     conninfo: str,
@@ -69,7 +83,7 @@ def process_candidate(
 
     required_pages = [page.page_number for page in candidate.pages if page.requires_ocr]
     ocr_used = bool(required_pages)
-    ocr_text_by_page: dict[int, tuple[str, float | None]] = {}
+    ocr_text_by_page: dict[int, tuple] = {}
     if ocr_used:
         try:
             if ocr_pipeline is None:
@@ -89,8 +103,9 @@ def process_candidate(
                     )
             raise
 
-    confidences = [ocr_text_by_page[n][1] for n in required_pages if n in ocr_text_by_page]
-    aggregate = aggregate_confidence(confidences) if ocr_used else None
+    aggregate, granularity, samples = _document_confidence(
+        [ocr_text_by_page[n] for n in required_pages if n in ocr_text_by_page]
+    ) if ocr_used else (None, None, ())
     low_confidence = ocr_used and (aggregate is None or aggregate < LOW_CONFIDENCE_THRESHOLD)
 
     pages = tuple(NativePage(p.page_number, p.native_text, p.requires_ocr) for p in candidate.pages)
@@ -162,7 +177,8 @@ def process_candidate(
                     confianza_agregada=aggregate,
                     total_page_count=len(candidate.pages),
                     processed_page_count=len(required_pages),
-                    granularity="WORD",
+                    granularity=granularity,
+                    samples=samples,
                     operation_id=context.operation_id,
                     correlation_id=context.correlation_id,
                 )
@@ -206,7 +222,8 @@ def process_candidate(
                 confianza_agregada=aggregate,
                 total_page_count=len(candidate.pages),
                 processed_page_count=len(required_pages),
-                granularity="WORD",
+                granularity=granularity,
+                samples=samples,
                 operation_id=context.operation_id,
                 correlation_id=context.correlation_id,
             )

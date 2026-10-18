@@ -361,7 +361,7 @@ Para ejecutarlo de inmediato, sin esperar la programación diaria:
 docker compose --profile airflow exec airflow-scheduler airflow dags trigger controlled_ingestion
 ```
 
-El DAG se programa diariamente y ejecuta, en orden:
+El DAG se programa diariamente a la medianoche de la Ciudad de México (`America/Mexico_City`) y ejecuta, en orden:
 
 1. Ingesta desde las ubicaciones controladas y despacho de los archivos aceptados.
 2. Recálculo programado de indicadores.

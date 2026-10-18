@@ -113,7 +113,8 @@ def _require_terminal_job(response, allowed_states: set[str], label: str) -> Non
         raise RuntimeError(f"{label} no alcanzó un estado terminal exitoso")
 
 
-with DAG("controlled_ingestion", start_date=datetime(2026, 1, 1), schedule="@daily", catchup=False) as dag:
+# El ciclo diario cubre el día de la Ciudad de México (medianoche a medianoche local), no el día UTC.
+with DAG("controlled_ingestion", start_date=datetime(2026, 1, 1, tz="America/Mexico_City"), schedule="@daily", catchup=False) as dag:
     ingestion = PythonOperator(task_id="run_controlled_ingestion", python_callable=run_controlled_ingestion, retries=1)
     recalculation = PythonOperator(task_id="request_scheduled_kpi_recalculation", python_callable=request_scheduled_kpi_recalculation, retries=1)
     proactive = PythonOperator(task_id="request_scheduled_proactive_analysis", python_callable=request_scheduled_proactive_analysis, retries=1)

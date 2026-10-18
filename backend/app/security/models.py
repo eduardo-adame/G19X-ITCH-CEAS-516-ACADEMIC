@@ -22,6 +22,10 @@ class ValidationError(SecurityError):
     """La entrada no cumple una precondición de seguridad."""
 
 
+class LastActiveTiError(ValidationError):
+    """La operación dejaría el sistema sin ninguna cuenta TI activa (RF-068)."""
+
+
 class AccountConflictError(SecurityError):
     """La cuenta solicitada entra en conflicto con una identidad única existente."""
 

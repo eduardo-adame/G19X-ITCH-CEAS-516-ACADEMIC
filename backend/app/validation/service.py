@@ -44,6 +44,8 @@ class TabularRecord:
     source_record_id: UUID
     values_by_name: dict[str, object]
     width: int
+    # Hoja de origen en XLSX; en un libro de varias hojas la fila solo es única dentro de su hoja.
+    sheet: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,17 +82,14 @@ class ValidationService:
         records: tuple[TabularRecord, ...],
         context: ValidationContext,
         capability: str = "ingest.execute",
+        sheet_headers: tuple[tuple[str, tuple[object, ...]], ...] = (),
     ) -> ValidationResult:
         with self.repository.transaction() as connection:
             self._authorize(connection, context, capability)
             authoritative_family = self.repository.family_for_file(connection, file_id)
             if family != authoritative_family:
                 raise ValidationInvocationError("familia de invocación no coincide con el archivo")
-            structural = validate_structure_for_family(
-                headers,
-                ((record.position, record.width) for record in records),
-                authoritative_family,
-            )
+            structural = _validate_structure(headers, records, authoritative_family, sheet_headers)
             if not structural.conforming:
                 self.repository.write_audit_event(
                     connection,
@@ -106,7 +105,7 @@ class ValidationService:
                     file_id=str(file_id), family=authoritative_family, structural=structural,
                     conforming_positions=(), quarantined=(),
                 )
-            positions = tuple(record.position for record in records)
+            positions = tuple((record.sheet, record.position) for record in records)
             if len(positions) != len(set(positions)):
                 raise ValidationInvocationError("posiciones de registro duplicadas")
             for record in records:
@@ -242,6 +241,13 @@ class ValidationService:
         item = self.repository.load_quarantine(connection, item_id, for_update=True)
         if item is None:
             raise QuarantineError("elemento de cuarentena inexistente")
+        # Un archivo retenido completo no tiene registro tabular que corregir.
+        if item.source_record_id is None:
+            raise QuarantineError("el elemento no tiene un registro tabular corregible")
+        # SRS 5.5.9: el conflicto de identidad se marca, pero no existe resolución
+        # manual; el elemento solo puede descartarse con justificación.
+        if item.cause == QuarantineCause.IDENTITY_CONFLICT:
+            raise QuarantineError("un conflicto de identidad solo admite descarte")
         candidate = _reinject(item, corrected_payload)
         provenance = self.repository.provenance_for_quarantine(connection, item)
         try:
@@ -451,6 +457,34 @@ class ValidationService:
                 safe_cause_code=QuarantineCause.INVALID_TYPE.value,
             )
         quarantined.append((record.position, QuarantineCause.INVALID_TYPE))
+
+
+def _validate_structure(headers, records, family: SourceFamily, sheet_headers):
+    """Valida la estructura del archivo completo (RF-008).
+
+    En un libro de varias hojas cada hoja con registros se valida con sus propios
+    encabezados; basta una hoja inconsistente para rechazar el archivo completo.
+    Una hoja sin registros no aporta datos y no se evalúa.
+    """
+    by_sheet = dict(sheet_headers)
+    sheets = []
+    for record in records:
+        if record.sheet not in sheets:
+            sheets.append(record.sheet)
+    if len(by_sheet) < 2 or any(sheet not in by_sheet for sheet in sheets):
+        return validate_structure_for_family(
+            headers, ((record.position, record.width) for record in records), family,
+        )
+    structural = None
+    for sheet in sheets:
+        structural = validate_structure_for_family(
+            by_sheet[sheet],
+            ((record.position, record.width) for record in records if record.sheet == sheet),
+            family,
+        )
+        if not structural.conforming:
+            return structural
+    return structural or validate_structure_for_family(headers, (), family)
 
 
 def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:

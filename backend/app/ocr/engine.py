@@ -33,6 +33,8 @@ class OcrPageResult:
     text: str
     confidence: float | None
     granularity: str | None = None
+    # Confianzas válidas por palabra (0.00–1.00), en orden de lectura (RF-020).
+    samples: tuple[float, ...] = ()
 
 
 class OcrEngine(Protocol):
@@ -93,6 +95,7 @@ class TesseractOcrEngine:
             text=" ".join(words),
             confidence=aggregate,
             granularity="WORD",
+            samples=tuple(confidences),
         )
 
 

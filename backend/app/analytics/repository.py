@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime
 import json
 from typing import Iterator
 from uuid import UUID, uuid4
@@ -19,6 +19,7 @@ from app.analytics.models import (
     ProactiveObservation,
 )
 from app.analytics.proactive_rules import canonical_dimensions, derive_snapshot_id
+from app.business_time import day_end, day_start
 
 
 class AnalyticsRepository:
@@ -95,7 +96,7 @@ class AnalyticsRepository:
                WHERE EXCLUDED.as_of_date >= app.kpi_observation.as_of_date
                  AND NOT (app.kpi_observation.kpi_code = ANY(%s)
                           AND app.kpi_observation.as_of_date = app.kpi_observation.period_end
-                          AND app.kpi_observation.calculated_at >= (app.kpi_observation.period_end + 1)::timestamp AT TIME ZONE 'UTC')""",
+                          AND app.kpi_observation.calculated_at >= (app.kpi_observation.period_end + 1)::timestamp AT TIME ZONE 'America/Mexico_City')""",
             (uuid4(), run_id, observation.kpi_code, observation.period_start, observation.period_end, dimensions, observation.value, observation.availability, observation.as_of_date, sorted(SNAPSHOT_KPI_CODES)),
         )
 
@@ -113,7 +114,7 @@ class AnalyticsRepository:
 
     @staticmethod
     def source_coverage(connection, family: str, as_of: date) -> bool:
-        """Cobertura de la fuente al corte: existe una carga tabular aceptada de la familia recibida hasta el fin del día as_of (UTC).
+        """Cobertura de la fuente al corte: existe una carga tabular aceptada de la familia recibida hasta el fin del día as_of (hora de la Ciudad de México).
 
         Cero filas en una tabla no prueban cobertura; sin carga aceptada previa al corte el
         snapshot no puede afirmarse y es No disponible (aclaración SRS v0.22).
@@ -121,16 +122,16 @@ class AnalyticsRepository:
         return bool(connection.execute(
             """SELECT EXISTS (SELECT 1 FROM app.ingest_file
                    WHERE source_family = %s AND exchange_format IN ('CSV', 'XLSX') AND technical_result = 'ACCEPTED'
-                     AND received_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC') AS covered""",
+                     AND received_at < (%s::date + 1)::timestamp AT TIME ZONE 'America/Mexico_City') AS covered""",
             (family, as_of),
         ).fetchone()["covered"])
 
     @staticmethod
     def contracts_snapshot(connection, as_of: date | None = None):
-        # El corte incluye lo incorporado hasta el fin del día as_of (UTC); los registros no se actualizan en sitio.
+        # El corte incluye lo incorporado hasta el fin del día as_of (hora de la Ciudad de México); los registros no se actualizan en sitio.
         if as_of is None:
             return connection.execute("SELECT * FROM app.contract_record").fetchall()
-        return connection.execute("SELECT * FROM app.contract_record WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
+        return connection.execute("SELECT * FROM app.contract_record WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'America/Mexico_City'", (as_of,)).fetchall()
 
     @staticmethod
     def litigation_rows(connection, period_start: date, period_end: date):
@@ -140,13 +141,13 @@ class AnalyticsRepository:
     def active_litigations(connection, as_of: date | None = None):
         if as_of is None:
             return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo'").fetchall()
-        return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo' AND created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
+        return connection.execute("SELECT * FROM app.litigation WHERE estado='Activo' AND created_at < (%s::date + 1)::timestamp AT TIME ZONE 'America/Mexico_City'", (as_of,)).fetchall()
 
     @staticmethod
     def compliance_snapshot(connection, as_of: date | None = None):
         if as_of is None:
             return connection.execute("SELECT * FROM app.compliance_obligation").fetchall()
-        return connection.execute("SELECT * FROM app.compliance_obligation WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'", (as_of,)).fetchall()
+        return connection.execute("SELECT * FROM app.compliance_obligation WHERE created_at < (%s::date + 1)::timestamp AT TIME ZONE 'America/Mexico_City'", (as_of,)).fetchall()
 
     @staticmethod
     def incident_rows(connection, period_start: date, period_end: date):
@@ -167,7 +168,7 @@ class AnalyticsRepository:
     @staticmethod
     def ocr_final_rows(connection, as_of: date | None = None):
         # Para un corte sólo existen los resultados OCR procesados hasta ese día (RF-037).
-        cutoff = "" if as_of is None else " AND r.processed_at < (%s::date + 1)::timestamp AT TIME ZONE 'UTC'"
+        cutoff = "" if as_of is None else " AND r.processed_at < (%s::date + 1)::timestamp AT TIME ZONE 'America/Mexico_City'"
         return connection.execute(
             """WITH selected AS (
                 SELECT d.id_documento, r.confianza_agregada,
@@ -414,5 +415,5 @@ class AnalyticsRepository:
         ).fetchall()
 
 
-def _start(value: date) -> datetime: return datetime.combine(value, time.min, tzinfo=UTC)
-def _end(value: date) -> datetime: return datetime.combine(value, time.max, tzinfo=UTC)
+def _start(value: date) -> datetime: return day_start(value)
+def _end(value: date) -> datetime: return day_end(value)
