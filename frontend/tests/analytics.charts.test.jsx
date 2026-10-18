@@ -10,7 +10,7 @@ vi.mock('recharts', () => {
   const Graph = ({ data, children }) => <div data-testid="chart" data-points={JSON.stringify(data)}>{children}</div>
   return {
     ResponsiveContainer: Container, BarChart: Graph, LineChart: Graph, PieChart: Graph,
-    Pie: () => null, Cell: () => null, CartesianGrid: () => null, XAxis: () => null, Tooltip: () => null,
+    Pie: () => null, Cell: () => null, LabelList: () => null, CartesianGrid: () => null, XAxis: () => null, Tooltip: () => null,
     YAxis: ({ domain, ticks, allowDecimals }) => <span data-testid="axis" data-domain={JSON.stringify(domain)} data-ticks={JSON.stringify(ticks)} data-decimals={String(allowDecimals)} />,
     Line: ({ dataKey, connectNulls, isAnimationActive }) => <span data-testid="line" data-key={dataKey} data-connect={String(connectNulls)} data-animation={String(isAnimationActive)} />,
     Bar: ({ dataKey, isAnimationActive }) => <span data-testid="bar" data-key={dataKey} data-animation={String(isAnimationActive)} />,
@@ -124,8 +124,8 @@ describe('ROBUSTNESS: presentación de contextos y decimales de alta precisión'
   it('LI01 separa contextos reales en trazas y no combina alto A con medio B', () => {
     const items = exposure().map((row, index) => ({ ...row, dimensions: { ...row.dimensions, entity: index === 1 ? 'B' : 'A' } }))
     render(<LitigationExposureChart items={adapted(items)} />)
-    expect(screen.getByRole('table')).toHaveTextContent('entity: A')
-    expect(screen.getByRole('table')).toHaveTextContent('entity: B')
+    expect(screen.getByRole('table')).toHaveTextContent('Entidad: A')
+    expect(screen.getByRole('table')).toHaveTextContent('Entidad: B')
     expect(screen.queryByRole('columnheader', { name: 'Total', exact: true })).not.toBeInTheDocument()
     expect(screen.queryByText('$315,000 MXN')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('chart')).toHaveLength(1)

@@ -62,7 +62,10 @@ test.describe('ROBUSTNESS: calendario, unidades y gráficas aprobadas por domini
     await expect(chart.locator('path.recharts-line-curve')).toHaveCount(0)
     await bars.nth(2).hover()
     await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('Nuevos litigios')
-    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('1 litigios')
+    await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('1 litigio')
+    await expect(chart.locator('.recharts-tooltip-wrapper')).not.toContainText('1 litigios')
+    // Cada barra muestra su valor, incluido el 0, para distinguirlo de un mes sin dato.
+    expect(await chart.locator('.recharts-label-list text').allTextContents()).toEqual(['1', '1', '1', '1', '1'])
     await checkViewport(page, chart)
   })
   test('un único mes observado no crea historia RC01 ni dominio degenerado', async ({ page }) => {
@@ -130,7 +133,11 @@ test.describe('SRS_REQUIRED: valores, disponibilidad y partición sin imputació
     const ticks = await chart.locator('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value').allTextContents()
     expect(ticks.length).toBeGreaterThanOrEqual(2)
     expect(ticks.every((value) => /^\d+$/.test(value))).toBe(true)
-    expect(await chart.locator('.recharts-bar-rectangle').evaluateAll((elements) => elements.filter((element) => element.getBoundingClientRect().height > 0).length)).toBe(2)
+    // El cero observado tiene una marca mínima (≤ 2 px) y su etiqueta «0»; ND y ausencia no dibujan nada.
+    const heights = await chart.locator('.recharts-bar-rectangle').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height).filter((height) => height > 0))
+    expect(heights).toHaveLength(3)
+    expect(heights.filter((height) => height <= 2.5)).toHaveLength(1)
+    expect(await chart.locator('.recharts-label-list text').allTextContents()).toEqual(['1', '0', '3'])
   })
   test('LI01 partición incompleta retiene medio/bajo sin total parcial', async ({ page }) => {
     await routes(page, exposure(['medio', 'bajo']))
@@ -150,8 +157,8 @@ test.describe('ROBUSTNESS: contextos del contrato sin mezclas silenciosas', () =
     await page.goto('/litigios')
     const data = table(page, exposureTitle)
     await expect(data.locator('tbody tr')).toHaveCount(2)
-    await expect(data).toContainText('entity: A')
-    await expect(data).toContainText('entity: B')
+    await expect(data).toContainText('Entidad: A')
+    await expect(data).toContainText('Entidad: B')
     await expect(data.getByRole('columnheader', { name: 'Total', exact: true })).toHaveCount(0)
     await expect(data).not.toContainText('$315,000 MXN')
     await expect(figure(page, exposureTitle).locator('circle.recharts-line-dot')).toHaveCount(1)

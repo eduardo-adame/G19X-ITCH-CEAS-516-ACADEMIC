@@ -9,7 +9,7 @@ vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>
   const Graph = ({ data, layout, children }) => <div data-testid="chart" data-layout={layout} data-points={JSON.stringify(data)}>{children}</div>
   const Plot = ({ dataKey, stackId }) => <span data-testid="bar" data-key={dataKey} data-stack={stackId} />
-  return { ResponsiveContainer: Container, BarChart: Graph, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Bar: Plot, LineChart: Graph, Line: Plot, PieChart: Graph, Pie: Plot, Cell: () => null }
+  return { ResponsiveContainer: Container, BarChart: Graph, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Bar: Plot, LineChart: Graph, Line: Plot, PieChart: Graph, Pie: Plot, Cell: () => null, LabelList: () => null }
 })
 
 const cn03 = (area, nivel_severidad, value, month = '2026-10', availability = 'DISPONIBLE') => ({
@@ -20,17 +20,17 @@ const cn03 = (area, nivel_severidad, value, month = '2026-10', availability = 'D
 const adapted = (items) => adaptKpis({ items, filters: {}, period_start: null, period_end: null, period_reference: null }).items
 
 describe('SRS_REQUIRED: incidentes por área sin totales derivados (UX-006, DESIGN §16.4, D-UX-7)', () => {
-  it('usa solo el último periodo, ordena áreas alfabéticamente y conserva cero, ND y ausencia', () => {
+  it('usa solo el último periodo, ordena áreas de mayor a menor (empate alfabético) y conserva cero, ND y ausencia', () => {
     const model = incidentsByAreaViewModel(adapted([
       cn03('Operaciones', 'medio', '3'), cn03('Cumplimiento', 'alto', '3'), cn03('Compras', 'alto', '0'),
       cn03('Finanzas', 'medio', null, '2026-10', 'NO_DISPONIBLE'), cn03('Cumplimiento', 'alto', '9', '2026-09'),
     ]))
     expect(model.periodText).toBe('octubre 2026')
-    expect(model.rows.map((row) => row.area)).toEqual(['Compras', 'Cumplimiento', 'Finanzas', 'Operaciones'])
-    expect(model.rows[1]).toMatchObject({ alto: 3, altoText: '3', medioText: 'Sin observación' })
-    expect(model.rows[0]).toMatchObject({ alto: 0, altoText: '0' })
-    expect(model.rows[2]).toMatchObject({ medioText: 'No disponible' })
-    expect(model.rows[2].medio).toBeUndefined()
+    expect(model.rows.map((row) => row.area)).toEqual(['Cumplimiento', 'Operaciones', 'Compras', 'Finanzas'])
+    expect(model.rows[0]).toMatchObject({ alto: 3, altoText: '3', medioText: 'Sin observación' })
+    expect(model.rows[2]).toMatchObject({ alto: 0, altoText: '0' })
+    expect(model.rows[3]).toMatchObject({ medioText: 'No disponible' })
+    expect(model.rows[3].medio).toBeUndefined()
     expect(model.series.map((series) => series.key)).toEqual(['alto', 'medio'])
     expect(JSON.stringify(model)).not.toContain('"9"')
   })

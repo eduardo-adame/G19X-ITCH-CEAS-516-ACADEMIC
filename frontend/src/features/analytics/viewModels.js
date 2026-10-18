@@ -82,55 +82,74 @@ export function formatPeriod(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value) ? value : formatDate(value)
 }
 
+// Evolución de exposición (KPI-LI-01) sobre el calendario completo de la selección: un mes sin observación o con
+// observaciones «No disponible» se conserva como tal, sin omitirlo ni imputarlo. El total del mes solo se informa
+// con Alto, Medio y Bajo disponibles del mismo periodo y contexto (DDG-003).
 export function exposureEvolutionViewModel(items) {
-  const periods = groupedPeriods(items, 'KPI-LI-01')
+  const eligible = items.filter((row) => row.kpi_code === 'KPI-LI-01' && row.severity)
+  const periods = groupedPeriods(eligible, 'KPI-LI-01')
+  const sources = new Map([...periods.keys()].map((key) => [key, []]))
   const present = new Set()
-  for (const item of items.filter((row) => row.kpi_code === 'KPI-LI-01' && row.severity)) {
+  for (const item of eligible) {
+    const period = periods.get(item.period_start)
+    sources.get(item.period_start).push(item)
     const value = chartNumber(item)
-    if (value === null) continue
-    periods.get(item.period_start)[item.severity] = value
-    periods.get(item.period_start)[`${item.severity}Raw`] = item.value
-    periods.get(item.period_start)[`${item.severity}Text`] = formatCurrencyMXN(item.value)
+    if (value === null) { period[`${item.severity}Text`] = 'No disponible'; continue }
+    period[item.severity] = value
+    period[`${item.severity}Raw`] = item.value
+    period[`${item.severity}Text`] = formatCurrencyMXN(item.value)
     present.add(item.severity)
   }
-  return {
-    rows: [...periods.values()].filter((row) => SEVERITIES.some(({ key }) => row[key] !== undefined)),
-    series: SEVERITIES.filter(({ key }) => present.has(key)),
-  }
+  const observed = [...periods.values()].map((row) => {
+    const rowSources = sources.get(row.period_start)
+    const complete = hasCompleteExposurePartition(rowSources)
+    const totalRaw = complete ? sumDecimals(rowSources.map((item) => item.value)) : null
+    const texts = Object.fromEntries(SEVERITIES.map(({ key }) => [`${key}Text`, row[`${key}Text`] || 'Sin observación']))
+    return { ...row, ...texts, availability: SEVERITIES.some(({ key }) => row[key] !== undefined) ? 'DISPONIBLE' : 'NO_DISPONIBLE', complete, totalRaw, totalText: complete ? formatCurrencyMXN(totalRaw) : 'No disponible' }
+  })
+  const rows = monthlyTimeline(observed).map((row) => row.availability === 'NO_OBSERVATION'
+    ? { ...row, ...Object.fromEntries(SEVERITIES.map(({ key }) => [`${key}Text`, 'Sin observación'])), complete: false, totalText: 'Sin observación' }
+    : row)
+  return { rows, series: SEVERITIES.filter(({ key }) => present.has(key)) }
 }
 
+// Composición del último periodo por severidad. Las tres severidades se presentan siempre; una ausente o
+// «No disponible» se muestra como tal. Total y porcentajes solo con la partición completa (DDG-003): con una
+// severidad faltante, un porcentaje sobre las demás describiría mal el reparto.
 export function severityCompositionViewModel(items) {
   const eligible = items.filter((item) => item.kpi_code === 'KPI-LI-01' && item.severity)
   if (!eligible.length) return { period: null, total: null, rows: [] }
   const period = eligible.reduce((latest, item) => item.period_start > latest ? item.period_start : latest, eligible[0].period_start)
-  const selected = new Map()
-  for (const item of eligible.filter((row) => row.period_start === period)) {
-    const value = chartNumber(item)
-    if (value !== null) selected.set(item.severity, { item, value })
-  }
+  const current = eligible.filter((item) => item.period_start === period)
   // Observaciones del periodo sin valor disponible: «No disponible», no «Sin observación».
-  if (!selected.size) return { period, total: null, rows: [], unavailable: eligible.some((item) => item.period_start === period && item.availability === 'NO_DISPONIBLE') }
-  const totalRaw = sumDecimals([...selected.values()].map((row) => row.item.value))
-  const total = Number(totalRaw)
-  const rows = SEVERITIES.flatMap((severity) => {
-    const selectedRow = selected.get(severity.key)
-    if (!selectedRow) return []
-    return [{
+  if (!current.some((item) => chartNumber(item) !== null)) return { period, total: null, rows: [], unavailable: current.some((item) => item.availability === 'NO_DISPONIBLE') }
+  const complete = hasCompleteExposurePartition(current)
+  const totalRaw = complete ? sumDecimals(current.map((item) => item.value)) : null
+  const total = complete ? Number(totalRaw) : null
+  const rows = SEVERITIES.map((severity) => {
+    const matches = current.filter((item) => item.severity === severity.key)
+    const item = matches.length === 1 ? matches[0] : null
+    const value = item ? chartNumber(item) : null
+    const percentage = complete && value !== null ? (total === 0 ? 0 : value / total * 100) : null
+    return {
       id: severity.key,
       severity: severity.key,
       name: severity.label,
-      value: selectedRow.value,
-      valueText: formatCurrencyMXN(selectedRow.item.value),
-      percentage: total === 0 ? 0 : selectedRow.value / total * 100,
-      percentageText: formatPercentage(total === 0 ? 0 : selectedRow.value / total * 100),
       color: severity.color,
-    }]
+      value,
+      valueText: !item ? (matches.length ? 'Observaciones no comparables' : 'Sin observación') : value === null ? 'No disponible' : formatCurrencyMXN(item.value),
+      percentage,
+      percentageText: percentage === null ? 'No disponible' : formatPercentage(percentage),
+    }
   })
   return {
     period,
-    periodText: selected.values().next().value?.item.periodText || period,
+    periodText: current[0].periodText || period,
+    complete,
     total,
-    totalText: formatCurrencyMXN(totalRaw),
+    totalText: complete ? formatCurrencyMXN(totalRaw) : 'No disponible',
+    allZero: complete && total === 0,
+    missing: rows.filter((row) => row.value === null).map((row) => row.name),
     rows,
   }
 }
@@ -174,6 +193,14 @@ export function monthlyTimeline(rows) {
   }).flat()
 }
 
+const DIMENSION_LABELS = Object.freeze({ entity: 'Entidad', area: 'Área', tipo_asunto: 'Tipo de asunto', estado: 'Estado' })
+// Dimensiones adicionales a la severidad con su nombre en la interfaz («Entidad: Norte»), nunca la clave técnica.
+export function contextLabel(dimensions) {
+  return Object.entries(dimensions).filter(([key]) => key !== 'nivel_severidad').sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${DIMENSION_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(' · ') || 'Sin dimensiones adicionales'
+}
+
 export function exposureContextKey(row) {
   return JSON.stringify(Object.entries(row.dimensions).filter(([key]) => key !== 'nivel_severidad').sort(([a], [b]) => a.localeCompare(b)))
 }
@@ -189,7 +216,7 @@ export function litigationExposureViewModel(items) {
   for (const item of items.filter((row) => row.kpi_code === 'KPI-LI-01').sort(byPeriod)) {
     const contextKey = exposureContextKey(item)
     const id = `${item.period_start}:${item.period_end}:${contextKey}`
-    if (!partitions.has(id)) partitions.set(id, { ...periodRow(item), id, period_end: item.period_end, contextKey, contextText: Object.entries(item.dimensions).filter(([key]) => key !== 'nivel_severidad').sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key.replace(/_/g, ' ')}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ') || 'Sin dimensiones adicionales', sources: [] })
+    if (!partitions.has(id)) partitions.set(id, { ...periodRow(item), id, period_end: item.period_end, contextKey, contextText: contextLabel(item.dimensions), sources: [] })
     partitions.get(id).sources.push(item)
   }
   const rows = [...partitions.values()].map((row) => {
@@ -231,8 +258,9 @@ export function findingSeverity(dimensions) {
 }
 
 // Incidentes de incumplimiento (KPI-CN-03) por área y severidad del último periodo con observaciones dentro
-// de la selección (DESIGN §16.4). No se suman periodos ni se calcula un total: cada celda es la observación
-// recibida para esa área y severidad; la ausencia y «No disponible» se conservan como tales.
+// de la selección (DESIGN §16.4). No se suman periodos ni se presenta un total: cada celda es la observación
+// recibida para esa área y severidad; la ausencia y «No disponible» se conservan como tales. Las áreas se
+// ordenan de mayor a menor número de incidentes para responder «dónde se concentra».
 export function incidentsByAreaViewModel(items) {
   const eligible = items.filter((item) => item.kpi_code === 'KPI-CN-03' && typeof item.dimensions?.area === 'string' && item.severity)
   if (!eligible.length) return { period: null, rows: [], series: [], unavailable: false }
@@ -253,9 +281,13 @@ export function incidentsByAreaViewModel(items) {
     }
     return row
   })
+  // La suma por área solo ordena las barras; no se presenta como total (D-UX-7).
+  const size = (row) => SEVERITIES.reduce((sum, { key }) => sum + (row[key] || 0), 0)
+  rows.sort((a, b) => size(b) - size(a) || a.area.localeCompare(b.area, 'es'))
   return {
     period,
     periodText: current[0].periodText,
+    allZero: present.size > 0 && rows.every((row) => size(row) === 0),
     rows,
     series: SEVERITIES.filter(({ key }) => present.has(key)),
     unavailable: !present.size && current.some((item) => item.availability === 'NO_DISPONIBLE'),

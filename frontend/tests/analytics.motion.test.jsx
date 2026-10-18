@@ -10,7 +10,7 @@ import { KPI_CATALOG } from '../src/features/analytics/adapters.js'
 
 vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>
-  return { ResponsiveContainer: Container, BarChart: Container, LineChart: Container, PieChart: Container, Pie: () => null, Cell: () => null, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Line: () => null, Bar: () => null }
+  return { ResponsiveContainer: Container, BarChart: Container, LineChart: Container, PieChart: Container, Pie: () => null, Cell: () => null, LabelList: () => null, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Line: () => null, Bar: () => null }
 })
 
 const kpiData = { period_start: null, period_end: null, period_reference: null, filters: {}, items: [{
