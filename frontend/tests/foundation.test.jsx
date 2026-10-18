@@ -70,7 +70,7 @@ describe('SRS_REQUIRED: sesión y rutas protegidas', () => {
   it('no renderiza contenido protegido antes de restaurar sesión', () => {
     window.history.replaceState(null, '', '/reservado')
     render(<App manager={managerFixture('restoring')} manifest={buildRegistry({ feature: feature('Contenido protegido', '/reservado') })} />)
-    expect(screen.getByText('Comprobando sesión…')).toBeVisible(); expect(screen.queryByText('Contenido protegido')).not.toBeInTheDocument()
+    expect(screen.getByText('Comprobando tu sesión…')).toBeInTheDocument(); expect(screen.queryByText('Contenido protegido')).not.toBeInTheDocument()
   })
   it('acceso directo anónimo solicita login sin mostrar datos protegidos', async () => {
     window.history.replaceState(null, '', '/reservado')

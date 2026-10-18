@@ -5,12 +5,12 @@ import { can } from './auth/permissions.js'
 import { LoginPage } from './auth/LoginPage.jsx'
 import { buildRegistry } from './routing/registry.jsx'
 import { AppShell } from './components/layout.jsx'
-import { EmptyState, ErrorState, Loading } from './components/feedback.jsx'
+import { EmptyState, ErrorState, SessionLoading } from './components/feedback.jsx'
 import { ApiError } from './api/errors.js'
 
 export function Guard({ capability, children }) {
   const { status, principal } = useSession()
-  if (status === 'restoring') return <Loading label="Comprobando sesión…" />
+  if (status === 'restoring') return <SessionLoading />
   if (status !== 'authenticated') return <Navigate to="/login" replace />
   if (capability && !can(principal, capability)) return <ErrorState error={new ApiError(403)} />
   return children

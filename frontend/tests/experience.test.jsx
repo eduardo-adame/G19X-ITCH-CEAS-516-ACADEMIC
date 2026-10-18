@@ -19,7 +19,7 @@ function shell(path) {
 }
 
 describe('ROBUSTNESS: título de la pestaña por vista', () => {
-  it.each([['/', 'Resumen ejecutivo · Riesgo Legal'], ['/documentos', 'Visor documental · Riesgo Legal'], ['/desconocida', 'Riesgo Legal']])('%s → %s', (path, title) => {
+  it.each([['/', 'Resumen ejecutivo · Legaltech'], ['/documentos', 'Visor documental · Legaltech'], ['/desconocida', 'Legaltech']])('%s → %s', (path, title) => {
     shell(path)
     expect(document.title).toBe(title)
   })

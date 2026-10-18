@@ -6,7 +6,8 @@ import { Button, Input, PasswordInput } from '../components/controls.jsx'
 import { OfflineNotice } from '../components/help.jsx'
 import { usePageTitle } from '../components/layout.jsx'
 import { clearPermissionChange, hasPermissionChange } from './sessionNotice.js'
-import { ErrorState, Loading } from '../components/feedback.jsx'
+import { ErrorState, SessionLoading } from '../components/feedback.jsx'
+import { APP_NAME } from '../shared/brand.js'
 
 const reasonMessages = {
   [SESSION_REVALIDATION_FAILED]: 'No fue posible validar tu sesión. Inicia sesión nuevamente.',
@@ -32,11 +33,11 @@ export function LoginPage({ destination = '/' }) {
   usePageTitle('Iniciar sesión')
   const showNotice = status === 'anonymous' && notice?.generation === generation && notice?.key === location.key
   if (status === 'authenticated') return <Navigate to={destination} replace />
-  if (status === 'restoring' && !busy) return <Loading label="Comprobando sesión…" />
+  if (status === 'restoring' && !busy) return <SessionLoading />
   async function submit(event) {
     event.preventDefault(); if (busy) return
     setBusy(true); setError(null); setNotice(null); setOwnPermissions(false)
     try { await login(username, password) } catch (cause) { setError(cause) } finally { setPassword(''); setBusy(false) }
   }
-  return <main className="flex min-h-dvh items-center justify-center p-6"><section className="w-full max-w-sm rounded-panel border border-border bg-surface p-6 shadow-subtle"><OfflineNotice /><p className="mb-6 text-sm font-semibold">Riesgo Legal</p><h1 className="text-2xl font-semibold">Iniciar sesión</h1><p className="mt-1 text-secondary">Accede con tu cuenta autorizada.</p><form className="mt-6 space-y-4" onSubmit={submit}><Input label="Usuario" autoComplete="username" value={username} maxLength={256} required disabled={busy} onChange={(event) => setUsername(event.target.value)} /><PasswordInput label="Contraseña" autoComplete="current-password" value={password} maxLength={128} required disabled={busy} onChange={(event) => setPassword(event.target.value)} />{ownPermissions && !error && !sessionError && <section role="status" className="rounded-panel border border-[var(--information-border)] bg-[var(--information-subtle)] p-4"><p className="text-[13px]">Tu sesión se cerró porque cambiaste permisos que también se aplican a tu cuenta. Inicia sesión de nuevo para continuar con los permisos actualizados.</p></section>}{showNotice && !ownPermissions && !error && !sessionError && <section role="alert" className="rounded-panel border border-[var(--critical-border)] bg-[var(--critical-subtle)] p-5"><p className="text-secondary">{reasonMessages[notice.reason]}</p></section>}{(error || sessionError) && <ErrorState error={error || sessionError} />}<Button type="submit" className="w-full" busy={busy}>{busy ? 'Accediendo…' : 'Iniciar sesión'}</Button></form></section></main>
+  return <main className="flex min-h-dvh items-center justify-center p-6"><section className="w-full max-w-sm rounded-panel border border-border bg-surface p-6 shadow-subtle"><OfflineNotice /><p className="mb-6 text-sm font-semibold">{APP_NAME}</p><h1 className="text-2xl font-semibold">Iniciar sesión</h1><p className="mt-1 text-secondary">Accede con tu cuenta autorizada.</p><form className="mt-6 space-y-4" onSubmit={submit}><Input label="Usuario" autoComplete="username" value={username} maxLength={256} required disabled={busy} onChange={(event) => setUsername(event.target.value)} /><PasswordInput label="Contraseña" autoComplete="current-password" value={password} maxLength={128} required disabled={busy} onChange={(event) => setPassword(event.target.value)} />{ownPermissions && !error && !sessionError && <section role="status" className="rounded-panel border border-[var(--information-border)] bg-[var(--information-subtle)] p-4"><p className="text-[13px]">Tu sesión se cerró porque cambiaste permisos que también se aplican a tu cuenta. Inicia sesión de nuevo para continuar con los permisos actualizados.</p></section>}{showNotice && !ownPermissions && !error && !sessionError && <section role="alert" className="rounded-panel border border-[var(--critical-border)] bg-[var(--critical-subtle)] p-5"><p className="text-secondary">{reasonMessages[notice.reason]}</p></section>}{(error || sessionError) && <ErrorState error={error || sessionError} />}<Button type="submit" className="w-full" busy={busy}>{busy ? 'Accediendo…' : 'Iniciar sesión'}</Button></form></section></main>
 }

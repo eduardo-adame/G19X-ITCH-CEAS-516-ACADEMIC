@@ -39,9 +39,10 @@
   --table-header-bg: #F5F5F4;
   --table-header-text: #44403C;
   --table-header-border: #E7E5E4;
-  --nav-active-bg: var(--brand-subtle);
-  --nav-active-text: #5A4317;
-  --nav-active-bar: #9C763F;
+  /* Selector del menú en café amarillento, cercano al primario (decisión del usuario, 2026-10-18; contraste 8.3:1). */
+  --nav-active-bg: #E3C892;
+  --nav-active-text: #3D2C0E;
+  --nav-active-bar: #7A5A22;
   --link: var(--brand-ink);
   --chart-bar-1: #4A607A;
   --chart-bar-2: #5A7365;
