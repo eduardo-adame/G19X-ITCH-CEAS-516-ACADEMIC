@@ -100,7 +100,10 @@ describe('ROBUSTNESS: ingesta con zona de carga y seguimiento (UX-037/038/047)',
     const table = await screen.findByRole('region', { name: 'Archivos recibidos en esta sesión' })
     expect(await within(table).findByText('Procesamiento ejecutado')).toBeVisible()
     expect(within(table).getByText('cumplimiento-octubre.csv')).toBeVisible()
-    expect(within(table).getAllByText(ownId)[0].closest('details')).not.toHaveAttribute('open')
+    // El identificador no está en la tabla: solo aparece al abrir el panel de detalle.
+    expect(within(table).queryByText(ownId)).toBeNull()
+    await userEvent.click(within(table).getByRole('button', { name: 'Ver detalle de cumplimiento-octubre.csv' }))
+    expect(within(screen.getByRole('dialog', { name: 'cumplimiento-octubre.csv' })).getAllByText(ownId).length).toBeGreaterThan(0)
     expect(request.mock.calls[0][1].body.get('file').name).toBe('cumplimiento-octubre.csv')
   })
   it('un error de recepción se titula con la acción que falló', async () => {

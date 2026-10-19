@@ -44,27 +44,28 @@ export function useLeaveGuard(active, message) {
 }
 
 export function PageHeader({ title, description, actions }) { return <header className="flex flex-wrap items-end justify-between gap-4 pb-4"><div><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-1 text-[13px] text-secondary">{description}</p>}</div>{actions}</header> }
-export function Modal({ open, title, onClose, children, drawer = false, initialFocus = null }) {
-  const panel = useRef(null); const close = useRef(onClose); close.current = onClose
+// `panel`: panel lateral derecho de detalle (pantalla completa en móvil), con subtítulo y cierre al pulsar fuera.
+export function Modal({ open, title, subtitle = null, onClose, children, drawer = false, panel = false, initialFocus = null }) {
+  const panelRef = useRef(null); const close = useRef(onClose); close.current = onClose
   const titleId = useId()
   useEffect(() => {
     if (!open) return
     const previousFocus = document.activeElement
     const previousOverflow = document.body.style.overflow
-    const overlay = panel.current.parentElement
+    const overlay = panelRef.current.parentElement
     const siblings = [...document.body.children].filter((element) => element !== overlay)
     const previous = siblings.map((element) => [element, element.inert, element.getAttribute('aria-hidden')])
     siblings.forEach((element) => { element.inert = true; element.setAttribute('aria-hidden', 'true') })
     document.body.style.overflow = 'hidden'
-    const focusable = () => [...panel.current.querySelectorAll('button, a[href], input, select, textarea, [tabindex="0"]')].filter((element) => !element.disabled && element.getAttribute('aria-hidden') !== 'true')
-    ;(initialFocus?.current || focusable()[0] || panel.current).focus()
+    const focusable = () => [...panelRef.current.querySelectorAll('button, a[href], input, select, textarea, [tabindex="0"]')].filter((element) => !element.disabled && element.getAttribute('aria-hidden') !== 'true')
+    ;(initialFocus?.current || focusable()[0] || panelRef.current).focus()
     const keyboard = (event) => {
       if (event.key === 'Escape') { event.preventDefault(); close.current(); return }
       if (event.key !== 'Tab') return
       const items = focusable(); const first = items[0]; const last = items.at(-1)
-      if (!first) { event.preventDefault(); panel.current.focus() }
-      else if (event.shiftKey && (document.activeElement === first || !panel.current.contains(document.activeElement))) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && (document.activeElement === last || !panel.current.contains(document.activeElement))) { event.preventDefault(); first.focus() }
+      if (!first) { event.preventDefault(); panelRef.current.focus() }
+      else if (event.shiftKey && (document.activeElement === first || !panelRef.current.contains(document.activeElement))) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && (document.activeElement === last || !panelRef.current.contains(document.activeElement))) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', keyboard)
     return () => {
@@ -74,7 +75,7 @@ export function Modal({ open, title, onClose, children, drawer = false, initialF
     }
   }, [open])
   if (!open) return null
-  return createPortal(<div className={`fixed inset-0 z-50 flex bg-[var(--overlay)] backdrop-blur-[1px] ${drawer ? 'items-stretch justify-start' : 'items-center justify-center p-4'}`}><section ref={panel} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`${drawer ? 'w-[var(--sidebar-width)]' : 'w-full max-w-lg rounded-panel'} max-h-[var(--modal-max-height)] overflow-y-auto border border-border bg-surface p-5 shadow-subtle`}><div className="mb-4 flex items-center justify-between gap-4"><h2 id={titleId} className="text-base font-semibold">{title}</h2><Button variant="ghost" aria-label="Cerrar" onClick={onClose}><Icon name="close" size={18} /></Button></div>{children}</section></div>, document.body)
+  return createPortal(<div onClick={panel ? (event) => { if (event.target === event.currentTarget) onClose() } : undefined} className={`fixed inset-0 z-50 flex bg-[var(--overlay)] backdrop-blur-[1px] ${drawer ? 'items-stretch justify-start' : panel ? 'items-stretch justify-end' : 'items-center justify-center p-4'}`}><section ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`${drawer ? 'w-[var(--sidebar-width)] max-h-[var(--modal-max-height)]' : panel ? 'detail-panel' : 'w-full max-w-lg rounded-panel max-h-[var(--modal-max-height)]'} overflow-y-auto border border-border bg-surface p-5 shadow-subtle`}><div className={`mb-4 flex justify-between gap-4 ${panel ? 'items-start detail-panel-header' : 'items-center'}`}><div className="min-w-0"><h2 id={titleId} className="text-base font-semibold">{title}</h2>{subtitle && <p className="mt-0.5 text-xs text-secondary">{subtitle}</p>}</div><Button variant="ghost" aria-label="Cerrar" onClick={onClose}><Icon name="close" size={18} /></Button></div>{children}</section></div>, document.body)
 }
 export function AppShell({ navigation }) {
   const { principal, logout } = useSession()

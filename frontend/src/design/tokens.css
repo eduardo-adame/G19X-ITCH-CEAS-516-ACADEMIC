@@ -66,6 +66,7 @@
   --control-height-default: 40px;
   --control-height-compact: 32px;
   --modal-max-height: 90vh;
+  --detail-panel-width: 480px;
   --content-width-standard: 80rem;
   --content-width-rag: 64rem;
   --kpi-title-slot-height: 36px;

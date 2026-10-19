@@ -45,7 +45,7 @@ async function reprocess() {
 
 describe('SRS_REQUIRED: actualización OCR y CD03 por resultado confirmado', () => {
   it.each(['TI', 'ANALISTA'])('DOCUMENT COMPLETED refresca OCR para %s y CD03 sólo para TI', async (role) => {
-    const state = mount({ role }); await screen.findByText('DOC-REF')
+    const state = mount({ role }); await screen.findByText('Documento sintético')
     await upload()
     await waitFor(() => expect(state.count('/documents/ocr')).toBe(2))
     expect(await screen.findAllByText('Exitoso')).toHaveLength(1)
@@ -57,7 +57,7 @@ describe('SRS_REQUIRED: actualización OCR y CD03 por resultado confirmado', () 
 
   it('recepción no invalida mientras dispatch no confirma y la llegada preserva el modal OCR', async () => {
     let complete; const pending = new Promise((resolve) => { complete = resolve })
-    const state = mount({ dispatchWait: pending }); await screen.findByText('DOC-REF')
+    const state = mount({ dispatchWait: pending }); await screen.findByText('Documento sintético')
     await upload()
     await waitFor(() => expect(state.request).toHaveBeenCalledWith('/coordination/dispatch', expect.anything()))
     expect(state.count('/documents/ocr')).toBe(1); expect(state.count('/technical/kpis')).toBe(1)
@@ -71,7 +71,7 @@ describe('SRS_REQUIRED: actualización OCR y CD03 por resultado confirmado', () 
   })
 
   it.each(['LISTA', 'RECHAZADA', 'FALLIDA'])('reproceso terminal %s confirmado refresca CD03 y su propia lista OCR', async (processing_state) => {
-    const state = mount({ reprocess: { ...refreshReprocess, processing_state } }); await screen.findByText('DOC-REF')
+    const state = mount({ reprocess: { ...refreshReprocess, processing_state } }); await screen.findByText('Documento sintético')
     await reprocess()
     expect(await screen.findByText('100 %')).toBeVisible()
     expect(state.count('/technical/kpis')).toBe(2)
@@ -81,7 +81,7 @@ describe('SRS_REQUIRED: actualización OCR y CD03 por resultado confirmado', () 
   })
 
   it('Analista refresca su reproceso OCR sin consultar ni mostrar CD03', async () => {
-    const state = mount({ role: 'ANALISTA' }); await screen.findByText('DOC-REF')
+    const state = mount({ role: 'ANALISTA' }); await screen.findByText('Documento sintético')
     await reprocess()
     await waitFor(() => expect(state.count('/documents/ocr')).toBe(2))
     expect(state.count('/technical/kpis')).toBe(0)
@@ -96,7 +96,7 @@ describe('ROBUSTNESS: invalidación acotada por lifecycle sin disponibilidad sup
     ['DOCUMENT sin confirmación', { ...refreshDispatch, state: 'FAILED' }],
     ['error de despacho', new ApiError(503)],
   ])('%s no invalida OCR ni CD03', async (_, dispatch) => {
-    const state = mount({ dispatch }); await screen.findByText('DOC-REF')
+    const state = mount({ dispatch }); await screen.findByText('Documento sintético')
     await upload()
     await waitFor(() => expect(state.request).toHaveBeenCalledTimes(2))
     if (dispatch instanceof Error) await screen.findByRole('alert')
@@ -111,7 +111,7 @@ describe('ROBUSTNESS: invalidación acotada por lifecycle sin disponibilidad sup
     ['procesamiento todavía en curso', { ...refreshReprocess, processing_state: 'PROCESANDO' }, true],
     ['POST rechazado', new ApiError(409), false],
   ])('%s no invalida CD03 ni inventa disponibilidad', async (_, result, reloadOcr) => {
-    const state = mount({ reprocess: result }); await screen.findByText('DOC-REF')
+    const state = mount({ reprocess: result }); await screen.findByText('Documento sintético')
     await reprocess()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar reproceso', exact: true })).toBeDisabled())
     expect(state.count('/technical/kpis')).toBe(1)
@@ -123,7 +123,7 @@ describe('ROBUSTNESS: invalidación acotada por lifecycle sin disponibilidad sup
     let completeDispatch; let completeReprocess
     const dispatchWait = new Promise((resolve) => { completeDispatch = resolve })
     const reprocessWait = new Promise((resolve) => { completeReprocess = resolve })
-    const state = mount({ dispatchWait, reprocessWait }); await screen.findByText('DOC-REF')
+    const state = mount({ dispatchWait, reprocessWait }); await screen.findByText('Documento sintético')
     await upload()
     await waitFor(() => expect(state.request).toHaveBeenCalledTimes(2))
     await reprocess()

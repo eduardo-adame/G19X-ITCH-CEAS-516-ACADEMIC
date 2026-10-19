@@ -5,7 +5,8 @@ import { can } from '../../auth/permissions.js'
 import { ApiError } from '../../api/errors.js'
 import { PageHeader, useLeaveGuard } from '../../components/layout.jsx'
 import { Button, Input, Select } from '../../components/controls.jsx'
-import { DataTable, Badge, TechnicalDetails } from '../../components/data.jsx'
+import { DataTable, Badge } from '../../components/data.jsx'
+import { DetailButton, DetailField, DetailPanel, DetailSection } from '../../components/detail.jsx'
 import { InfoPopover } from '../../components/help.jsx'
 import { ErrorState } from '../../components/feedback.jsx'
 import { Icon } from '../../components/Icon.jsx'
@@ -94,10 +95,27 @@ export function IngestionPage() {
   if (!can(principal, 'ingest.upload')) return <ErrorState error={new ApiError(403)} />
   return <IngestionWorkspace key={generation} principal={principal} />
 }
+// Detalle de un archivo de esta sesión: resultado de la recepción y los identificadores para rastrearlo en Auditoría.
+function IngestionDetailPanel({ row, onClose }) {
+  if (!row) return null
+  return <DetailPanel title={row.fileName || 'Archivo de la ubicación'} subtitle={row.reception} onClose={onClose}>
+    <DetailSection title="Recepción">
+      <DetailField label="Resultado" value={row.reception} code={row.state} />
+      <DetailField label="Familia" value={row.familyText} />
+      <DetailField label="Fecha del documento" value={row.documentDateText} />
+      {row.safe_cause_code && <DetailField label="Causa" value={row.safe_cause_code} mono />}
+    </DetailSection>
+    <DetailSection title="Identificadores">
+      <DetailField label="Archivo recibido" value={row.file_id} mono copy="Copiar archivo recibido" />
+      <DetailField label="Operación" value={row.operation_id} mono copy="Copiar operación" />
+      <DetailField label="Correlación" value={row.correlation_id} mono copy="Copiar correlación" />
+    </DetailSection>
+  </DetailPanel>
+}
 function IngestionWorkspace({ principal }) {
   const [file, setFile] = useState(null); const [location, setLocation] = useState(locations[0].value)
   const [rows, setRows] = useState([]); const [inputKey, setInputKey] = useState(0); const [documentDate, setDocumentDate] = useState('')
-  const [action, setAction] = useState(null)
+  const [action, setAction] = useState(null); const [detailId, setDetailId] = useState(null)
   const documentSelected = isDocumentFile(file)
   const [ocrRefreshKey, setOcrRefreshKey] = useState(0); const [technicalRefreshKey, setTechnicalRefreshKey] = useState(0)
   const mutation = useOperation()
@@ -166,8 +184,8 @@ function IngestionWorkspace({ principal }) {
       { key: 'fileName', label: 'Archivo', wide: true, render: (row) => row.fileName ? <span className="break-words font-medium">{row.fileName}</span> : <span className="text-secondary">Archivo de la ubicación{row.format ? ` (${row.format})` : ''}</span> },
       { key: 'familyText', label: 'Familia', nowrap: true }, { key: 'documentDateText', label: 'Fecha del documento', nowrap: true },
       { key: 'stages', label: 'Seguimiento', render: (row) => <IngestionStages row={row} canQuarantine={canQuarantine} /> },
-      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Recepción</dt><dd>{row.reception}</dd><dt>Archivo recibido</dt><dd className="mono">{row.file_id}</dd><dt>Operación</dt><dd className="mono">{row.operation_id}</dd><dt>Correlación</dt><dd className="mono">{row.correlation_id}</dd>{row.safe_cause_code && <><dt>Causa</dt><dd className="mono">{row.safe_cause_code}</dd></>}</dl></TechnicalDetails> },
-    ]} />{rows.some((row) => row.dispatch) && <p className="text-xs text-secondary">El procesamiento indica si el archivo se procesó, no el resultado de su validación: los registros aceptados o enviados a cuarentena se consultan en Zona de cuarentena y Auditoría.</p>}<p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
+      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <DetailButton subject={row.fileName || 'el archivo de la ubicación'} onClick={() => setDetailId(row.file_id)} /> },
+    ]} selectedKey={detailId} /><IngestionDetailPanel row={rows.find((item) => item.file_id === detailId)} onClose={() => setDetailId(null)} />{rows.some((row) => row.dispatch) && <p className="text-xs text-secondary">El procesamiento indica si el archivo se procesó, no el resultado de su validación: los registros aceptados o enviados a cuarentena se consultan en Zona de cuarentena y Auditoría.</p>}<p className="text-xs text-muted">Esta vista no representa un historial persistente.</p></section>
     {can(principal, 'document.manage') && <OcrPanel refreshKey={ocrRefreshKey} onProcessingCompleted={() => setTechnicalRefreshKey((value) => value + 1)} />}
   </>
 }
