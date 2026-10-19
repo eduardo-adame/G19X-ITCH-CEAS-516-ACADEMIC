@@ -224,6 +224,16 @@ class AnalyticsRepository:
         ).fetchone()
 
     @staticmethod
+    def started_proactive_run_with_fingerprint(connection, fingerprint: str):
+        return connection.execute(
+            """SELECT id FROM app.analytic_run
+                WHERE run_type='PROACTIVE_ANALYSIS' AND state='STARTED'
+                  AND rules_reference->>'input_fingerprint_sha256'=%s
+                LIMIT 1""",
+            (fingerprint,),
+        ).fetchone()
+
+    @staticmethod
     def proactive_run_for_job(connection, job_run_id: UUID, *, for_update: bool = False):
         lock = " FOR UPDATE" if for_update else ""
         return connection.execute(

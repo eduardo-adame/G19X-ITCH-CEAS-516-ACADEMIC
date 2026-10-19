@@ -91,6 +91,12 @@ def unauthenticated() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales o sesión no válidas")
 
 
+def unavailable() -> HTTPException:
+    # La identidad no puede validarse porque la persistencia no responde: se deniega igual, pero sin presentarlo como
+    # credenciales o sesión inválidas, para que el cliente conserve la sesión e informe la indisponibilidad.
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Servicio no disponible temporalmente")
+
+
 def unauthorized() -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso no autorizado")
 
@@ -103,6 +109,8 @@ def current_principal(
         raise unauthenticated()
     try:
         return service_for(request).authenticated_principal(credentials.credentials)
+    except AuditPersistenceError:
+        raise unavailable() from None
     except (AuthenticationError, SecurityError):
         raise unauthenticated() from None
 
@@ -152,6 +160,8 @@ def set_refresh_cookie(response: Response, token: str, settings: Settings) -> No
 def login(payload: LoginRequest, response: Response, service: SecurityService = Depends(service_for), settings: Settings = Depends(security_settings)) -> dict[str, str]:
     try:
         access_token, refresh_token = service.login(payload.username, payload.password)
+    except AuditPersistenceError:
+        raise unavailable() from None
     except SecurityError:
         raise unauthenticated() from None
     set_refresh_cookie(response, refresh_token, settings)
@@ -165,6 +175,8 @@ def refresh(request: Request, response: Response, service: SecurityService = Dep
         raise unauthenticated()
     try:
         access_token, replacement = service.refresh(refresh_token)
+    except AuditPersistenceError:
+        raise unavailable() from None
     except SecurityError:
         raise unauthenticated() from None
     set_refresh_cookie(response, replacement, settings)

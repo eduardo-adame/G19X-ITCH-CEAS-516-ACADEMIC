@@ -78,6 +78,16 @@ const SINGULAR = Object.freeze({ contratos: 'contrato', litigios: 'litigio', obl
 const isOne = (value) => /^-?1(?:\.0+)?$/.test(String(value))
 
 // Valor con su unidad, sin convertir ausencia en cero: «7 contratos», «$550,000 MXN», «13.6 días».
+// Variación porcentual persistida por el análisis (RF-041), con signo y redondeo de presentación. Sin valor (referencia
+// cero o serie no evaluable) no se muestra: nunca se sustituye por 0.
+export function formatPercentChange(value) {
+  if (value === null || value === undefined) return null
+  const text = String(roundDecimal(String(value)))
+  const formatted = formatDecimal(text.replace(/^-/, ''))
+  if (formatted === 'No disponible') return null
+  const sign = text.startsWith('-') ? '−' : /^0+(?:\.0+)?$/.test(text) ? '' : '+'
+  return `${sign}${formatted} %`
+}
 export function formatQuantity(value, unit, { signed = false } = {}) {
   if (value === null || value === undefined) return 'No disponible'
   const text = unit === 'días' ? roundDecimal(String(value)) : String(value)
