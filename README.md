@@ -305,8 +305,9 @@ El repositorio no incluye datos de negocio; quien prueba el sistema aporta sus p
 
 1. Abre **Operaciones de ingesta** con una cuenta Analista o TI.
 2. Elige la **Ubicación controlada** que corresponde a la familia de los datos. El desplegable **Formato esperado** muestra las columnas obligatorias y opcionales de cada familia (por ejemplo, Litigios: `ID_Litigio`, `Fecha_Apertura`, `Estado`, `Nivel_Severidad`).
-3. Para PDF o DOCX puedes indicar la **Fecha del documento**; si se omite, se procesa sin fecha.
-4. Arrastra el archivo o pulsa **Elegir archivo**, y después **Recibir y procesar**.
+3. Arrastra el archivo o pulsa **Elegir archivo**.
+4. Para PDF o DOCX puedes indicar la **Fecha del documento**; el campo se habilita al elegir el documento y, si se omite, se procesa sin fecha.
+5. Pulsa **Recibir y procesar**.
 
 El sistema valida cada registro: los válidos se incorporan y recalculan los indicadores; los que no cumplen quedan en **Zona de cuarentena** para corregirlos o descartarlos. Los documentos PDF y DOCX se procesan (con OCR si están escaneados) y se indexan para la consulta.
 
@@ -444,6 +445,9 @@ La opción `down -v` elimina los volúmenes del entorno y sus datos. No forma pa
 | Crear una cuenta devuelve un error de datos | Revisar que la contraseña tenga entre 12 y 128 caracteres y que el usuario no exista ya. |
 | El tablero muestra indicadores pero no alertas | Las alertas las genera el análisis proactivo del DAG de Airflow (sección 2.9). |
 | Falla la generación RAG | Revisar clave Groq, disponibilidad del modelo, evidencia y límites del proveedor. |
+| La consulta muestra «El servicio no está disponible temporalmente» pero sí lista fuentes | Falta `GROQ_API_KEY` en `.env` o no es válida: la recuperación funciona y solo la generación falla. Completar la clave y ejecutar `docker compose up -d backend`. |
+| «El servicio de generación alcanzó su límite de uso» | El presupuesto local por minuto (`GROQ_RPM_LIMIT`, `GROQ_TPM_LIMIT`) se agotó; esperar unos segundos y usar **Intentar de nuevo**. |
+| La construcción o la descarga del modelo fallan por espacio | Comprobar el espacio libre del disco de Docker (la imagen del backend ocupa unos 2.7 GB y la caché de BGE-M3 unos 4.6 GB) y liberar imágenes o caché de construcción que ya no se usen. |
 
 Al modificar variables que se transmiten al contenedor, vuelve a ejecutar `docker compose up -d` con el perfil correspondiente para aplicar la configuración.
 
@@ -729,6 +733,8 @@ Pop-Location
 ```
 
 Este ejemplo utiliza pruebas existentes y no requiere llamar al servicio real de Groq.
+
+> En Windows, si el repositorio está en una carpeta con una ruta muy larga, `pip install` puede fallar con `OSError: [Errno 2] No such file or directory` al crear `backend\.venv`, por el límite de 260 caracteres. Habilita la compatibilidad con rutas largas de Windows o crea el entorno virtual en una ruta corta, por ejemplo `python -m venv C:\venv-riesgo-legal`, y usa ese intérprete en los comandos anteriores.
 
 La imagen del backend no incorpora las pruebas ni las dependencias de desarrollo.
 
