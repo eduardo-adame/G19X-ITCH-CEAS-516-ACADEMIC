@@ -6,7 +6,8 @@ import { ApiError } from '../../api/errors.js'
 import { PageHeader, Modal } from '../../components/layout.jsx'
 import { Button, Select, Tabs } from '../../components/controls.jsx'
 import { CursorPager, DateRangeFields, FilterToolbar, RefreshButton, ResultsSummary, SearchField, useCursorHistory, useDebouncedCallback } from '../../components/filters.jsx'
-import { DataTable, StatusBadge, TechnicalDetails } from '../../components/data.jsx'
+import { DataTable, StatusBadge } from '../../components/data.jsx'
+import { DetailButton, DetailField, DetailPanel, DetailSection } from '../../components/detail.jsx'
 import { ActionNotice, ResourceState, ErrorState } from '../../components/feedback.jsx'
 import { familyLabel, quarantineCauseLabel } from '../../shared/labels.js'
 import { formatDayRange as rangeText, localDayBoundary, localDayOf } from '../../shared/presentation.js'
@@ -34,6 +35,28 @@ function ConflictComparison({ row }) {
       <tbody>{fields.map((item) => <tr key={item.field} className={item.differs ? 'font-medium' : 'text-secondary'}><th scope="row" className="py-1 pr-3 text-left font-mono font-normal">{item.field}</th><td className="py-1 pr-3">{shownValue(item.current)}</td><td className="py-1">{shownValue(item.received)}{item.differs && <span className="ml-1 text-[var(--warning)]">· distinto</span>}</td></tr>)}</tbody></table></div></div>
 }
 
+// Detalle del elemento retenido: causa con su regla registrada, ubicación en el archivo y los identificadores
+// copiables. Las acciones (corregir, descartar) permanecen en la tabla.
+function QuarantineDetailPanel({ row, onClose }) {
+  if (!row) return null
+  return <DetailPanel title="Detalle del elemento retenido" subtitle={row.cause_description} onClose={onClose}>
+    <DetailSection title="Retención">
+      <DetailField label="Regla" value={row.cause_description} code={row.cause_code} />
+      <DetailField label="Estado" value={<StatusBadge kind="quarantine" value={row.state} />} />
+      <DetailField label="Retenido" value={row.createdAudit} mono />
+    </DetailSection>
+    <DetailSection title="Origen">
+      <DetailField label="Familia" value={familyLabel(row.source_family)} />
+      <DetailField label="Fila" value={row.row_number} />
+      {row.source_sheet && <DetailField label="Hoja" value={row.source_sheet} />}
+    </DetailSection>
+    <DetailSection title="Identificadores">
+      <DetailField label="Elemento" value={row.id} mono copy="Copiar elemento" />
+      <DetailField label="Archivo de origen" value={row.ingest_file_id} mono copy="Copiar archivo de origen" />
+      <DetailField label="Registro fuente" value={row.source_record_id} mono copy="Copiar registro fuente" />
+    </DetailSection>
+  </DetailPanel>
+}
 export function QuarantinePage() {
   const { principal, generation } = useSession()
   if (!can(principal, 'quarantine.read')) return <ErrorState error={new ApiError(403)} />
@@ -42,7 +65,7 @@ export function QuarantinePage() {
 function QuarantineWorkspace({ principal }) {
   const [params, setParams] = useSearchParams(); const filters = readFilters(params.toString(), 'quarantine')
   const [editing, setEditing] = useState(null); const [discarding, setDiscarding] = useState(null); const [justification, setJustification] = useState(''); const [notice, setNotice] = useState(null)
-  const [filterError, setFilterError] = useState(null)
+  const [filterError, setFilterError] = useState(null); const [detailId, setDetailId] = useState(null)
   // Elementos ya reinyectados en esta sesión: «Corregir siguiente pendiente» no vuelve a ofrecerlos.
   const handled = useRef(new Set())
   const nextPending = (current) => can(principal, 'quarantine.reinject') ? resource.data?.items.find((row) => row.id !== current.id && row.canCorrect && !handled.current.has(row.id)) ?? null : null
@@ -85,8 +108,8 @@ function QuarantineWorkspace({ principal }) {
       { key: 'cause_description', label: 'Causa', medium: true }, { key: 'source_family', label: 'Familia', render: (row) => familyLabel(row.source_family) ?? '—' }, { key: 'row_number', label: 'Fila', numeric: true, render: (row) => row.row_number === null || row.row_number === undefined ? '—' : <span>{row.row_number}{row.source_sheet && <span className="block text-xs text-muted">Hoja {row.source_sheet}</span>}</span> },
       { key: 'createdLabel', label: 'Retenido', nowrapWide: true }, { key: 'state', label: 'Estado', render: (row) => <StatusBadge kind="quarantine" value={row.state} /> },
       { key: 'actions', label: 'Acciones', fit: true, sticky: true, render: (row) => <div className="flex flex-wrap items-center gap-2">{row.canCorrect && can(principal, 'quarantine.reinject') && <Button variant="secondary" onClick={() => setEditing(row)}>Corregir</Button>}{row.canAct && can(principal, 'quarantine.discard') && <Button variant="danger" onClick={() => { mutation.clear(); setDiscarding(row); setJustification('') }}>Descartar</Button>}{!row.canAct && <span className="text-xs text-muted">Resuelto</span>}{row.canAct && !row.canCorrect && <span className="text-xs text-muted">{row.isConflict ? 'Conflicto de identidad: solo puede descartarse' : 'Sin registro tabular corregible'}</span>}</div> },
-      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Elemento</dt><dd className="mono">{row.id}</dd><dt>Archivo de origen</dt><dd className="mono">{row.ingest_file_id ?? '—'}</dd><dt>Registro fuente</dt><dd className="mono">{row.source_record_id ?? '—'}</dd>{row.source_sheet && <><dt>Hoja</dt><dd>{row.source_sheet}</dd></>}<dt>Regla</dt><dd className="mono">{row.cause_code}</dd><dt>Retenido</dt><dd className="mono">{row.createdAudit}</dd></dl></TechnicalDetails> },
-    ]} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
+      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <DetailButton subject={row.row_number === null || row.row_number === undefined ? row.cause_description : `la fila ${row.row_number}`} onClick={() => setDetailId(row.id)} /> },
+    ]} selectedKey={detailId} /><QuarantineDetailPanel row={data.items.find((item) => item.id === detailId)} onClose={() => setDetailId(null)} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
       onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'quarantine')) }}
       onPrevious={() => { const previous = pages.pop(); setParams(filterQuery(previous ? { ...withoutCursor(filters), cursor: previous } : withoutCursor(filters), 'quarantine')) }}
       onFirst={() => setParams(filterQuery(withoutCursor(filters), 'quarantine'))} /></div>}</ResourceState></div>

@@ -107,7 +107,7 @@ describe('SRS_REQUIRED: vistas operativas', () => {
 
   it('reproceso OCR confirmado con KPI pendiente no se repite', async () => {
     const request = vi.fn(async () => ({ detail: { cause: 'UPSTREAM_COMMITTED_KPI_RETRYABLE', operation_id: accountId } }))
-    mount(<IngestionPage />, { request }); await screen.findByText('DOC-1')
+    mount(<IngestionPage />, { request }); await screen.findByRole('button', { name: 'Ver detalle de Documento' })
     await userEvent.click(screen.getByRole('button', { name: 'Reprocesar' }))
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar reproceso' }))
     expect(await screen.findByText('Reproceso confirmado. Trabajo posterior pendiente.')).toBeVisible()
@@ -146,7 +146,7 @@ describe('SRS_REQUIRED: vistas operativas', () => {
       ['ESCANEADO-EXITOSO', true, 'Exitoso', false, 'LISTA', 0.96, 'Exitoso'],
       ['ESCANEADO-FALLIDO', true, null, false, 'FALLIDA', null, 'Sin resultado OCR'],
     ]
-    const items = cases.map(([document_id, ocr_applicable, ocr_state, reprocess_eligible, processing_state, confidence]) => ({ ...ocr.items[0], document_id, ocr_applicable, ocr_state, outcome: ocr_state, reprocess_eligible, processing_state, confidence }))
+    const items = cases.map(([document_id, ocr_applicable, ocr_state, reprocess_eligible, processing_state, confidence]) => ({ ...ocr.items[0], document_id, document_name: document_id, ocr_applicable, ocr_state, outcome: ocr_state, reprocess_eligible, processing_state, confidence }))
     mount(<OcrPanel />, { roles: [role], reads: () => ({ items, next_cursor: null }) })
     await screen.findByText('DOCX-NATIVO')
     for (const [id, , , eligible, processing, confidence, label] of cases) {

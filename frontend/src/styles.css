@@ -84,6 +84,23 @@
   .technical-details dt { color: var(--text-muted); }
   .technical-details dd { margin: 0; overflow-wrap: anywhere; }
   .technical-details .mono { font-family: var(--font-family-mono); font-size: 11.5px; }
+  /* Panel lateral de detalle (DESIGN §18.1): ancho fijo a la derecha; pantalla completa en móvil. */
+  .detail-panel { width: min(var(--detail-panel-width), 100vw); height: 100dvh; max-height: 100dvh; border-width: 0 0 0 1px; animation: detail-panel-in 160ms ease-out; }
+  @media (max-width: 639px) { .detail-panel { width: 100vw; border-left-width: 0; } }
+  /* `top: -20px` compensa el relleno del panel: el encabezado se fija en su borde superior, no 20 px más abajo. */
+  .detail-panel-header { position: sticky; top: -20px; z-index: 1; margin: -20px -20px 16px; padding: 16px 20px 12px; background: var(--background-primary); border-bottom: 1px solid var(--border-subtle); }
+  .detail-panel-body { display: grid; gap: 20px; }
+  .detail-section h3 { margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .detail-section dl { display: grid; gap: 10px; margin: 0; }
+  .detail-field dt { font-size: 12px; color: var(--text-muted); }
+  .detail-field dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+  .detail-panel .mono { font-family: var(--font-family-mono); font-size: 12px; }
+  .detail-code { margin-left: 8px; font-family: var(--font-family-mono); font-size: 11.5px; color: var(--text-muted); }
+  .detail-list { display: grid; gap: 8px; }
+  .detail-list > li { border: 1px solid var(--border-subtle); border-radius: var(--radius-small); padding: 8px 10px; font-size: 12px; overflow-wrap: anywhere; }
+  .detail-panel-actions { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-subtle); display: flex; flex-wrap: wrap; gap: 8px; }
+  .data-table tbody tr[data-selected], .data-table tbody tr[data-selected] .cell-sticky { background: var(--background-selected); }
+  .data-table tbody tr[data-selected] > td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
   .data-section > summary { cursor: pointer; list-style: revert; }
   /* Barra de filtros compacta (DESIGN §19): etiqueta visible en línea a la izquierda de cada control. */
   .filter-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 20px; row-gap: 8px; }
@@ -112,7 +129,8 @@
    interactivo, así que no muestra el anillo de foco (el enlace «Ir al contenido» sí lo conserva). */
 main[tabindex="-1"]:focus { outline: none; }
 @keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-@media (prefers-reduced-motion: reduce) { .skeleton, .rag-activity { animation: none !important; } }
+@keyframes detail-panel-in { from { transform: translateX(16px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton, .rag-activity, .detail-panel { animation: none !important; } }
 @keyframes kpi-entry { from { opacity: 0; transform: translateY(var(--kpi-entry-offset)); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .kpi-entry { animation: none !important; animation-delay: 0ms !important; opacity: 1; transform: none; } }
 @media (min-width: 768px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; } }

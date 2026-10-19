@@ -6,12 +6,31 @@ import { ApiError } from '../../api/errors.js'
 import { Button, Select } from '../../components/controls.jsx'
 import { CursorPager, DateRangeFields, FilterToolbar, RefreshButton, ResultsSummary, SearchField, useCursorHistory, useDebouncedCallback } from '../../components/filters.jsx'
 import { Modal } from '../../components/layout.jsx'
-import { DataTable, StatusBadge, TechnicalDetails } from '../../components/data.jsx'
+import { DataTable, StatusBadge } from '../../components/data.jsx'
+import { DetailButton, DetailField, DetailPanel, DetailSection } from '../../components/detail.jsx'
 import { formatDayRange, localDayBoundary, localDayOf } from '../../shared/presentation.js'
 import { ActionNotice, ResourceState, ErrorState } from '../../components/feedback.jsx'
 import { ocrPage, readFilters, changeFilters, filterQuery, pageKey } from './adapters.js'
 import { newOperationId, queryPath, useOperation, useOperationsRead } from './api.js'
 
+// Detalle OCR de una versión: estados con su valor registrado, la confianza tal como llegó y los identificadores.
+function OcrDetailPanel({ row, onClose }) {
+  if (!row) return null
+  return <DetailPanel title={row.document_name} subtitle="Detalle OCR de la versión" onClose={onClose}>
+    <DetailSection title="Resultado OCR">
+      <DetailField label="Estado de procesamiento" value={<StatusBadge kind="processing" value={row.processing_state} />} code={row.processing_state} />
+      <DetailField label="Estado OCR" value={<StatusBadge kind="ocr" value={row.ocrStateLabel} />} />
+      <DetailField label="Confianza" value={row.confidenceLabel} />
+      <DetailField label="Confianza recibida" value={row.confidenceRaw} mono />
+      <DetailField label="Procesado" value={row.processedLabel} />
+    </DetailSection>
+    <DetailSection title="Identificadores">
+      <DetailField label="Archivo" value={row.file_name} />
+      <DetailField label="Documento" value={row.document_id} mono copy="Copiar documento" />
+      <DetailField label="Versión" value={row.document_version_id} mono copy="Copiar versión" />
+    </DetailSection>
+  </DetailPanel>
+}
 export function OcrPanel({ refreshKey = 0, onProcessingCompleted } = {}) {
   const session = useSession()
   if (!can(session.principal, 'document.manage')) return <ErrorState error={new ApiError(403)} />
@@ -19,6 +38,7 @@ export function OcrPanel({ refreshKey = 0, onProcessingCompleted } = {}) {
 }
 function OcrWorkspace({ refreshKey, onProcessingCompleted }) {
   const [params, setParams] = useSearchParams(); const filters = readFilters(params.toString(), 'ocr')
+  const [detailId, setDetailId] = useState(null)
   const [selected, setSelected] = useState(null); const [requestId, setRequestId] = useState(null); const [notice, setNotice] = useState(null); const [filterError, setFilterError] = useState(null)
   const resource = useOperationsRead(queryPath('ocr', filters), ocrPage); const mutation = useOperation()
   const previousRefreshKey = useRef(refreshKey); const reload = useRef(resource.reload); reload.current = resource.reload
@@ -57,8 +77,8 @@ function OcrWorkspace({ refreshKey, onProcessingCompleted }) {
     {filterError && <ErrorState error={filterError} />}{notice && <ActionNotice title={notice} onDismiss={() => setNotice(null)} />}
     <ResourceState resource={resource} context="el estado OCR" skeleton="table" empty={{ title: 'Sin documentos para estos filtros', message: 'No hay documentos con resultado OCR que coincidan con la selección.' }}>{(data) => <div className="space-y-3"><ResultsSummary count={data.items.length} hasMore={Boolean(data.next_cursor)} noun={['documento', 'documentos']} /><DataTable caption="Resultados operativos OCR" rows={data.items} columns={[
       { key: 'document_name', label: 'Documento' }, { key: 'processing_state', label: 'Procesamiento', render: (row) => <div className="space-y-1"><StatusBadge kind="processing" value={row.processing_state} />{row.processing_state === 'PROCESANDO' && <p className="max-w-[220px] text-xs text-secondary">En procesamiento. Si permanece así, avisa al equipo de TI.</p>}</div> }, { key: 'ocrStateLabel', label: 'Estado OCR', render: (row) => <StatusBadge kind="ocr" value={row.ocrStateLabel} /> }, { key: 'confidenceLabel', label: 'Confianza', numeric: true }, { key: 'processedLabel', label: 'Procesado', nowrapWide: true }, { key: 'action', label: 'Acción', fit: true, sticky: true, render: (row) => row.reprocess_eligible ? <Button variant="secondary" disabled={mutation.busy} onClick={() => { setSelected(row); setRequestId(newOperationId()); mutation.clear() }}>Reprocesar</Button> : <span className="text-xs text-muted">Sin acciones</span> },
-      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <TechnicalDetails summary="Ver"><dl><dt>Archivo</dt><dd>{row.file_name ?? '—'}</dd><dt>Documento</dt><dd className="mono">{row.document_id}</dd><dt>Versión</dt><dd className="mono">{row.document_version_id}</dd><dt>Confianza recibida</dt><dd className="mono">{row.confidenceRaw}</dd><dt>Estado de procesamiento</dt><dd className="mono">{row.processing_state}</dd></dl></TechnicalDetails> },
-    ]} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
+      { key: 'detail', label: 'Detalle', fit: true, render: (row) => <DetailButton subject={row.document_name} onClick={() => setDetailId(row.id)} /> },
+    ]} selectedKey={detailId} /><OcrDetailPanel row={data.items.find((item) => item.id === detailId)} onClose={() => setDetailId(null)} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
       onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'ocr')) }}
       onPrevious={() => { const previous = pages.pop(); setParams(filterQuery(previous ? { ...withoutCursor(filters), cursor: previous } : withoutCursor(filters), 'ocr')) }}
       onFirst={() => setParams(filterQuery(withoutCursor(filters), 'ocr'))} /></div>}</ResourceState>
