@@ -60,6 +60,9 @@ class _NoInputRepository:
     def proactive_job(self, connection, job_run_id):
         return self.job
 
+    def acquire_run_lock(self, connection):
+        return None
+
     def proactive_run_for_job(self, connection, job_run_id, *, for_update=False):
         return None
 

@@ -200,6 +200,10 @@ class ProactiveAnalysisService:
 
     def _freeze(self, context: ProactiveAnalysisContext):
         with self.repository.transaction() as connection:
+            # El bloqueo es la primera sentencia: en REPEATABLE READ la instantánea se toma después de obtenerlo, de modo
+            # que una ejecución simultánea ya confirmada es visible al comparar huellas y no se analiza dos veces la
+            # misma entrada (RF-039).
+            self.repository.acquire_run_lock(connection)
             job = self.repository.proactive_job(connection, context.job_run_id)
             self._validate_job(job, context)
 
@@ -220,6 +224,9 @@ class ProactiveAnalysisService:
                 previous = _fingerprint_from_run(latest)
                 if previous == fingerprint:
                     return ProactiveAnalysisResult("NO_RELEVANT_WORK", fingerprint, None, None)
+            # Otra ventana ya congeló esta misma entrada y su análisis sigue en curso: no es trabajo nuevo.
+            if self.repository.started_proactive_run_with_fingerprint(connection, fingerprint) is not None:
+                return ProactiveAnalysisResult("NO_RELEVANT_WORK", fingerprint, None, None)
 
             snapshot = select_snapshot_closure(relevance_input)
             window_start, window_end, codes = run_metadata(snapshot)
@@ -230,7 +237,6 @@ class ProactiveAnalysisService:
                 job_run_id=job["id"],
                 parent_operation_id=job["operation_id"],
             )
-            self.repository.acquire_run_lock(connection)
             created = self.repository.create_proactive_run(
                 connection,
                 run_id=run_id,

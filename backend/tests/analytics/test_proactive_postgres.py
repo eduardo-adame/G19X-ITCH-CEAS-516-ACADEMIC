@@ -500,6 +500,26 @@ def test_concurrent_same_job_and_input_does_not_duplicate_effects(database) -> N
     assert len(_rows(engine, "SELECT id FROM app.context_reference")) == 1
 
 
+@pytest.mark.requires_db
+def test_concurrent_windows_with_same_input_create_one_run(database) -> None:
+    # Dos ventanas programadas distintas que llegan a la vez con la misma entrada: una analiza y la otra no tiene
+    # trabajo relevante (RF-039).
+    engine, conninfo = database
+    _observation(engine, "KPI-RC-03", 1, "0")
+    _observation(engine, "KPI-RC-03", 2, "2")
+    jobs, barrier = [_job(engine), _job(engine)], Barrier(2)
+
+    def invoke(job):
+        barrier.wait(timeout=10)
+        return _service(conninfo).execute(_context(job))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = [future.result(timeout=30) for future in [executor.submit(invoke, job) for job in jobs]]
+    assert sorted(result.status for result in results) == ["COMPLETED", "NO_RELEVANT_WORK"]
+    assert len(_rows(engine, "SELECT id FROM app.analytic_run WHERE run_type='PROACTIVE_ANALYSIS'")) == 1
+    assert len(_rows(engine, "SELECT id FROM app.finding")) == 1
+
+
 class _SecuritySpy:
     def __init__(self):
         self.capabilities = []

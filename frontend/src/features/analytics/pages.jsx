@@ -11,7 +11,7 @@ import { Badge, DataTable, KpiMetric, KpiRow, RiskBadge, TechnicalDetails } from
 import { EmptyState, ErrorState, ResourceState } from '../../components/feedback.jsx'
 import { Icon } from '../../components/Icon.jsx'
 import { validDate } from '../../shared/formatters.js'
-import { formatAuditTimestamp, formatMonth, formatPeriodRange, formatQuantity, formatUserTimestamp } from '../../shared/presentation.js'
+import { formatAuditTimestamp, formatMonth, formatPercentChange, formatPeriodRange, formatQuantity, formatUserTimestamp } from '../../shared/presentation.js'
 import { writeQuery } from '../../shared/query.js'
 import { analyticsFilters, analyticsPaths, FILTER_VALIDATORS, PERIODS, RISKS } from './api.js'
 import { adaptAnalysis, adaptKpis, alertCountLabel, KPI_CATALOG, ruleLabel, ruleShortLabel } from './adapters.js'
@@ -49,16 +49,18 @@ function Filters({ filters, entities, setParams, showAnalysis, defaults }) {
   useEffect(() => { setDraft({ ...filters.raw, period: filters.period, risk_type: filters.risk_type, mode: filters.analysisMode }); setRangeError(null) }, [filters.canonical, filters.risk_type])
   function apply(values) {
     if (values.period === 'custom' && (!validDate(values.period_start) || !validDate(values.period_end) || values.period_start > values.period_end)) return
-    const next = { risk_type: values.risk_type, entity: values.entity, period: values.period, ...(showAnalysis ? { analysis_mode: values.mode } : {}) }
+    // En Tendencias el periodo solo acota el análisis histórico: con el análisis vigente no se envía (no tendría efecto).
+    const withPeriod = !showAnalysis || values.mode === 'historical'
+    const next = { risk_type: values.risk_type, entity: values.entity, ...(withPeriod ? { period: values.period } : {}), ...(showAnalysis ? { analysis_mode: values.mode } : {}) }
     if (showAnalysis && values.mode === 'historical') next.analytic_run_id = values.analytic_run_id
-    if (values.period === 'custom') { next.period_start = values.period_start; next.period_end = values.period_end }
+    if (withPeriod && values.period === 'custom') { next.period_start = values.period_start; next.period_end = values.period_end }
     setParams(writeQuery(next, FILTER_VALIDATORS))
   }
   const schedule = useDebouncedCallback(apply, 250)
   const choose = (key) => (event) => {
     const values = { ...draft, [key]: event.target.value }
     setDraft(values)
-    if (values.period !== 'custom') schedule(values)
+    if (values.period !== 'custom' || (key === 'mode' && values.mode !== 'historical')) schedule(values)
   }
   const setDate = (key) => (event) => {
     const values = { ...draft, [key]: event.target.value }
@@ -70,15 +72,15 @@ function Filters({ filters, entities, setParams, showAnalysis, defaults }) {
   }
   const reset = (patch) => apply({ ...draft, ...patch })
   const chips = [
-    ...(filters.period !== defaults.period ? [{ id: 'period', label: filters.period === 'custom' && filters.raw.period_start ? `Periodo: ${formatPeriodRange(filters.raw.period_start, filters.raw.period_end)}` : `Periodo: ${periodLabel(filters.period)}`, onRemove: () => reset({ period: defaults.period, period_start: undefined, period_end: undefined }) }] : []),
+    ...((!showAnalysis || filters.analysisMode === 'historical') && filters.period !== defaults.period ? [{ id: 'period', label: filters.period === 'custom' && filters.raw.period_start ? `Periodo: ${formatPeriodRange(filters.raw.period_start, filters.raw.period_end)}` : `Periodo: ${periodLabel(filters.period)}`, onRemove: () => reset({ period: defaults.period, period_start: undefined, period_end: undefined }) }] : []),
     ...(filters.risk_type !== defaults.risk ? [{ id: 'risk', label: `Riesgo: ${riskLabel(filters.risk_type)}`, onRemove: () => reset({ risk_type: defaults.risk }) }] : []),
     ...(filters.raw.entity ? [{ id: 'entity', label: `Entidad: ${filters.raw.entity}`, onRemove: () => reset({ entity: undefined }) }] : []),
     ...(showAnalysis && filters.analysisMode === 'historical' ? [{ id: 'mode', label: filters.raw.analytic_run_id ? 'Análisis: ejecución seleccionada' : 'Análisis: histórico', onRemove: () => reset({ mode: 'current', analytic_run_id: undefined }) }] : []),
   ]
   const primary = <>
     {showAnalysis && <Select label="Análisis" value={draft.mode} onChange={choose('mode')} options={[{ value: 'current', label: 'Vigente' }, { value: 'historical', label: 'Histórico' }]} />}
-    <Select label="Periodo" value={draft.period} onChange={choose('period')} options={PERIODS} />
-    {draft.period === 'custom' && <><Input compact label="Desde" type="date" max={draft.period_end || undefined} value={draft.period_start || ''} onChange={setDate('period_start')} /><Input compact label="Hasta" type="date" min={draft.period_start || undefined} value={draft.period_end || ''} onChange={setDate('period_end')} error={rangeError} /></>}
+    {(!showAnalysis || draft.mode === 'historical') && <Select label="Periodo" value={draft.period} onChange={choose('period')} options={PERIODS} />}
+    {(!showAnalysis || draft.mode === 'historical') && draft.period === 'custom' && <><Input compact label="Desde" type="date" max={draft.period_end || undefined} value={draft.period_start || ''} onChange={setDate('period_start')} /><Input compact label="Hasta" type="date" min={draft.period_start || undefined} value={draft.period_end || ''} onChange={setDate('period_end')} error={rangeError} /></>}
     <Select label="Tipo de riesgo" value={draft.risk_type} onChange={choose('risk_type')} options={RISKS} />
     {entities.length
       ? <Select label="Entidad" value={draft.entity || ''} onChange={choose('entity')} options={[{ value: '', label: 'Todas las aplicables' }, ...entities.map((value) => ({ value, label: value }))]} />
@@ -130,10 +132,12 @@ function HumanizedFinding({ finding, evaluations, principal }) {
   const view = describeFinding(finding, evaluations)
   const risk = finding.severity ? { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' }[finding.severity] : null
   const domain = DOMAIN_ROUTES[finding.kpi_code]
+  // La variación porcentual vive en la evaluación que originó el hallazgo; sin ella (referencia cero) no se muestra.
+  const percent = formatPercentChange(evaluations.find((row) => row.id === finding.proactive_evaluation_id)?.percentage_variation)
   return <article className="space-y-4 rounded-panel border border-border bg-surface p-5">
     <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 space-y-1"><p className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--warning)]"><Icon name="warning" size={12} />Requiere atención</p><h3 className="text-sm font-semibold">{view.title}</h3><p className="text-xs text-secondary">{[view.name, view.scope].filter(Boolean).join(' · ')}</p></div>{risk && <RiskBadge level={risk} />}</div>
     {view.sentence && <p className="text-[13px] leading-relaxed">{view.sentence}</p>}
-    <dl className="grid grid-cols-2 gap-3 rounded-control bg-secondary p-3 text-xs sm:grid-cols-4"><div><dt className="text-muted">Mes evaluado</dt><dd className="mt-0.5 font-medium">{view.monthText}</dd></div><div><dt className="text-muted">Actual</dt><dd className="mt-0.5 font-mono tabular-nums">{view.values.current}</dd></div><div><dt className="text-muted">Referencia del análisis</dt><dd className="mt-0.5 font-mono tabular-nums">{view.values.reference}</dd></div><div><dt className="text-muted">Variación</dt><dd className="mt-0.5 font-mono font-semibold tabular-nums">{view.values.variation}</dd></div></dl>
+    <dl className="grid grid-cols-2 gap-3 rounded-control bg-secondary p-3 text-xs sm:grid-cols-4"><div><dt className="text-muted">Mes evaluado</dt><dd className="mt-0.5 font-medium">{view.monthText}</dd></div><div><dt className="text-muted">Actual</dt><dd className="mt-0.5 font-mono tabular-nums">{view.values.current}</dd></div><div><dt className="text-muted">Referencia del análisis</dt><dd className="mt-0.5 font-mono tabular-nums">{view.values.reference}</dd></div><div><dt className="text-muted">Variación</dt><dd className="mt-0.5 font-mono font-semibold tabular-nums">{view.values.variation}{percent && <span className="block text-xs font-normal text-secondary">{percent}</span>}</dd></div></dl>
     {view.recurrence && <p className="text-xs text-secondary">{view.recurrence}</p>}
     <div className="flex flex-wrap items-center gap-4 text-xs">{domain && <Link className="font-medium underline" to={`${domain}?${new URLSearchParams({ period: 'custom', period_start: finding.period_start, period_end: finding.period_end, analysis_mode: 'current' })}`}>Ver indicador</Link>}{finding.contextReferenceId && can(principal, 'document.query') && <Link className="font-medium underline" to={`/consulta?context_reference_id=${encodeURIComponent(finding.contextReferenceId)}`} state={{ contextLabel: `${view.name} — ${view.monthText}` }}>Verificar evidencia documental</Link>}</div>
     <TechnicalDetails><dl>
@@ -152,6 +156,8 @@ function NoFindings({ riskType }) {
   return <EmptyState title="Sin alertas en el análisis" message="El análisis no generó alertas con las reglas y el historial disponibles." />
 }
 
+// Dirección de la tendencia de tres meses (RF-042): se informa aunque no genere alerta.
+const TREND_LABELS = Object.freeze({ INCREASING: 'Creciente', DECREASING: 'Decreciente' })
 function evaluationResult(row) {
   if (row.outcome === 'INSUFFICIENT_HISTORY') return 'Historial insuficiente'
   // La recurrencia va en una segunda línea atenuada: la celda conserva un ancho estrecho y legible.
@@ -178,11 +184,12 @@ function AnalysisRunDetail({ run }) {
       ...(singleMonth ? [] : [{ key: 'evaluation_period', label: 'Mes', nowrap: true, render: (row) => formatMonth(row.evaluation_period) }]),
       { key: 'currentText', label: 'Actual', numeric: true, render: (row) => formatQuantity(row.current_value, row.unit) },
       { key: 'referenceText', label: 'Referencia', numeric: true, render: (row) => formatQuantity(row.reference_value, row.unit) },
-      { key: 'absoluteText', label: 'Variación', numeric: true, render: (row) => formatQuantity(row.absolute_variation, row.unit, { signed: true }) },
+      { key: 'absoluteText', label: 'Variación', numeric: true, render: (row) => { const percent = formatPercentChange(row.percentage_variation); return <>{formatQuantity(row.absolute_variation, row.unit, { signed: true })}{percent && <span className="block text-xs text-secondary">{percent}</span>}</> } },
+      { key: 'trend_direction', label: 'Tendencia', nowrap: true, render: (row) => TREND_LABELS[row.trend_direction] || '—' },
       { key: 'result', label: 'Resultado', render: evaluationResult },
       { key: 'rules_applied', label: commonRules.length ? 'Regla del indicador' : 'Reglas', medium: true, render: (row) => ownRules(row).length ? <ul className="space-y-0.5">{ownRules(row).map((rule) => <li key={rule} title={ruleLabel(rule)}>{ruleShortLabel(rule)}</li>)}</ul> : '—' },
     ]} />
-    <TechnicalDetails><dl><dt>Ejecución</dt><dd className="mono">{formatAuditTimestamp(run.completed_at)}</dd><dt>Ventana de datos</dt><dd className="mono">{formatAuditTimestamp(run.window_start)} – {formatAuditTimestamp(run.window_end)}</dd><dt>Texto registrado</dt><dd className="whitespace-pre-wrap">{run.executive_summary}</dd></dl></TechnicalDetails>
+    <TechnicalDetails><dl><dt>Ejecución</dt><dd className="mono">{formatAuditTimestamp(run.completed_at)}</dd><dt>Ventana de datos</dt><dd className="mono">{formatAuditTimestamp(run.window_start)} – {formatAuditTimestamp(run.window_end)}</dd><dt>Resumen registrado de la ejecución completa (sin filtros)</dt><dd className="whitespace-pre-wrap">{run.executive_summary}</dd></dl></TechnicalDetails>
   </div>
 }
 function AnalysisEvaluations({ data }) {
