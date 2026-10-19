@@ -35,6 +35,16 @@ function ConflictComparison({ row }) {
       <tbody>{fields.map((item) => <tr key={item.field} className={item.differs ? 'font-medium' : 'text-secondary'}><th scope="row" className="py-1 pr-3 text-left font-mono font-normal">{item.field}</th><td className="py-1 pr-3">{shownValue(item.current)}</td><td className="py-1">{shownValue(item.received)}{item.differs && <span className="ml-1 text-[var(--warning)]">· distinto</span>}</td></tr>)}</tbody></table></div></div>
 }
 
+// Acciones de la fila en una sola línea (Corregir a la izquierda, Descartar a la derecha) para no alargar la fila; la
+// nota de por qué no se puede corregir va debajo, con ancho acotado para no ensanchar la columna.
+function QuarantineActions({ row, canReinject, canDiscard, onCorrect, onDiscard }) {
+  if (!row.canAct) return <span className="text-xs text-muted">Resuelto</span>
+  const note = !row.canCorrect && (row.isConflict ? 'Conflicto de identidad: solo puede descartarse' : 'Sin registro tabular corregible')
+  return <div className="grid gap-1">
+    <div className="flex flex-nowrap items-center gap-2">{row.canCorrect && canReinject && <Button variant="secondary" onClick={onCorrect}>Corregir</Button>}{canDiscard && <Button variant="danger" onClick={onDiscard}>Descartar</Button>}</div>
+    {note && <span className="block w-max max-w-[13rem] text-xs text-muted">{note}</span>}
+  </div>
+}
 // Detalle del elemento retenido: causa con su regla registrada, ubicación en el archivo y los identificadores
 // copiables. Las acciones (corregir, descartar) permanecen en la tabla.
 function QuarantineDetailPanel({ row, onClose }) {
@@ -107,7 +117,7 @@ function QuarantineWorkspace({ principal }) {
     <div id="cuarentena-resultados" role="tabpanel" aria-labelledby={activeTab.id}><ResourceState resource={resource} context="la cuarentena" skeleton="table" empty={{ title: activeTab.empty[0], message: activeTab.empty[1] }}>{(data) => <div className="space-y-4"><ResultsSummary count={data.items.length} hasMore={Boolean(data.next_cursor)} /><DataTable caption="Elementos en cuarentena" rows={data.items} columns={[
       { key: 'cause_description', label: 'Causa', medium: true }, { key: 'source_family', label: 'Familia', render: (row) => familyLabel(row.source_family) ?? '—' }, { key: 'row_number', label: 'Fila', numeric: true, render: (row) => row.row_number === null || row.row_number === undefined ? '—' : <span>{row.row_number}{row.source_sheet && <span className="block text-xs text-muted">Hoja {row.source_sheet}</span>}</span> },
       { key: 'createdLabel', label: 'Retenido', nowrapWide: true }, { key: 'state', label: 'Estado', render: (row) => <StatusBadge kind="quarantine" value={row.state} /> },
-      { key: 'actions', label: 'Acciones', fit: true, sticky: true, render: (row) => <div className="flex flex-wrap items-center gap-2">{row.canCorrect && can(principal, 'quarantine.reinject') && <Button variant="secondary" onClick={() => setEditing(row)}>Corregir</Button>}{row.canAct && can(principal, 'quarantine.discard') && <Button variant="danger" onClick={() => { mutation.clear(); setDiscarding(row); setJustification('') }}>Descartar</Button>}{!row.canAct && <span className="text-xs text-muted">Resuelto</span>}{row.canAct && !row.canCorrect && <span className="text-xs text-muted">{row.isConflict ? 'Conflicto de identidad: solo puede descartarse' : 'Sin registro tabular corregible'}</span>}</div> },
+      { key: 'actions', label: 'Acciones', fit: true, sticky: true, render: (row) => <QuarantineActions row={row} canReinject={can(principal, 'quarantine.reinject')} canDiscard={can(principal, 'quarantine.discard')} onCorrect={() => setEditing(row)} onDiscard={() => { mutation.clear(); setDiscarding(row); setJustification('') }} /> },
       { key: 'detail', label: 'Detalle', fit: true, render: (row) => <DetailButton subject={row.row_number === null || row.row_number === undefined ? row.cause_description : `la fila ${row.row_number}`} onClick={() => setDetailId(row.id)} /> },
     ]} selectedKey={detailId} /><QuarantineDetailPanel row={data.items.find((item) => item.id === detailId)} onClose={() => setDetailId(null)} /><CursorPager hasNext={Boolean(data.next_cursor)} hasPrevious={pages.canGoBack} atDeepLink={Boolean(filters.cursor) && !pages.canGoBack}
       onNext={() => { pages.push(filters.cursor); setParams(filterQuery({ ...filters, cursor: data.next_cursor }, 'quarantine')) }}
