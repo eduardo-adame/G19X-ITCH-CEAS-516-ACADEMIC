@@ -1,0 +1,64 @@
+ID_Incidente,Fecha_Evento,Area,Nivel_Severidad
+INC-OPEA-101,2026-05-04,Operaciones,alto
+INC-OPEA-201,2026-06-21,Operaciones,alto
+INC-OPEA-301,2026-07-14,Operaciones,alto
+INC-OPEA-302,2026-07-05,Operaciones,alto
+INC-OPEA-401,2026-08-09,Operaciones,alto
+INC-OPEA-402,2026-08-01,Operaciones,alto
+INC-OPEA-403,2026-08-26,Operaciones,alto
+INC-OPEA-501,2026-09-13,Operaciones,alto
+INC-OPEA-502,2026-09-12,Operaciones,alto
+INC-OPEA-503,2026-09-04,Operaciones,alto
+INC-OPEA-504,2026-09-19,Operaciones,alto
+INC-OPEA-601,2026-10-15,Operaciones,alto
+INC-OPEA-602,2026-10-23,Operaciones,alto
+INC-OPEA-603,2026-10-26,Operaciones,alto
+INC-OPEA-604,2026-10-09,Operaciones,alto
+INC-OPEA-605,2026-10-19,Operaciones,alto
+INC-OPEA-606,2026-10-11,Operaciones,alto
+INC-OPEM-101,2026-05-17,Operaciones,medio
+INC-OPEM-102,2026-05-22,Operaciones,medio
+INC-OPEM-201,2026-06-19,Operaciones,medio
+INC-OPEM-202,2026-06-04,Operaciones,medio
+INC-OPEM-203,2026-06-08,Operaciones,medio
+INC-OPEM-301,2026-07-14,Operaciones,medio
+INC-OPEM-302,2026-07-08,Operaciones,medio
+INC-OPEM-401,2026-08-24,Operaciones,medio
+INC-OPEM-402,2026-08-10,Operaciones,medio
+INC-OPEM-501,2026-09-26,Operaciones,medio
+INC-OPEM-502,2026-09-09,Operaciones,medio
+INC-OPEM-503,2026-09-03,Operaciones,medio
+INC-OPEM-601,2026-10-18,Operaciones,medio
+INC-OPEM-602,2026-10-16,Operaciones,medio
+INC-FINM-101,2026-05-07,Finanzas,medio
+INC-FINM-102,2026-05-11,Finanzas,medio
+INC-FINM-103,2026-05-15,Finanzas,medio
+INC-FINM-201,2026-06-22,Finanzas,medio
+INC-FINM-202,2026-06-26,Finanzas,medio
+INC-FINM-301,2026-07-20,Finanzas,medio
+INC-FINM-302,2026-07-22,Finanzas,medio
+INC-FINM-303,2026-07-22,Finanzas,medio
+INC-FINM-304,2026-07-24,Finanzas,medio
+INC-FINM-401,2026-08-21,Finanzas,medio
+INC-FINM-402,2026-08-09,Finanzas,medio
+INC-FINM-403,2026-08-17,Finanzas,medio
+INC-FINM-501,2026-09-13,Finanzas,medio
+INC-FINM-502,2026-09-06,Finanzas,medio
+INC-FINM-601,2026-10-09,Finanzas,medio
+INC-LEGB-101,2026-05-19,Legal,bajo
+INC-LEGB-301,2026-07-14,Legal,bajo
+INC-LEGB-401,2026-08-03,Legal,bajo
+INC-LEGB-402,2026-08-03,Legal,bajo
+INC-LEGB-501,2026-09-26,Legal,bajo
+INC-LEGB-601,2026-10-09,Legal,bajo
+INC-RECB-201,2026-06-04,Recursos Humanos,bajo
+INC-RECB-301,2026-07-06,Recursos Humanos,bajo
+INC-RECB-501,2026-09-22,Recursos Humanos,bajo
+INC-RECB-502,2026-09-11,Recursos Humanos,bajo
+INC-RECB-601,2026-10-19,Recursos Humanos,bajo
+INC-TECA-301,2026-07-25,Tecnología,alto
+INC-TECA-401,2026-08-02,Tecnología,alto
+INC-TECA-501,2026-09-18,Tecnología,alto
+INC-TECA-601,2026-10-12,Tecnología,alto
+INC-TECA-602,2026-10-06,Tecnología,alto
+INC-DEMO-999,2026-09-31,Operaciones,alto
