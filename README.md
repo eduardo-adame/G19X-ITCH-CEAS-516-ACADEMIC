@@ -1,6 +1,6 @@
-# Dashboard de Indicadores de Riesgo Legal
+# Legaltech — Dashboard de Indicadores de Riesgo Legal
 
-Aplicación web para consolidar, procesar y visualizar información de riesgo contractual, litigios, cumplimiento normativo, eficiencia operativa y calidad documental.
+**Legaltech** es el nombre con el que se presenta la aplicación web (`frontend/src/shared/brand.js`). Aplicación web para consolidar, procesar y visualizar información de riesgo contractual, litigios, cumplimiento normativo, eficiencia operativa y calidad documental.
 
 Este repositorio contiene el sistema desarrollado como MVP del proyecto de residencia profesional.
 
@@ -47,6 +47,29 @@ BGE-M3 se ejecuta dentro del backend y utiliza una caché persistente. La recupe
 Airflow se habilita con el perfil `airflow`. Se materializa en tres contenedores: inicialización, scheduler y webserver. Sus metadatos se almacenan en SQLite, en un volumen independiente de PostgreSQL.
 
 ## 2. Cómo levantar el entorno
+
+### Instalación rápida (Windows)
+
+Con los requisitos de la sección 2.1, desde la raíz del repositorio:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -ConDemo
+```
+
+El script hace en orden lo que describen las secciones 2.2 a 2.9:
+
+1. Crea `.env` con secretos aleatorios si todavía no existe; un `.env` existente se conserva.
+2. Construye las imágenes, prepara la base de datos y crea la primera cuenta TI `ti-inicial`, la cuenta de proceso de Airflow y el alcance documental.
+3. Inicia la aplicación y, con `-ConAirflow`, Airflow.
+4. Con `-ConDemo` carga los datos ficticios de [`demo/`](demo/README.md).
+
+Al terminar muestra **una sola vez** la contraseña de `ti-inicial` y la de las cuentas de demostración. Abre http://localhost:3000 e inicia sesión. Para comprobar la instalación:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
+```
+
+Si quieres entender o adaptar cada paso, o usas Linux o macOS, sigue el procedimiento manual de las secciones siguientes. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
 ### 2.1. Requisitos
 
@@ -143,65 +166,36 @@ docker compose up -d --wait postgres
 
 La construcción inicial instala las dependencias del backend, incluidas las de embeddings, y compila el frontend.
 
-### 2.4. Preparar la base de datos — primera instalación
+### 2.4. Preparar la base de datos, la primera cuenta TI y los permisos
 
-El siguiente bloque:
+El script versionado `backend/scripts/primera_instalacion.py` hace en un solo paso:
 
 1. Aplica las migraciones con la identidad administradora.
-2. Aprovisiona el usuario limitado del backend.
-3. Aprovisiona y verifica el lector independiente de auditoría.
+2. Aprovisiona el usuario limitado del backend y verifica el lector independiente de auditoría.
+3. Crea la primera cuenta TI.
+4. Crea la cuenta de proceso de Airflow (`AIRFLOW_INGESTION_USERNAME`, rol Analista) si `AIRFLOW_INGESTION_PASSWORD` está definida.
+5. Concede el alcance documental de Jurídico, Analista y TI sobre las cuatro familias (sección 2.7).
 
-Usa las funciones existentes en el repositorio. Las credenciales se leen desde `.env`, montado en modo de solo lectura.
-
-Ejecuta el bloque completo desde la raíz del repositorio:
+Las credenciales de base se leen desde `.env`, montado en modo de solo lectura. La contraseña de la cuenta TI se pasa al contenedor y no se escribe en `.env`; debe tener entre 12 y 128 caracteres.
 
 ```powershell
-@'
-import os
-from dotenv import dotenv_values
-from alembic import command
-from alembic.config import Config
-from scripts.provision_runtime_role import main as provision_runtime
-from scripts.provision_audit_reader import provision_protected_payload
-
-local = dotenv_values('/configuracion/.env')
-required = ('POSTGRES_USER', 'POSTGRES_PASSWORD', 'RUNTIME_POSTGRES_USER',
-            'RUNTIME_POSTGRES_PASSWORD', 'AUDIT_POSTGRES_USER', 'AUDIT_POSTGRES_PASSWORD')
-if any(not local.get(key) for key in required):
-    raise SystemExit('Faltan credenciales obligatorias en .env')
-
-os.environ.update({key: value for key, value in local.items() if value is not None})
-os.environ.update(
-    POSTGRES_HOST='postgres',
-    POSTGRES_PORT='5432',
-    POSTGRES_DB=local.get('RUNTIME_POSTGRES_DB') or local.get('POSTGRES_DB') or 'riesgo_legal',
-)
-
-try:
-    command.upgrade(Config('alembic.ini'), 'head')
-    provision_runtime()
-    provision_protected_payload({
-        'host': 'postgres',
-        'port': 5432,
-        'database': os.environ['POSTGRES_DB'],
-        'owner': local['POSTGRES_USER'],
-        'owner_password': local['POSTGRES_PASSWORD'],
-        'login': local['AUDIT_POSTGRES_USER'],
-        'password': local['AUDIT_POSTGRES_PASSWORD'],
-        'configured': True,
-    })
-except Exception as exc:
-    raise SystemExit('PREPARACION_NO_CONFIRMADA: ' + type(exc).__name__) from None
-
-print('PREPARACION_COMPLETADA')
-'@ | docker compose run --rm --no-deps -T --volume "./backend:/administracion:ro" --volume "./.env:/configuracion/.env:ro" --workdir /administracion backend python -
-
-if ($LASTEXITCODE -ne 0) {
-    throw "La preparacion de la base no termino correctamente."
-}
+docker compose run --rm --no-deps -T --volume "./backend:/administracion:ro" --volume "./.env:/configuracion/.env:ro" `
+  --workdir /administracion -e SECURITY_BOOTSTRAP_USERNAME=ti-inicial -e "SECURITY_BOOTSTRAP_PASSWORD=<CONTRASEÑA_PROPIA>" `
+  backend python scripts/primera_instalacion.py
 ```
 
-El resultado esperado es `PREPARACION_COMPLETADA`.
+El resultado esperado termina con `PRIMERA_INSTALACION_COMPLETADA`, después de `BASE_PREPARADA`, `CUENTA_TI_CREADA`, `CUENTA_PROCESO_CREADA` y `ALCANCE_DOCUMENTAL_CONCEDIDO`.
+
+Opciones:
+
+- `--sin-alcance`: conserva la denegación documental por defecto. El alcance se concede después desde la interfaz (sección 2.7).
+- `--roles` y `--familias`: limitan los roles y familias a los que se concede el alcance.
+
+El script puede repetirse sin duplicar nada:
+
+- el esquema ya migrado se conserva;
+- una cuenta TI activa se mantiene (`CUENTA_TI_EXISTENTE`);
+- solo se conceden los alcances que todavía no están activos.
 
 La revisión de esquema esperada por el backend es:
 
@@ -211,11 +205,11 @@ La revisión de esquema esperada por el backend es:
 
 Las migraciones y los scripts administrativos se montan porque la imagen de runtime del backend incorpora el código de la aplicación, pero no esos archivos de administración.
 
-Este procedimiento corresponde a la primera instalación. El aprovisionador runtime puede actualizar la contraseña de un usuario existente; no es un paso necesario para cada arranque.
-
 `RUNTIME_POSTGRES_DB`, si se utiliza, debe señalar una base que ya exista. Esta variable no crea ni copia bases de datos.
 
-### 2.5. Crear la primera cuenta TI
+### 2.5. Primera cuenta TI sin el script (alternativa)
+
+La sección 2.4 ya crea la cuenta. Si preparaste la base por otro medio, el comando de bootstrap crea solo la primera cuenta TI.
 
 Edita temporalmente `.env`:
 
@@ -225,31 +219,15 @@ SECURITY_BOOTSTRAP_USERNAME=ti-inicial
 SECURITY_BOOTSTRAP_PASSWORD=<CONTRASEÑA_PROPIA>
 ```
 
-La contraseña debe tener entre 12 y 128 caracteres.
-
 Ejecuta:
 
 ```powershell
 docker compose run --rm --no-deps backend python -m app.security.bootstrap
 ```
 
-El resultado esperado en una instalación nueva es:
+El resultado esperado en una instalación nueva es `BOOTSTRAP_COMPLETED`. Si ya existe una cuenta TI activa, devuelve `BOOTSTRAP_ALREADY_COMPLETED` y conserva la cuenta existente.
 
-```text
-BOOTSTRAP_COMPLETED
-```
-
-Si ya existe una cuenta TI activa, devuelve `BOOTSTRAP_ALREADY_COMPLETED` y conserva la cuenta existente.
-
-Después de completar el bootstrap, vuelve a editar `.env`:
-
-```dotenv
-SECURITY_BOOTSTRAP_ENABLED=False
-SECURITY_BOOTSTRAP_USERNAME=
-SECURITY_BOOTSTRAP_PASSWORD=
-```
-
-Conserva las credenciales de la cuenta creada en un lugar seguro: las utilizarás para iniciar sesión.
+Después vuelve a dejar `SECURITY_BOOTSTRAP_ENABLED=False` y vacía `SECURITY_BOOTSTRAP_USERNAME` y `SECURITY_BOOTSTRAP_PASSWORD`. Conserva las credenciales de la cuenta en un lugar seguro.
 
 ### 2.6. Iniciar la aplicación y comprobar su disponibilidad
 
@@ -289,7 +267,7 @@ Una instalación nueva no incorpora automáticamente documentos ni información 
 
 La autorización documental es independiente de los roles y **deniega por defecto**: en una instalación nueva ninguna cuenta, ni siquiera la TI, puede ver documentos. Sin este paso el **Visor documental** aparece vacío y la **Consulta documental** responde «Sin autorización».
 
-Con la cuenta TI:
+El script de la sección 2.4 concede por defecto el alcance de Jurídico, Analista y TI sobre las cuatro familias. Para revisarlo o cambiarlo, o si usaste `--sin-alcance`, entra con la cuenta TI:
 
 1. Abre **Administración → Permisos concedidos**.
 2. En **Alcance por familia**, pulsa **Dar** en cada combinación de rol y familia documental que deba consultar documentos (por ejemplo, Jurídico y TI en Contratos y documentos y en Litigios) y confirma en el diálogo.
@@ -299,7 +277,14 @@ Los cambios se aplican de inmediato y no requieren reiniciar servicios. Para apl
 
 ### 2.8. Cargar información para probar
 
-El repositorio no incluye datos de negocio; quien prueba el sistema aporta sus propios archivos CSV, XLSX, PDF o DOCX (máximo 50 MiB cada uno).
+**Datos de demostración:** la carpeta [`demo/`](demo/README.md) tiene datos ficticios de las cuatro familias, cuatro documentos y registros inválidos a propósito para ver la cuarentena. Para cargarlos con el backend iniciado:
+
+```powershell
+docker compose run --rm --no-deps -T --volume "./demo:/demo:ro" --volume "./.env:/configuracion/.env:ro" `
+  -e DEMO_TI_USUARIO=ti-inicial -e "DEMO_TI_CONTRASENA=<CONTRASEÑA_TI>" backend python /demo/cargar_demo.py
+```
+
+Para tus propios archivos CSV, XLSX, PDF o DOCX (máximo 50 MiB cada uno) usa una de estas opciones:
 
 **Opción A — carga manual (recomendada para empezar):**
 
@@ -327,9 +312,7 @@ Las carpetas válidas son `contracts-documents`, `litigation`, `compliance` e `i
 
 ### 2.9. Configurar e iniciar Airflow
 
-La cuenta que utiliza Airflow contra la aplicación debe existir antes de ejecutar el DAG.
-
-Con una cuenta TI, abre **Administración → Cuentas** y pulsa **Nueva cuenta**:
+La cuenta que utiliza Airflow contra la aplicación debe existir antes de ejecutar el DAG. El script de la sección 2.4 la crea cuando `AIRFLOW_INGESTION_PASSWORD` está definida. Para crearla a mano, abre con una cuenta TI **Administración → Cuentas** y pulsa **Nueva cuenta**:
 
 1. **Usuario:** el valor de `AIRFLOW_INGESTION_USERNAME` (por defecto `airflow-ingestion`).
 2. **Nombre visible:** cualquier nombre descriptivo, por ejemplo `Proceso de ingesta Airflow`.
@@ -712,7 +695,7 @@ Invoke-RestMethod http://localhost:8000/health/ready
 Invoke-RestMethod http://localhost:8080/health
 ```
 
-Estas comprobaciones informan de la disponibilidad de los servicios; no sustituyen las pruebas funcionales.
+Estas comprobaciones informan de la disponibilidad de los servicios; no sustituyen las pruebas funcionales. El script de la sección 6.5 las reúne junto con la revisión del esquema y las cuentas.
 
 ### 6.2. Backend
 
@@ -800,18 +783,32 @@ Playwright inicia su servidor de prueba en `http://127.0.0.1:5173` y verifica tr
 
 Estas pruebas utilizan fixtures HTTP sintéticos. Verifican la interfaz y sus contratos; no equivalen a una prueba completa contra PostgreSQL, OCR y Groq reales.
 
-### 6.5. Scripts de diagnóstico existentes
+### 6.5. Scripts de verificación
 
-El repositorio incluye:
+Con la instalación en ejecución:
 
 ```powershell
-python scripts/smoke.py --static-only
-python scripts/smoke.py --profile airflow
+powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-`smoke.py` conserva comprobaciones de la etapa inicial del entorno, como la ausencia de lógica de negocio y de una extensión vectorial instalada permanentemente. Esas condiciones ya no describen el MVP actual.
+Comprueba:
 
-Sus resultados deben interpretarse por comprobación. No debe utilizarse como único criterio de aceptación del sistema.
+- que `.env` no conserva valores de ejemplo y no está versionado;
+- que `.env.example` no contiene secretos reales;
+- que Compose interpreta la configuración;
+- la salud de PostgreSQL, el backend y el frontend, y la readiness con pgvector;
+- la revisión del esquema;
+- la identidad y los privilegios del backend (`runtime_check`);
+- que existe una cuenta TI activa;
+- si Airflow está en ejecución, su salud, el DAG y la cuenta de proceso.
+
+Informa cada comprobación como `PASS` o `FAIL` y termina con código 0 solo si todas pasan. No modifica datos ni muestra secretos.
+
+Las pruebas del cargador de demostración se ejecutan sin dependencias:
+
+```powershell
+python -m unittest demo/test_cargar_demo.py
+```
 
 También existe:
 
@@ -820,3 +817,7 @@ python scripts/check_fresh_volumes.py --image riesgo-legal-backend:bootstrap
 ```
 
 Este script comprueba escritura funcional con el usuario de la imagen en volúmenes temporales nuevos. Crea y elimina sus propios volúmenes de prueba.
+
+## 7. Desarrollo
+
+Durante el desarrollo se utilizaron asistentes de programación basados en inteligencia artificial como apoyo para redactar código, pruebas y documentación. Todo cambio fue revisado, probado y aprobado por el autor antes de incorporarse al repositorio, y los requisitos se rigen por la especificación del proyecto, no por las herramientas utilizadas.

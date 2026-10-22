@@ -1,0 +1,38 @@
+ID_Asunto,Tipo_Asunto,Estado,Fecha
+ASU-DEMO-101,Cumplimiento,Cerrado,2026-05-01
+ASU-DEMO-102,Cumplimiento,Abierto,2026-05-16
+ASU-DEMO-103,Auditoría,Abierto,2026-05-26
+ASU-DEMO-104,Contrato,En proceso,2026-05-05
+ASU-DEMO-105,Auditoría,Cerrado,2026-05-01
+ASU-DEMO-106,Auditoría,En proceso,2026-05-06
+ASU-DEMO-107,Contrato,En proceso,2026-05-03
+ASU-DEMO-201,Litigio,Cerrado,2026-06-15
+ASU-DEMO-202,Auditoría,En proceso,2026-06-13
+ASU-DEMO-203,Litigio,En proceso,2026-06-04
+ASU-DEMO-204,Contrato,Abierto,2026-06-11
+ASU-DEMO-205,Contrato,En proceso,2026-06-16
+ASU-DEMO-301,Contrato,Cerrado,2026-07-12
+ASU-DEMO-302,Litigio,En proceso,2026-07-22
+ASU-DEMO-303,Auditoría,En proceso,2026-07-09
+ASU-DEMO-304,Auditoría,Cerrado,2026-07-24
+ASU-DEMO-305,Cumplimiento,En proceso,2026-07-07
+ASU-DEMO-306,Contrato,Cerrado,2026-07-12
+ASU-DEMO-307,Contrato,En proceso,2026-07-16
+ASU-DEMO-308,Contrato,Cerrado,2026-07-21
+ASU-DEMO-401,Cumplimiento,Abierto,2026-08-22
+ASU-DEMO-402,Cumplimiento,Cerrado,2026-08-25
+ASU-DEMO-403,Cumplimiento,Abierto,2026-08-04
+ASU-DEMO-404,Contrato,Abierto,2026-08-21
+ASU-DEMO-405,Contrato,Cerrado,2026-08-09
+ASU-DEMO-501,Cumplimiento,Abierto,2026-09-22
+ASU-DEMO-502,Contrato,En proceso,2026-09-15
+ASU-DEMO-503,Litigio,Cerrado,2026-09-01
+ASU-DEMO-504,Contrato,En proceso,2026-09-06
+ASU-DEMO-505,Auditoría,En proceso,2026-09-10
+ASU-DEMO-601,Cumplimiento,En proceso,2026-10-15
+ASU-DEMO-602,Auditoría,En proceso,2026-10-18
+ASU-DEMO-603,Cumplimiento,En proceso,2026-10-09
+ASU-DEMO-604,Cumplimiento,En proceso,2026-10-17
+ASU-DEMO-605,Contrato,Abierto,2026-10-11
+ASU-DEMO-606,Contrato,Cerrado,2026-10-05
+ASU-DEMO-999,Otro,Abierto,2026-10-08

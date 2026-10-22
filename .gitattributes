@@ -1,0 +1,4 @@
+# Los PDF y DOCX se versionan tal cual: sin conversión de fin de línea ni comparación como texto (la tabla de
+# referencias de un PDF exige posiciones de bytes exactas).
+*.pdf binary
+*.docx binary

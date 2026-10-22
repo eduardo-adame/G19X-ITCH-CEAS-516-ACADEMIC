@@ -62,7 +62,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-}
     INGESTION_API_URL: http://backend:8000
     AIRFLOW_INGESTION_USERNAME: ${AIRFLOW_INGESTION_USERNAME:-airflow-ingestion}
-    AIRFLOW_INGESTION_PASSWORD: ${AIRFLOW_INGESTION_PASSWORD:?AIRFLOW_INGESTION_PASSWORD debe definirse en producto/.env}
+    AIRFLOW_INGESTION_PASSWORD: ${AIRFLOW_INGESTION_PASSWORD:?AIRFLOW_INGESTION_PASSWORD debe definirse en .env}
   volumes:
     - airflow_db:/opt/airflow/sqlite_db
     - airflow_logs:/opt/airflow/logs
@@ -82,7 +82,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD debe definirse en producto/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD debe definirse en .env}
       POSTGRES_DB: ${POSTGRES_DB:-riesgo_legal}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     command:
@@ -130,9 +130,9 @@ services:
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en producto/.env}
-      POSTGRES_PASSWORD: ${RUNTIME_POSTGRES_PASSWORD:?RUNTIME_POSTGRES_PASSWORD debe definirse en producto/.env}
-      RUNTIME_POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en producto/.env}
+      POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en .env}
+      POSTGRES_PASSWORD: ${RUNTIME_POSTGRES_PASSWORD:?RUNTIME_POSTGRES_PASSWORD debe definirse en .env}
+      RUNTIME_POSTGRES_USER: ${RUNTIME_POSTGRES_USER:?RUNTIME_POSTGRES_USER debe definirse en .env}
       # Separar la base del backend de la base inicial del servidor evita perder un entorno existente al recrear la aplicación.
       POSTGRES_DB: ${RUNTIME_POSTGRES_DB:-${POSTGRES_DB:-riesgo_legal}}
       AUDIT_POSTGRES_USER: ${AUDIT_POSTGRES_USER:-}
@@ -267,7 +267,7 @@ services:
     environment:
       <<: *airflow-env
       AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
-      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD debe definirse en producto/.env}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD debe definirse en .env}
       AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.local}
     command:
       - bash
