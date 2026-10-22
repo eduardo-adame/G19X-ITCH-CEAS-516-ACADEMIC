@@ -62,6 +62,7 @@ El script hace en orden lo que describen las secciones 2.2 a 2.9:
 2. Construye las imágenes, prepara la base de datos y crea la primera cuenta TI `ti-inicial`, la cuenta de proceso de Airflow y el alcance documental.
 3. Inicia la aplicación y, con `-ConAirflow`, Airflow.
 4. Con `-ConDemo` carga los datos ficticios de [`demo/`](demo/README.md).
+5. Con `-GroqApiKey <clave>` escribe la clave de Groq en `.env` para que la consulta documental genere respuestas citadas. Sin ella, la consulta muestra las fuentes recuperadas, pero no redacta la respuesta.
 
 Al terminar muestra **una sola vez** la contraseña de `ti-inicial` y la de las cuentas de demostración. Abre http://localhost:3000 e inicia sesión. Para comprobar la instalación:
 
@@ -69,7 +70,7 @@ Al terminar muestra **una sola vez** la contraseña de `ti-inicial` y la de las 
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-Si quieres entender o adaptar cada paso, o usas Linux o macOS, sigue el procedimiento manual de las secciones siguientes. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+Si quieres entender o adaptar cada paso, o usas Linux o macOS, sigue el procedimiento manual de las secciones siguientes. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md), y lo que se ejecutó para verificar el sistema, con capturas, en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
 
 ### 2.1. Requisitos
 
@@ -803,6 +804,8 @@ Comprueba:
 - si Airflow está en ejecución, su salud, el DAG y la cuenta de proceso.
 
 Informa cada comprobación como `PASS` o `FAIL` y termina con código 0 solo si todas pasan. No modifica datos ni muestra secretos.
+
+Además muestra avisos (`[AVISO]`), que no cuentan como fallo, cuando la consulta documental no podrá generar respuestas: si `GROQ_API_KEY` está vacía, o si el modelo BGE-M3 todavía no se ha descargado.
 
 Las pruebas del cargador de demostración se ejecutan sin dependencias:
 
