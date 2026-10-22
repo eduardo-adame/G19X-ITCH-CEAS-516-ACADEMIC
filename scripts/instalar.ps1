@@ -8,16 +8,18 @@
      base, primera cuenta TI, cuenta de proceso de Airflow y alcance documental.
   3. Inicia backend y frontend y comprueba su salud.
   4. Con -ConAirflow inicia Airflow; con -ConDemo carga los datos ficticios de demo/.
+  Con -GroqApiKey escribe la clave de Groq en .env (no se muestra) para que la consulta documental genere respuestas.
   Al final muestra una sola vez la contraseña de la cuenta TI si la generó el propio script.
 
 .EXAMPLE
-  .\scripts\instalar.ps1 -ConAirflow -ConDemo
+  .\scripts\instalar.ps1 -ConAirflow -ConDemo -GroqApiKey <clave>
 #>
 param(
   [switch] $ConAirflow,
   [switch] $ConDemo,
   [string] $UsuarioTI = 'ti-inicial',
-  [string] $ContrasenaTI
+  [string] $ContrasenaTI,
+  [string] $GroqApiKey
 )
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
@@ -30,6 +32,13 @@ function Secreto([int] $bytes = 32) {
   [Convert]::ToBase64String($buffer).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 function Contrasena { 'Ll' + (Secreto 18) }  # 26 caracteres: cumple el mínimo de 12 de las cuentas de la aplicación.
+function Escribir-Variable([string] $nombre, [string] $valor) {
+  # Sustituye (o agrega) una variable de .env conservando el resto del archivo, en UTF-8 sin BOM.
+  $lineas = [Collections.Generic.List[string]](Get-Content .env -Encoding UTF8)
+  $indice = $lineas.FindIndex({ param($linea) $linea -match "^$nombre=" })
+  if ($indice -ge 0) { $lineas[$indice] = "$nombre=$valor" } else { $lineas.Add("$nombre=$valor") }
+  [IO.File]::WriteAllLines((Join-Path (Get-Location) '.env'), [string[]]$lineas, (New-Object Text.UTF8Encoding $false))
+}
 
 Paso '1/5 Configuración local (.env)'
 $generadaTI = $false
@@ -50,6 +59,7 @@ if (Test-Path .env) {
   [IO.File]::WriteAllLines((Join-Path (Get-Location) '.env'), [string[]]$lineas, (New-Object Text.UTF8Encoding $false))
   Write-Host '.env creado con secretos aleatorios (no se muestran; quedan solo en .env, excluido de Git).'
 }
+if ($GroqApiKey) { Escribir-Variable 'GROQ_API_KEY' $GroqApiKey.Trim(); Write-Host 'GROQ_API_KEY escrita en .env (no se muestra).' }
 if (Select-String -Path .env -Pattern 'CHANGE_ME_|REEMPLAZAR_CON_SECRETO' -Quiet) { throw '.env conserva valores de ejemplo: reemplázalos antes de continuar.' }
 docker compose config --quiet; Comprobar 'La validación de docker-compose.yml'
 
@@ -82,6 +92,9 @@ if ($ConDemo) {
 }
 
 Write-Host "`nSistema disponible en http://localhost:3000" -ForegroundColor Green
+if (-not (Select-String -Path .env -Pattern '^GROQ_API_KEY=.+' -Quiet)) {
+  Write-Host 'AVISO: GROQ_API_KEY está vacía. La consulta documental mostrará las fuentes, pero no generará respuestas; vuelve a ejecutar con -GroqApiKey <clave>.' -ForegroundColor Yellow
+}
 if ($generadaTI) {
   Write-Host "Cuenta TI: $UsuarioTI  Contraseña: $ContrasenaTI" -ForegroundColor Yellow
   Write-Host 'Guárdala ahora: no se vuelve a mostrar. Si la cuenta ya existía, se conserva su contraseña anterior.'
