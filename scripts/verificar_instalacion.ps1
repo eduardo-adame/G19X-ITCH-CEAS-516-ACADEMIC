@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Cada comprobación se informa como PASS o FAIL; el código de salida es 0 solo si todas pasan. No modifica datos ni
-  imprime secretos. Airflow se comprueba solo si sus contenedores están en ejecución.
+  imprime secretos. Airflow se comprueba solo si sus contenedores están en ejecución. Los avisos (AVISO) señalan lo que
+  la consulta documental necesita para generar respuestas, sin contar como fallo: el sistema funciona sin ello.
 
 .EXAMPLE
   .\scripts\verificar_instalacion.ps1
@@ -16,6 +17,7 @@ function Resultado([string] $id, [string] $descripcion, [bool] $ok, [string] $de
   if ($ok) { Write-Host "[PASS] $id  $descripcion" -ForegroundColor Green }
   else { $script:fallos++; Write-Host "[FAIL] $id  $descripcion $(if ($detalle) { "→ $detalle" })" -ForegroundColor Red }
 }
+function Aviso([string] $id, [string] $texto) { Write-Host "[AVISO] $id  $texto" -ForegroundColor Yellow }
 function Valor([string] $nombre) {
   $linea = Get-Content .env -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match "^$nombre=" } | Select-Object -First 1
   if ($linea) { ($linea -split '=', 2)[1].Trim("'", '"') } else { '' }
@@ -58,6 +60,17 @@ docker compose run --rm --no-deps backend python -m app.security.runtime_check *
 Resultado 'BD-02' 'El backend usa el usuario limitado con los privilegios esperados (runtime_check)' ($LASTEXITCODE -eq 0)
 $ti = docker compose exec -T postgres psql -U $usuario -d $base -Atc "select count(*) from app.user_account a join app.user_role r on r.user_id = a.id where a.state = 'ACTIVE' and r.active and r.role_id = 'TI'" 2>$null
 Resultado 'BD-03' 'Existe al menos una cuenta TI activa' ([int]"0$("$ti".Trim())" -ge 1) "$ti"
+
+# Consulta documental: lo que necesita para generar respuestas (avisos, no fallos)
+if (Valor 'GROQ_API_KEY') { Resultado 'RAG-01' 'GROQ_API_KEY configurada en .env' $true }
+else { Aviso 'RAG-01' 'GROQ_API_KEY vacía: la consulta documental mostrará las fuentes recuperadas, pero no generará respuestas (README 2.10).' }
+$modelo = $null; try { $modelo = Invoke-RestMethod http://localhost:8000/health/embeddings -TimeoutSec 20 } catch { }
+if ($modelo -and $modelo.available) { Resultado 'RAG-02' 'Modelo BGE-M3 cargado (1,024 dimensiones)' ($modelo.dimensions -eq 1024) }
+else {
+  docker compose exec -T backend test -d /home/appuser/.cache/bge-m3/huggingface/hub/models--BAAI--bge-m3 2>$null
+  if ($LASTEXITCODE -eq 0) { Aviso 'RAG-02' 'BGE-M3 está en caché y se cargará en la primera indexación o consulta (unos segundos).' }
+  else { Aviso 'RAG-02' 'BGE-M3 aún no se ha descargado: la primera indexación o consulta lo descargará (unos 4.6 GB, requiere Internet).' }
+}
 
 # Airflow (opcional)
 if ($estados.ContainsKey('airflow-scheduler')) {
