@@ -70,6 +70,20 @@ Puede volver a ejecutarse: si la demostración ya está cargada, lo indica (`DEM
   - ¿Qué reclama la parte actora en la demanda laboral?
   - Para ver la restricción de alcance: ¿Debo demandar al proveedor por incumplimiento?
 
+### Si la consulta documental no genera respuestas durante la demostración
+
+La consulta documental usa Groq para redactar la respuesta a partir de los fragmentos recuperados. Si falla, el sistema
+no inventa nada: muestra las **fuentes relacionadas** con su texto y el aviso correspondiente.
+
+| Mensaje | Causa | Qué hacer |
+| --- | --- | --- |
+| «El servicio no está disponible temporalmente» con fuentes listadas | `GROQ_API_KEY` vacía o no válida | Mostrar las fuentes recuperadas: la búsqueda y la autorización sí funcionaron. Para generar respuestas, configura la clave (`instalar.ps1 -GroqApiKey <clave>` o `.env` y `docker compose up -d backend`). |
+| «El servicio de generación alcanzó su límite de uso» | Se agotó el presupuesto por minuto del proveedor | Esperar alrededor de un minuto y pulsar **Intentar de nuevo**. Durante la demostración conviene dejar un minuto entre preguntas. |
+| «Evidencia insuficiente» | La pregunta combina varias cosas o los fragmentos no la sustentan | Es el comportamiento esperado: el sistema se abstiene. Reformula con una sola pregunta concreta. |
+
+Antes de presentar, `scripts\verificar_instalacion.ps1` indica con `[AVISO]` si falta la clave de Groq o si BGE-M3
+todavía no se ha descargado.
+
 ### Por qué algunos indicadores solo muestran el mes en curso
 
 La exposición por litigios activos, los contratos próximos a vencimiento sin revisión y las obligaciones vencidas son
