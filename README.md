@@ -48,15 +48,29 @@ Airflow se habilita con el perfil `airflow`. Se materializa en tres contenedores
 
 ## 2. Cómo levantar el entorno
 
-### Instalación rápida (Windows)
+### Instalación rápida
 
 Con los requisitos de la sección 2.1, desde la raíz del repositorio:
 
 ```powershell
+# Windows (PowerShell)
 powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -ConDemo
 ```
 
-El script hace en orden lo que describen las secciones 2.2 a 2.9:
+```bash
+# Linux y macOS (Bash)
+./scripts/instalar.sh --con-airflow --con-demo
+```
+
+Los dos scripts son equivalentes; en Bash las opciones se escriben `--con-airflow`, `--con-demo` y `--groq-api-key`. El de
+Bash se probó completo en Git Bash para Windows y con ShellCheck, pero no en un equipo Linux o macOS (ver
+[`docs/VERIFICACION.md`](docs/VERIFICACION.md)). Si falla en tu sistema, los pasos manuales de las secciones 2.2 a 2.9 hacen lo mismo.
+
+> **Antes de empezar:** la configuración de referencia es de 16 GB de RAM; el sistema completo se probó también en un equipo
+> de 11 GB con Docker limitado a 5.5 GB. La primera instalación descarga el modelo BGE-M3 (unos 4.6 GB) y las imágenes; con
+> las imágenes ya descargadas tarda unos 6 minutos.
+
+Cada script hace en orden lo que describen las secciones 2.2 a 2.9:
 
 1. Crea `.env` con secretos aleatorios si todavía no existe; un `.env` existente se conserva.
 2. Construye las imágenes, prepara la base de datos y crea la primera cuenta TI `ti-inicial`, la cuenta de proceso de Airflow y el alcance documental.
@@ -70,7 +84,7 @@ Al terminar muestra **una sola vez** la contraseña de `ti-inicial` y la de las 
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-Si quieres entender o adaptar cada paso, o usas Linux o macOS, sigue el procedimiento manual de las secciones siguientes. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md), y lo que se ejecutó para verificar el sistema, con capturas, en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
+Si quieres entender o adaptar cada paso, sigue el procedimiento manual de las secciones siguientes. Para presentar el sistema, [`docs/DEMOSTRACION.md`](docs/DEMOSTRACION.md) tiene un guion de 6 minutos. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md), y lo que se ejecutó para verificar el sistema, con capturas, en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
 
 ### 2.1. Requisitos
 
