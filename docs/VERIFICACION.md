@@ -1,26 +1,48 @@
 # Verificación del sistema
 
 Este documento resume lo que se ejecutó para comprobar que el sistema se instala, funciona con datos y se comporta como
-indica la especificación. Todo se ejecutó en el equipo del autor: Windows 11, Docker Desktop y PowerShell 5.1. Las
-cifras corresponden a `main` en `a3df262` y a las certificaciones de los días previos sobre el mismo código de la
-aplicación.
+indica la especificación. Cada bloque indica el comando que lo reproduce desde el repositorio.
 
-## 1. Instalación desde cero con datos de demostración (2026-10-21)
+## Equipo en el que se ejecutó
 
-Se clonó el repositorio en una carpeta vacía, sin `.env`, y se ejecutó un único comando:
+| Elemento | Valor |
+| --- | --- |
+| Sistema operativo | Windows 11 Home 10.0.26200 |
+| Procesador y memoria | AMD Ryzen 3 4300U (4 hilos), 11 GB de RAM; Docker Desktop limitado a 5.5 GB |
+| Docker | Engine 29.2.1, Compose 5.1.0 |
+| Terminales | PowerShell 5.1 y Git Bash 5.2 |
+
+La configuración de referencia del proyecto es de 16 GB de RAM; este equipo, con menos, ejecutó el sistema completo con
+Airflow, OCR y BGE-M3. Todas las pruebas se hicieron en este equipo (ver la sección 7).
+
+## 1. Instalación desde cero con datos de demostración
+
+Se clonó el repositorio en una carpeta vacía, sin `.env`, y se ejecutó un único comando.
+
+**Windows (PowerShell), 2026-10-21:**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -ConDemo
+powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-| Comprobación | Resultado |
-| --- | --- |
-| Instalación completa | Código 0 en 5.5 minutos |
-| Primera instalación | `BASE_PREPARADA`, `CUENTA_TI_CREADA`, `CUENTA_PROCESO_CREADA`, `ALCANCE_DOCUMENTAL_CONCEDIDO: 12 nuevos`, `PRIMERA_INSTALACION_COMPLETADA` |
-| Datos de demostración | 10 cargas `201 COMPLETADO`; recálculo y análisis `COMPLETED`; **2 alertas** y **7 elementos en cuarentena** |
-| `scripts/verificar_instalacion.ps1` | Todas las comprobaciones en `PASS`: «instalación correcta» |
-| Repetir la instalación | Sin cambios en archivos (10), documentos (4), cuarentena (7), cuentas (4) ni análisis (1) |
-| Recorrido de las vistas | Resumen, Litigios, Tendencias, Cuarentena, Visor, Ingesta, Auditoría y Administración con datos y sin errores de JavaScript |
+**Bash (Git Bash para Windows), 2026-10-24:**
+
+```bash
+./scripts/instalar.sh --con-airflow --con-demo --groq-api-key <clave>
+```
+
+| Comprobación | PowerShell | Bash |
+| --- | --- | --- |
+| Instalación completa | Código 0 en 5.5 minutos | Código 0 en 5.3 minutos |
+| Primera instalación | `BASE_PREPARADA`, `CUENTA_TI_CREADA`, `CUENTA_PROCESO_CREADA`, `ALCANCE_DOCUMENTAL_CONCEDIDO: 12 nuevos`, `PRIMERA_INSTALACION_COMPLETADA` | Igual |
+| Datos de demostración | 10 cargas `201 COMPLETADO`; recálculo y análisis `COMPLETED`; **2 alertas** y **7 elementos en cuarentena** | Igual |
+| `verificar_instalacion.ps1` | Todas las comprobaciones en `PASS`: «instalación correcta» | — |
+| Repetir la instalación | Sin cambios en archivos (10), documentos (4), cuarentena (7), cuentas (4) ni análisis (1); el cargador responde `DEMO_YA_CARGADA` | — |
+| Recorrido de las vistas | Resumen, Litigios, Tendencias, Cuarentena, Visor, Ingesta, Auditoría y Administración con datos y sin errores de JavaScript | — |
+
+`instalar.sh` además se revisó con `bash -n` y ShellCheck 0.10, sin observaciones. Las imágenes ya estaban descargadas en
+ambos casos; desde cero, la descarga de imágenes y del modelo BGE-M3 añade tiempo según la conexión.
 
 | Resumen ejecutivo | Tendencias y riesgos |
 | --- | --- |
@@ -31,22 +53,42 @@ powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -Con
 | ![Zona de cuarentena con un elemento por regla](capturas/zona-de-cuarentena.png) | ![Respuesta con evidencia suficiente y fuente citada](capturas/consulta-documental.png) |
 
 La consulta documental de la captura se hizo con `GROQ_API_KEY` configurada. Sin clave, la misma consulta muestra las
-fuentes recuperadas y el aviso de que no se pudo generar la respuesta (sección 4).
+fuentes recuperadas y el aviso de que no se pudo generar la respuesta (sección 5).
 
-## 2. Instalación manual siguiendo el README (2026-10-19)
+## 2. Ensayo del guion de demostración (2026-10-24)
 
-Se ejecutaron literalmente las secciones 2.2 a 2.11 del README en un clon nuevo desde GitHub:
+Se recorrió [`docs/DEMOSTRACION.md`](DEMOSTRACION.md) paso a paso sobre la instalación Bash con demostración, con las
+cuentas de Jurídico, Analista y TI. Pasaron las 7 comprobaciones del ensayo:
 
-- configuración, migraciones (revisión `0019_rag_provider_telemetry`), cuenta TI y salud;
-- alcance documental desde **Administración**, que antes de concederse deniega por defecto;
-- carga manual de CSV y PDF, ubicación controlada, DAG de Airflow con sus tres tareas en `success`;
-- carga de BGE-M3 y persistencia tras `down` y `up`;
-- pruebas de ejemplo de las secciones 6.2 (40 correctas) y 6.4 (frontend: 12 estáticas y 905 unitarias, más el build).
+1. El Resumen muestra los indicadores y las 2 alertas a Jurídico, sin las opciones de operación.
+2. La alerta de nuevos litigios trae actual, referencia y variación; en Tendencias aparece «Creciente».
+3. El Analista corrige `crítico` → `alto`: «Reinyección confirmada» y los nuevos litigios del Resumen pasan de 7 a 8.
+4. La consulta del depósito da «Evidencia suficiente» con la cita del contrato y se abre en el Visor.
+5. La pregunta «¿Debo demandar al proveedor?» responde «Fuera del alcance del asistente».
+6. La Auditoría registra la reinyección y las consultas.
 
-## 3. Análisis proactivo y alertas (2026-10-18)
+El sistema respondió en menos de 10 segundos en cada paso.
 
-Se certificó el módulo **Tendencias y riesgos** en un entorno aislado con PostgreSQL y BGE-M3 reales. Los resultados se
-compararon con un oráculo independiente escrito a partir de la especificación:
+## 3. Pruebas automáticas (2026-10-24, `main` `11395d9`)
+
+| Bloque | Comando (desde la raíz del repositorio) | Resultado |
+| --- | --- | --- |
+| Frontend: estáticas y unitarias | `cd frontend; npm ci; npm test` | 12 estáticas y 905 unitarias correctas |
+| Frontend: navegador (3 tamaños de pantalla) | `cd frontend; $env:FRONTEND_API_TARGET='http://127.0.0.1:9'; npm run test:e2e` | 651 de 651 correctas |
+| Backend: ejemplo del README (§6.2) | `python -m pytest tests/security/test_tokens_and_passwords.py tests/rag/test_provider.py` | 40 correctas |
+| Backend: reglas, servicio y API del análisis proactivo, y primera instalación | `python -m pytest tests/analytics/test_proactive_rules.py tests/analytics/test_proactive_service.py tests/analytics/test_dashboard_api.py tests/security/test_primera_instalacion.py` | 70 correctas |
+| Cargador de demostración | `python -m unittest demo/test_cargar_demo.py` | 7 correctas |
+
+Los comandos del backend se ejecutan desde `backend` con el entorno virtual de la sección 6.2 del README y no necesitan base
+de datos. Las suites contra PostgreSQL y el modelo real requieren el clúster temporal dedicado que describe la sección 6.3
+del README.
+
+## 4. Certificación complementaria del análisis proactivo (2026-10-18)
+
+Antes de la entrega se certificó el módulo **Tendencias y riesgos** con un arnés externo al repositorio: un entorno
+aislado con PostgreSQL y BGE-M3 reales y un oráculo independiente escrito a partir de la especificación. Esas cifras no se
+pueden repetir con un comando del repositorio, porque el arnés no forma parte del producto. Lo verificable desde el
+repositorio son las pruebas de la sección 3 y, contra PostgreSQL, las suites de la sección 6.3 del README.
 
 | Bloque | Resultado |
 | --- | --- |
@@ -54,23 +96,37 @@ compararon con un oráculo independiente escrito a partir de la especificación:
 | Flujo real de seis meses: ingesta → KPI → análisis diario → DAG → concurrencia | 44 / 44 |
 | Referencia de contexto de una alerta en la consulta documental | 15 / 15 |
 | Interfaz con inicio de sesión real, incluida la caída de la base de datos | 51 / 51 |
-| Suites automáticas del backend (análisis, coordinación y seguridad) | 215 unitarias y 120 contra PostgreSQL correctas; 12 casos que requieren el modelo en el contenedor de pruebas o un arnés de roles propio fallan igual en la versión anterior |
-| Frontend completo | 905 unitarias y 650 de 651 de navegador (la restante pasó al repetirla) |
 
-## 4. Dependencias de la consulta documental
+## 5. Dependencias de la consulta documental
 
 | Dependencia | Qué pasa si falta | Cómo se detecta |
 | --- | --- | --- |
 | **BGE-M3** (modelo local de embeddings) | La primera indexación o consulta lo descarga (unos 4.6 GB, requiere Internet). Con `-ConDemo` esto ocurre durante la instalación, al indexar los documentos. | `verificar_instalacion.ps1` avisa si no está en caché (`RAG-02`) |
-| **Groq** (`GROQ_API_KEY`) | La consulta recupera las fuentes autorizadas y las muestra; no genera la respuesta ni inventa una. La restricción de alcance y «Sin evidencia» funcionan sin Groq. | `verificar_instalacion.ps1` avisa si la clave está vacía (`RAG-01`); `instalar.ps1 -GroqApiKey <clave>` la configura |
+| **Groq** (`GROQ_API_KEY`) | La consulta recupera las fuentes autorizadas y las muestra; no genera la respuesta ni inventa una. La restricción de alcance y «Sin evidencia» funcionan sin Groq. | `verificar_instalacion.ps1` avisa si la clave está vacía (`RAG-01`); `instalar.ps1 -GroqApiKey <clave>` o `instalar.sh --groq-api-key <clave>` la configuran |
 | **Límite por minuto de Groq** | «El servicio de generación alcanzó su límite de uso»; se reintenta tras unos segundos. | README, sección 2.12 |
 
-## 5. Cómo reproducirlo
+## 6. Cómo reproducirlo
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -ConDemo -GroqApiKey <clave-opcional>
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
+En Linux y macOS: `./scripts/instalar.sh --con-airflow --con-demo --groq-api-key <clave-opcional>`.
+
 Después abre http://localhost:3000 con `ti-inicial` y la contraseña que muestra el instalador. Lo que debe verse en cada
 pantalla está en [`demo/README.md`](../demo/README.md).
+
+## 7. Pendiente: instalación en otro equipo
+
+Todas las ejecuciones de este documento se hicieron en el equipo del autor, y `instalar.sh` no se ha probado en Linux ni en
+macOS reales. Para validarlo en otro equipo:
+
+1. Clonar el repositorio en una carpeta vacía.
+2. Ejecutar la instalación rápida de la sección 6 con `-ConAirflow -ConDemo` (o `--con-airflow --con-demo`).
+3. Ejecutar `verificar_instalacion.ps1`; en Linux y macOS, las comprobaciones de la sección 6.1 del README.
+4. Recorrer la lista de pantallas de [`demo/README.md`](../demo/README.md).
+
+| Equipo (SO, RAM, Docker) | Fecha | Tiempo | Resultado | Problemas |
+| --- | --- | --- | --- | --- |
+| *Pendiente* | | | | |
