@@ -2,3 +2,6 @@
 # referencias de un PDF exige posiciones de bytes exactas).
 *.pdf binary
 *.docx binary
+
+# Los scripts de shell conservan LF también en Windows: con CRLF, Bash falla al ejecutarlos.
+*.sh text eol=lf
