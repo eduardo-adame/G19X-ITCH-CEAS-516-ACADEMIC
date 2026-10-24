@@ -12,7 +12,9 @@ docker compose run --rm --no-deps -T --volume "./demo:/demo:ro" --volume "./.env
   -e DEMO_TI_USUARIO=ti-inicial -e "DEMO_TI_CONTRASENA=<CONTRASEÑA_TI>" backend python /demo/cargar_demo.py
 ```
 
-La instalación rápida lo hace automáticamente con `.\scripts\instalar.ps1 -ConDemo`.
+La instalación rápida lo hace automáticamente con `.\scripts\instalar.ps1 -ConDemo` en Windows o
+`./scripts/instalar.sh --con-demo` en Linux y macOS. Para presentar el sistema con estos datos, sigue el guion de
+[`docs/DEMOSTRACION.md`](../docs/DEMOSTRACION.md).
 
 El cargador hace lo mismo que haría un analista desde **Operaciones de ingesta**, por la API real:
 
