@@ -37,12 +37,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 | Instalación completa | Código 0 en 5.5 minutos | Código 0 en 5.3 minutos |
 | Primera instalación | `BASE_PREPARADA`, `CUENTA_TI_CREADA`, `CUENTA_PROCESO_CREADA`, `ALCANCE_DOCUMENTAL_CONCEDIDO: 12 nuevos`, `PRIMERA_INSTALACION_COMPLETADA` | Igual |
 | Datos de demostración | 10 cargas `201 COMPLETADO`; recálculo y análisis `COMPLETED`; **2 alertas** y **7 elementos en cuarentena** | Igual |
-| `verificar_instalacion.ps1` | Todas las comprobaciones en `PASS`: «instalación correcta» | — |
+| Verificador | `verificar_instalacion.ps1`: todas las comprobaciones en `PASS`, «instalación correcta» | — (el verificador de Bash se agregó después; ver la nota) |
 | Repetir la instalación | Sin cambios en archivos (10), documentos (4), cuarentena (7), cuentas (4) ni análisis (1); el cargador responde `DEMO_YA_CARGADA` | — |
 | Recorrido de las vistas | Resumen, Litigios, Tendencias, Cuarentena, Visor, Ingesta, Auditoría y Administración con datos y sin errores de JavaScript | — |
 
-`instalar.sh` además se revisó con `bash -n` y ShellCheck 0.10, sin observaciones. Las imágenes ya estaban descargadas en
-ambos casos; desde cero, la descarga de imágenes y del modelo BGE-M3 añade tiempo según la conexión.
+`instalar.sh` además se revisó con `bash -n` y ShellCheck 0.10, sin observaciones. `verificar_instalacion.sh`, el
+equivalente de Bash del verificador, se agregó el 2026-10-27. Se ejecutó en Git Bash sobre la instalación local en uso:
+19 comprobaciones en `PASS` y el aviso `RAG-02` (modelo en caché, todavía sin cargar), con código 0. Con una configuración
+rota a propósito marcó los 8 fallos esperados y terminó con código 1. También pasó ShellCheck 0.10 sin observaciones.
+
+En las dos instalaciones las imágenes ya estaban descargadas; desde cero, la descarga de imágenes y del modelo BGE-M3 añade tiempo según la conexión.
 
 | Resumen ejecutivo | Tendencias y riesgos |
 | --- | --- |
@@ -101,8 +105,8 @@ repositorio son las pruebas de la sección 3 y, contra PostgreSQL, las suites de
 
 | Dependencia | Qué pasa si falta | Cómo se detecta |
 | --- | --- | --- |
-| **BGE-M3** (modelo local de embeddings) | La primera indexación o consulta lo descarga (unos 4.6 GB, requiere Internet). Con `-ConDemo` esto ocurre durante la instalación, al indexar los documentos. | `verificar_instalacion.ps1` avisa si no está en caché (`RAG-02`) |
-| **Groq** (`GROQ_API_KEY`) | La consulta recupera las fuentes autorizadas y las muestra; no genera la respuesta ni inventa una. La restricción de alcance y «Sin evidencia» funcionan sin Groq. | `verificar_instalacion.ps1` avisa si la clave está vacía (`RAG-01`); `instalar.ps1 -GroqApiKey <clave>` o `instalar.sh --groq-api-key <clave>` la configuran |
+| **BGE-M3** (modelo local de embeddings) | La primera indexación o consulta lo descarga (unos 4.6 GB, requiere Internet). Con `-ConDemo` esto ocurre durante la instalación, al indexar los documentos. | El verificador (`verificar_instalacion.ps1` o `.sh`) avisa si no está en caché (`RAG-02`) |
+| **Groq** (`GROQ_API_KEY`) | La consulta recupera las fuentes autorizadas y las muestra; no genera la respuesta ni inventa una. La restricción de alcance y «Sin evidencia» funcionan sin Groq. | El verificador avisa si la clave está vacía (`RAG-01`); `instalar.ps1 -GroqApiKey <clave>` o `instalar.sh --groq-api-key <clave>` la configuran |
 | **Límite por minuto de Groq** | «El servicio de generación alcanzó su límite de uso»; se reintenta tras unos segundos. | README, sección 2.12 |
 
 ## 6. Cómo reproducirlo
@@ -112,7 +116,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\instalar.ps1 -ConAirflow -Con
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-En Linux y macOS: `./scripts/instalar.sh --con-airflow --con-demo --groq-api-key <clave-opcional>`.
+En Linux y macOS:
+
+```bash
+./scripts/instalar.sh --con-airflow --con-demo --groq-api-key <clave-opcional>
+./scripts/verificar_instalacion.sh
+```
 
 Después abre http://localhost:3000 con `ti-inicial` y la contraseña que muestra el instalador. Lo que debe verse en cada
 pantalla está en [`demo/README.md`](../demo/README.md).
@@ -124,7 +133,7 @@ macOS reales. Para validarlo en otro equipo:
 
 1. Clonar el repositorio en una carpeta vacía.
 2. Ejecutar la instalación rápida de la sección 6 con `-ConAirflow -ConDemo` (o `--con-airflow --con-demo`).
-3. Ejecutar `verificar_instalacion.ps1`; en Linux y macOS, las comprobaciones de la sección 6.1 del README.
+3. Ejecutar `verificar_instalacion.ps1`; en Linux y macOS, `./scripts/verificar_instalacion.sh`.
 4. Recorrer la lista de pantallas de [`demo/README.md`](../demo/README.md).
 
 | Equipo (SO, RAM, Docker) | Fecha | Tiempo | Resultado | Problemas |

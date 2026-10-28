@@ -6,7 +6,7 @@ sobre una instalación limpia el 2026-10-24: el sistema responde en menos de 10 
 
 ## Antes de presentar (5 minutos)
 
-1. Ejecuta `.\scripts\verificar_instalacion.ps1` (o revisa la sección 6.1 del README en Linux o macOS). Debe terminar en
+1. Ejecuta `.\scripts\verificar_instalacion.ps1` (o `./scripts/verificar_instalacion.sh` en Linux o macOS). Debe terminar en
    «instalación correcta» **sin** el aviso `RAG-01`: la consulta documental necesita `GROQ_API_KEY`.
 2. Abre dos ventanas del navegador en http://localhost:3000, una normal y una privada:
    - **Ana Martínez** (`ana.martinez`, Jurídico): es la protagonista de la demostración.
