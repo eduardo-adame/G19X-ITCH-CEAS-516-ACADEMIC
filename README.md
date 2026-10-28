@@ -81,7 +81,13 @@ Cada script hace en orden lo que describen las secciones 2.2 a 2.9:
 Al terminar muestra **una sola vez** la contraseña de `ti-inicial` y la de las cuentas de demostración. Abre http://localhost:3000 e inicia sesión. Para comprobar la instalación:
 
 ```powershell
+# Windows (PowerShell)
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
+```
+
+```bash
+# Linux y macOS (Bash)
+./scripts/verificar_instalacion.sh
 ```
 
 Si quieres entender o adaptar cada paso, sigue el procedimiento manual de las secciones siguientes. Para presentar el sistema, [`docs/DEMOSTRACION.md`](docs/DEMOSTRACION.md) tiene un guion de 6 minutos. La arquitectura y el recorrido de la información se describen en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md), y lo que se ejecutó para verificar el sistema, con capturas, en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
@@ -710,6 +716,16 @@ Invoke-RestMethod http://localhost:8000/health/ready
 Invoke-RestMethod http://localhost:8080/health
 ```
 
+En Linux y macOS, con `curl`:
+
+```bash
+docker compose --profile airflow ps
+curl -s http://localhost:3000/health; echo
+curl -s http://localhost:8000/health; echo
+curl -s http://localhost:8000/health/ready; echo
+curl -s http://localhost:8080/health; echo
+```
+
 Estas comprobaciones informan de la disponibilidad de los servicios; no sustituyen las pruebas funcionales. El script de la sección 6.5 las reúne junto con la revisión del esquema y las cuentas.
 
 ### 6.2. Backend
@@ -803,10 +819,16 @@ Estas pruebas utilizan fixtures HTTP sintéticos. Verifican la interfaz y sus co
 Con la instalación en ejecución:
 
 ```powershell
+# Windows (PowerShell)
 powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ```
 
-Comprueba:
+```bash
+# Linux y macOS (Bash)
+./scripts/verificar_instalacion.sh
+```
+
+Los dos scripts hacen las mismas comprobaciones, con los mismos identificadores. Comprueban:
 
 - que `.env` no conserva valores de ejemplo y no está versionado;
 - que `.env.example` no contiene secretos reales;

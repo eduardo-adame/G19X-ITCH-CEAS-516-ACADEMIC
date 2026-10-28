@@ -83,7 +83,7 @@ no inventa nada: muestra las **fuentes relacionadas** con su texto y el aviso co
 | «El servicio de generación alcanzó su límite de uso» | Se agotó el presupuesto por minuto del proveedor | Esperar alrededor de un minuto y pulsar **Intentar de nuevo**. Durante la demostración conviene dejar un minuto entre preguntas. |
 | «Evidencia insuficiente» | La pregunta combina varias cosas o los fragmentos no la sustentan | Es el comportamiento esperado: el sistema se abstiene. Reformula con una sola pregunta concreta. |
 
-Antes de presentar, `scripts\verificar_instalacion.ps1` indica con `[AVISO]` si falta la clave de Groq o si BGE-M3
+Antes de presentar, `scripts\verificar_instalacion.ps1` (o `scripts/verificar_instalacion.sh` en Linux y macOS) indica con `[AVISO]` si falta la clave de Groq o si BGE-M3
 todavía no se ha descargado.
 
 ### Por qué algunos indicadores solo muestran el mes en curso
