@@ -66,9 +66,12 @@ Los dos scripts son equivalentes; en Bash las opciones se escriben `--con-airflo
 Bash se probó completo en Git Bash para Windows y con ShellCheck, pero no en un equipo Linux o macOS (ver
 [`docs/VERIFICACION.md`](docs/VERIFICACION.md)). Si falla en tu sistema, los pasos manuales de las secciones 2.2 a 2.9 hacen lo mismo.
 
+Los `.sh` se versionan como ejecutables. Si la copia del repositorio no conservó ese permiso y aparece «Permission
+denied», llámalos con Bash: `bash scripts/instalar.sh --con-airflow --con-demo` y `bash scripts/verificar_instalacion.sh`.
+
 > **Antes de empezar:** la configuración de referencia es de 16 GB de RAM; el sistema completo se probó también en un equipo
-> de 11 GB con Docker limitado a 5.5 GB. La primera instalación descarga el modelo BGE-M3 (unos 4.6 GB) y las imágenes; con
-> las imágenes ya descargadas tarda unos 6 minutos.
+> de 11 GB con Docker limitado a 5.5 GB y, desde cero, en uno de 8 GB. La primera instalación descarga el modelo BGE-M3
+> (unos 4.6 GB) y las imágenes: desde cero tardó unos 30 minutos; con las imágenes ya descargadas tarda unos 6.
 
 Cada script hace en orden lo que describen las secciones 2.2 a 2.9:
 
@@ -828,7 +831,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verificar_instalacion.ps1
 ./scripts/verificar_instalacion.sh
 ```
 
-Los dos scripts hacen las mismas comprobaciones, con los mismos identificadores. Comprueban:
+Si el `.sh` no tiene permiso de ejecución, `bash scripts/verificar_instalacion.sh` hace lo mismo. Los dos scripts hacen las
+mismas comprobaciones, con los mismos identificadores. Comprueban:
 
 - que `.env` no conserva valores de ejemplo y no está versionado;
 - que `.env.example` no contiene secretos reales;

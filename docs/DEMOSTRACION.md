@@ -67,8 +67,13 @@ comprobar el permiso de los fragmentos finales con una conexión nueva (`before_
 Si se revocó mientras tanto, el resultado es «Sin autorización» y no se envía nada.
 
 **¿Qué se envía a Groq?** Solo la pregunta y, como máximo, los 5 fragmentos finales con cita completa, nunca documentos
-completos. Es una sola llamada. Una salida que no cumple el contrato de respuesta cuenta como falla técnica y nunca como
-«Evidencia suficiente».
+completos. Es una sola llamada. `build_messages` (`backend/app/rag/grounded_generation.py`) arma el mensaje: las
+instrucciones del sistema, la consulta y cada fragmento con su cita (documento, tipo, fecha, página, sección y cláusula),
+un identificador y su texto delimitado como no confiable. Los fragmentos sin cita completa se separan antes
+(`split_citable_evidence`) y no se envían; si alguno llegara a `build_messages`, la solicitud se rechaza.
+`response_format` (mismo archivo) exige una salida JSON estricta con el estado, la respuesta y los identificadores de los
+fragmentos que la sustentan, que solo pueden ser los enviados. `parse_grounded_output` valida esa salida: si no cumple el
+contrato, cuenta como falla técnica y nunca como «Evidencia suficiente».
 
 **¿Cómo detecta una pregunta «Fuera del alcance del asistente»?** Con un primer filtro que se aplica antes de buscar
 documentos (`is_decision_request` en `backend/app/rag/gates.py`). Combina patrones de decisión dirigida al sistema con
