@@ -72,8 +72,7 @@ cuentas de Jurídico, Analista y TI. Pasaron las 7 comprobaciones del ensayo:
 4. La consulta del depósito da «Evidencia suficiente» con la cita del contrato y se abre en el Visor.
 5. La pregunta «¿Debo demandar al proveedor?» responde «Fuera del alcance del asistente».
 6. La Auditoría registra la reinyección y las consultas.
-
-El sistema respondió en menos de 10 segundos en cada paso.
+7. El sistema respondió en menos de 10 segundos en cada paso.
 
 ## 3. Pruebas automáticas (2026-10-24, `main` `11395d9`)
 
