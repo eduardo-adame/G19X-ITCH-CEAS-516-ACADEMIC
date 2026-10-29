@@ -13,7 +13,8 @@ indica la especificación. Cada bloque indica el comando que lo reproduce desde 
 | Terminales | PowerShell 5.1 y Git Bash 5.2 |
 
 La configuración de referencia del proyecto es de 16 GB de RAM; este equipo, con menos, ejecutó el sistema completo con
-Airflow, OCR y BGE-M3. Todas las pruebas se hicieron en este equipo (ver la sección 7).
+Airflow, OCR y BGE-M3. Todas las pruebas se hicieron en este equipo, salvo la instalación en un segundo equipo de la
+sección 7.
 
 ## 1. Instalación desde cero con datos de demostración
 
@@ -46,7 +47,8 @@ equivalente de Bash del verificador, se agregó el 2026-10-27. Se ejecutó en Gi
 19 comprobaciones en `PASS` y el aviso `RAG-02` (modelo en caché, todavía sin cargar), con código 0. Con una configuración
 rota a propósito marcó los 8 fallos esperados y terminó con código 1. También pasó ShellCheck 0.10 sin observaciones.
 
-En las dos instalaciones las imágenes ya estaban descargadas; desde cero, la descarga de imágenes y del modelo BGE-M3 añade tiempo según la conexión.
+En las dos instalaciones las imágenes ya estaban descargadas; desde cero, la descarga de imágenes y del modelo BGE-M3 añade tiempo según la conexión (unos 30 minutos en total en la
+instalación de la sección 7).
 
 | Resumen ejecutivo | Tendencias y riesgos |
 | --- | --- |
@@ -126,10 +128,11 @@ En Linux y macOS:
 Después abre http://localhost:3000 con `ti-inicial` y la contraseña que muestra el instalador. Lo que debe verse en cada
 pantalla está en [`demo/README.md`](../demo/README.md).
 
-## 7. Pendiente: instalación en otro equipo
+## 7. Instalación en otro equipo
 
-Todas las ejecuciones de este documento se hicieron en el equipo del autor, y `instalar.sh` no se ha probado en Linux ni en
-macOS reales. Para validarlo en otro equipo:
+La instalación desde cero se repitió en un segundo equipo con Windows 11 y 8 GB de RAM, menos memoria que el de las
+secciones anteriores, sin imágenes ni modelo descargados. `instalar.sh` sigue sin probarse en Linux ni en macOS reales.
+Para repetir la validación en otro equipo:
 
 1. Clonar el repositorio en una carpeta vacía.
 2. Ejecutar la instalación rápida de la sección 6 con `-ConAirflow -ConDemo` (o `--con-airflow --con-demo`).
@@ -138,4 +141,8 @@ macOS reales. Para validarlo en otro equipo:
 
 | Equipo (SO, RAM, Docker) | Fecha | Tiempo | Resultado | Problemas |
 | --- | --- | --- | --- | --- |
-| *Pendiente* | | | | |
+| Windows 11; Intel Core i3-10110U (4 hilos), 8 GB de RAM; Docker Engine 29.9.2, Compose 5.6.1 | 2026-10-28 | 30.5 minutos desde cero, con la descarga de imágenes y de BGE-M3 | `instalar.ps1 -ConAirflow -ConDemo -GroqApiKey`: 10 cargas `201 COMPLETADO`, **2 alertas**, **7 elementos en cuarentena** y `DEMO_CARGADA`. `verificar_instalacion.ps1`: 20 comprobaciones en `PASS`, «instalación correcta». Las pantallas se comportaron igual que en el equipo de las secciones anteriores | Ninguno |
+
+El tiempo va de la creación de `.env` (paso 1 del instalador) al último evento de auditoría del análisis proactivo, que es
+lo último que ejecuta la carga de la demostración. La construcción de las imágenes tardó 10.7 minutos. Al terminar, Docker
+Desktop ocupaba 3.6 GB de RAM y 13.8 GB de disco.

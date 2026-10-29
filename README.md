@@ -67,8 +67,8 @@ Bash se probó completo en Git Bash para Windows y con ShellCheck, pero no en un
 [`docs/VERIFICACION.md`](docs/VERIFICACION.md)). Si falla en tu sistema, los pasos manuales de las secciones 2.2 a 2.9 hacen lo mismo.
 
 > **Antes de empezar:** la configuración de referencia es de 16 GB de RAM; el sistema completo se probó también en un equipo
-> de 11 GB con Docker limitado a 5.5 GB. La primera instalación descarga el modelo BGE-M3 (unos 4.6 GB) y las imágenes; con
-> las imágenes ya descargadas tarda unos 6 minutos.
+> de 11 GB con Docker limitado a 5.5 GB y, desde cero, en uno de 8 GB. La primera instalación descarga el modelo BGE-M3
+> (unos 4.6 GB) y las imágenes: desde cero tardó unos 30 minutos; con las imágenes ya descargadas tarda unos 6.
 
 Cada script hace en orden lo que describen las secciones 2.2 a 2.9:
 
